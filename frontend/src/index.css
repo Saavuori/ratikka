@@ -632,7 +632,7 @@ body {
 
 /* Mobile responsive layout (max-width: 768px) */
 @media (max-width: 768px) {
-  /* Position filter panel as bottom sheet */
+  /* Position filter panel as bottom sheet and make it more compact */
   .filter-panel {
     top: auto;
     bottom: 0;
@@ -644,7 +644,7 @@ body {
     border-left: none;
     border-right: none;
     border-bottom: none;
-    padding: 16px 20px;
+    padding: 12px 16px;
     z-index: 100;
   }
 
@@ -655,9 +655,9 @@ body {
   /* Re-align the toggle tab for mobile bottom-sheet style */
   .filter-toggle-tab {
     right: 16px;
-    top: -40px;
-    width: 44px;
-    height: 40px;
+    top: -36px;
+    width: 40px;
+    height: 36px;
     border-radius: 8px 8px 0 0;
     border: 1px solid var(--border-glow);
     border-bottom: none;
@@ -675,7 +675,7 @@ body {
     justify-content: center;
   }
 
-  /* Position detail panels (Tram/Stop popups) as bottom sheets */
+  /* Position detail panels (Tram/Stop popups) as bottom sheets and make them more compact */
   .detail-popup {
     top: auto;
     bottom: 0;
@@ -687,14 +687,107 @@ body {
     border-left: none;
     border-right: none;
     border-bottom: none;
-    padding: 20px;
+    padding: 14px 16px;
     z-index: 110;
     box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
   }
 
-  /* Adjust scrollable container heights to fit within 50vh bottom sheets */
-  .timeline-container, 
+  /* Adjust headers to be compact on mobile */
+  .panel-header {
+    padding-bottom: 8px !important;
+  }
+
+  .panel-title {
+    font-size: 1.0rem !important;
+  }
+
+  .panel-subtitle {
+    font-size: 0.68rem !important;
+    margin-top: 1px !important;
+  }
+
+  /* Make MapLibre navigation controls (zoom, compass) compact on mobile */
+  .maplibregl-ctrl-group {
+    margin: 8px !important;
+    border-radius: 6px !important;
+  }
+
+  .maplibregl-ctrl-group button {
+    width: 26px !important;
+    height: 26px !important;
+  }
+
+  .maplibregl-ctrl-icon {
+    background-size: 16px 16px !important;
+  }
+
+  /* Compact stop list timeline inside Tram detail view */
+  .timeline-list {
+    margin-left: 8px;
+    padding-left: 16px;
+    gap: 10px;
+  }
+
+  .timeline-dot {
+    left: -22px;
+    width: 8px;
+    height: 8px;
+  }
+
+  .timeline-stop-name {
+    font-size: 0.75rem;
+  }
+
+  .timeline-stop-code {
+    font-size: 0.6rem;
+  }
+
+  .timeline-time {
+    font-size: 0.75rem;
+  }
+
+  /* Compact departure items list inside Stop detail view */
   .departure-list {
+    max-height: calc(50vh - 120px) !important;
+  }
+
+  .departure-item {
+    padding: 6px 8px;
+    border-radius: 8px;
+  }
+
+  .departure-badge {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+  }
+
+  .departure-dest {
+    font-size: 0.75rem;
+  }
+
+  .departure-sub {
+    font-size: 0.6rem;
+  }
+
+  .departure-time {
+    font-size: 0.75rem;
+  }
+
+  .routes-chips {
+    margin: 8px 0;
+    gap: 4px;
+  }
+
+  .route-chip {
+    padding: 2px 6px;
+    font-size: 0.7rem;
+    border-radius: 4px;
+  }
+
+  /* Adjust scrollable container heights to fit within 50vh bottom sheets */
+  .timeline-container {
     max-height: calc(50vh - 120px) !important;
   }
 
