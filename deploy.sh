@@ -74,7 +74,7 @@ services:
       - "com.centurylinklabs.watchtower.scope=ratikka"
 
   ratikka-cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor-arm64:v0.49.1
     restart: unless-stopped
     volumes:
       - /:/rootfs:ro
