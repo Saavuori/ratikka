@@ -52,19 +52,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
       {/* Top Banner */}
       <div className="panel-header" style={{ padding: '0 0 16px 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '50%',
-            backgroundColor: 'rgba(16, 185, 129, 0.15)',
-            border: '1.5px solid var(--accent-green)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '1.15rem',
-            fontWeight: 800,
-            color: '#34d399'
-          }}>
+          <div className="desi-circle">
             {tram.desi}
           </div>
           <div>
@@ -112,17 +100,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
           if (isStopped) {
             const nextStop = currentIndex + 1 < tripDetails.stops.length ? tripDetails.stops[currentIndex + 1] : null;
             return (
-              <div style={{
-                background: 'rgba(245, 158, 11, 0.08)',
-                border: '1px solid rgba(245, 158, 11, 0.25)',
-                borderRadius: '12px',
-                padding: '12px 16px',
-                marginBottom: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                boxShadow: '0 4px 12px rgba(245, 158, 11, 0.05)'
-              }}>
+              <div className="next-stop-callout stopped">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: '#f59e0b', display: 'block', letterSpacing: '0.05em' }}>Current Stop</span>
@@ -141,13 +119,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
                 </div>
 
                 {nextStop && (
-                  <div style={{
-                    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                    paddingTop: '8px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                  }}>
+                  <div className="next-stop-sub">
                     <div>
                       <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--accent-green)', display: 'block', letterSpacing: '0.05em' }}>Next Stop</span>
                       <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#cbd5e1' }}>{nextStop.name}</span>
@@ -162,17 +134,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
             );
           } else {
             return (
-              <div style={{
-                background: 'rgba(16, 185, 129, 0.08)',
-                border: '1px solid rgba(16, 185, 129, 0.25)',
-                borderRadius: '12px',
-                padding: '12px 16px',
-                marginBottom: '16px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.05)'
-              }}>
+              <div className="next-stop-callout moving">
                 <div>
                   <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--accent-green)', display: 'block', letterSpacing: '0.05em' }}>Next Stop</span>
                   <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#f1f5f9' }}>{currentStop.name}</span>
@@ -250,34 +212,10 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
                           <h4 className="timeline-stop-name">
                             {stop.name}
                             {isCurrent && (
-                              <span style={{
-                                marginLeft: '8px',
-                                fontSize: '0.65rem',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                                border: '1px solid #f59e0b',
-                                color: '#fbbf24',
-                                textTransform: 'uppercase',
-                                fontWeight: 'bold',
-                                display: 'inline-block',
-                                verticalAlign: 'middle'
-                              }}>Stopped</span>
+                              <span className="stop-status-badge current">Stopped</span>
                             )}
                             {isNext && (
-                              <span style={{
-                                marginLeft: '8px',
-                                fontSize: '0.65rem',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                                border: '1px solid var(--accent-green)',
-                                color: '#34d399',
-                                textTransform: 'uppercase',
-                                fontWeight: 'bold',
-                                display: 'inline-block',
-                                verticalAlign: 'middle'
-                              }}>Next</span>
+                              <span className="stop-status-badge next">Next</span>
                             )}
                           </h4>
                           <span className="timeline-stop-code">

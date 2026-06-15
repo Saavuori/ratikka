@@ -202,6 +202,75 @@ body {
   padding: 20px;
 }
 
+.desi-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: rgba(16, 185, 129, 0.15);
+  border: 1.5px solid var(--accent-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #34d399;
+}
+
+.next-stop-callout {
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.next-stop-callout.stopped {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.05);
+}
+
+.next-stop-callout.moving {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.05);
+}
+
+.next-stop-sub {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stop-status-badge {
+  margin-left: 8px;
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  font-weight: bold;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.stop-status-badge.current {
+  background-color: rgba(245, 158, 11, 0.15);
+  border: 1px solid #f59e0b;
+  color: #fbbf24;
+}
+
+.stop-status-badge.next {
+  background-color: rgba(16, 185, 129, 0.15);
+  border: 1px solid var(--accent-green);
+  color: #34d399;
+}
+
 /* Panel Header styling */
 .panel-header {
   display: flex;
@@ -960,5 +1029,53 @@ body {
   .version-badge {
     bottom: 48px;
     left: 8px;
+  }
+
+  /* Compact TramPopup elements on mobile */
+  .detail-popup .panel-header {
+    padding-bottom: 6px !important;
+  }
+
+  .desi-circle {
+    width: 30px !important;
+    height: 30px !important;
+    font-size: 0.9rem !important;
+  }
+
+  .metric-grid {
+    margin-top: 8px !important;
+    margin-bottom: 8px !important;
+    gap: 8px !important;
+  }
+
+  .metric-card {
+    padding: 8px !important;
+  }
+
+  .metric-label {
+    font-size: 0.6rem !important;
+  }
+
+  .metric-val {
+    font-size: 0.8rem !important;
+  }
+
+  .next-stop-callout {
+    padding: 8px 12px !important;
+    margin-bottom: 8px !important;
+    border-radius: 8px !important;
+  }
+
+  .next-stop-callout.stopped {
+    gap: 4px !important;
+  }
+
+  .next-stop-sub {
+    padding-top: 6px !important;
+  }
+
+  /* Hide raw status text badges on mobile stops list to prevent text wrap */
+  .stop-status-badge {
+    display: none !important;
   }
 }
