@@ -3,6 +3,12 @@ name: CI/CD Build and Release
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - 'monitoring/**'
+      - 'deploy.sh'
+      - '.gitignore'
 
 permissions:
   contents: write
