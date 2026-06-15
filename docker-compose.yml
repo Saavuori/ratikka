@@ -70,7 +70,6 @@ services:
       - GRAFANA_CLOUD_PROMETHEUS_TOKEN=${GRAFANA_CLOUD_PROMETHEUS_TOKEN}
     depends_on:
       - ratikka-backend
-      - ratikka-cadvisor
 
 volumes:
   caddy-data:
