@@ -778,6 +778,11 @@ body {
 
   /* Compact Stats Bar */
   .panel-stats {
+    padding: 0 !important;
+    justify-content: flex-end !important;
+  }
+
+  .panel-stats:has(.clear-filters-btn) {
     padding: 6px 0 !important;
   }
 
@@ -786,9 +791,7 @@ body {
   }
 
   .stats-active-vehicles-compact {
-    display: block !important;
-    font-size: 0.7rem;
-    color: #94a3b8;
+    display: none !important;
   }
 
   /* Hide filter icon section title on mobile to save vertical space */
