@@ -46,11 +46,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Retrieve metadata
+      # --- Added Step to handle the uppercase repository name ---
+      - name: Prepare Repository Name and Metadata
         id: meta
         run: |
+          echo "repo_lower=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
           echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
-          echo "git_sha=${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v6
@@ -59,13 +60,15 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          # Using the lowercase repo variable here:
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ needs.tag.outputs.new_tag }}
-            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.git_sha }}
+            ghcr.io/${{ steps.meta.outputs.repo_lower }}:latest
+            ghcr.io/${{ steps.meta.outputs.repo_lower }}:${{ needs.tag.outputs.new_tag }}
+            ghcr.io/${{ steps.meta.outputs.repo_lower }}:${{ github.sha }}
           build-args: |
             VERSION=${{ needs.tag.outputs.new_tag }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
-            GIT_SHA=${{ steps.meta.outputs.git_sha }}
+            GIT_SHA=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          
