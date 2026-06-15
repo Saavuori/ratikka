@@ -35,7 +35,7 @@ services:
     image: docker.io/containrrr/watchtower
     restart: unless-stopped
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /run/user/1000/podman/podman.sock:/var/run/docker.sock
     environment:
       - WATCHTOWER_POLL_INTERVAL=300
       - WATCHTOWER_SCOPE=ratikka

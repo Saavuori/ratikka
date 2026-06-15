@@ -470,16 +470,45 @@ body {
   bottom: 8px;
   left: 8px;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 5px;
   background: rgba(15, 23, 42, 0.85);
   backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: #64748b;
-  font-family: monospace;
+  font-family: 'Courier New', monospace;
   font-size: 9px;
   padding: 4px 8px;
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   pointer-events: auto;
+  transition: opacity 0.2s;
+}
+
+.version-badge:hover {
+  opacity: 0.9;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.version-badge__tag {
+  color: #34d399;
+  font-weight: 700;
+}
+
+.version-badge__sha {
+  color: #94a3b8;
+  letter-spacing: 0.05em;
+}
+
+.version-badge__date {
+  color: #64748b;
+}
+
+.version-badge__sep {
+  color: rgba(255, 255, 255, 0.2);
+  user-select: none;
 }
 
 /* Metrics and Timeline Grid */
