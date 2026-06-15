@@ -66,7 +66,7 @@ docker run --rm -p 6379:6379 redis:7-alpine
 **Terminal 2 — Go backend**:
 ```powershell
 cd c:\Antigravity\ratikka\backend
-$env:DIGITRANSIT_API_KEY="631fd3dbd1b84f55904e1de6fcfebf1a"
+$env:DIGITRANSIT_API_KEY="your_api_key"
 $env:REDIS_URL="redis://localhost:6379"
 $env:MQTT_BROKER="tls://mqtt.hsl.fi:8883"
 $env:PORT="8080"
@@ -118,7 +118,7 @@ Skip the frontend entirely — test backend APIs with curl or browser.
 
 ```powershell
 cd c:\Antigravity\ratikka\backend
-$env:DIGITRANSIT_API_KEY="631fd3dbd1b84f55904e1de6fcfebf1a"
+$env:DIGITRANSIT_API_KEY="your_api_key"
 $env:REDIS_URL="redis://localhost:6379"
 $env:MQTT_BROKER="tls://mqtt.hsl.fi:8883"
 go run ./cmd/ratikka

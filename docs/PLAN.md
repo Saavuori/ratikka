@@ -335,13 +335,13 @@ ratikka/
 
 ```env
 # Backend (server-side only — never exposed)
-DIGITRANSIT_API_KEY=631fd3dbd1b84f55904e1de6fcfebf1a
+DIGITRANSIT_API_KEY=your_digitransit_api_key
 REDIS_URL=redis://ratikka-cache:6379
 MQTT_BROKER=tls://mqtt.hsl.fi:8883
 PORT=8080
 
 # Frontend (build-time — embedded in JS bundle)
-VITE_DIGITRANSIT_MAP_KEY=631fd3dbd1b84f55904e1de6fcfebf1a
+VITE_DIGITRANSIT_MAP_KEY=your_digitransit_map_key
 VITE_WS_URL=/api/v1/stream
 VITE_API_BASE=/api/v1
 ```

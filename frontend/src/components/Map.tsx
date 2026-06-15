@@ -119,7 +119,7 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
-    const apiKey = import.meta.env.VITE_DIGITRANSIT_MAP_KEY || '631fd3dbd1b84f55904e1de6fcfebf1a';
+    const apiKey = import.meta.env.VITE_DIGITRANSIT_MAP_KEY || '';
 
     const style: maplibregl.StyleSpecification = {
       version: 8,
