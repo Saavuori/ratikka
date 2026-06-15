@@ -108,29 +108,14 @@ Access the map dashboard in your web browser at `http://localhost`.
 
 ### Production Deployment (RHEL & Podman)
 
-Run these commands on a clean RHEL host:
+To deploy the application on a clean RHEL system:
 
 ```bash
-# 1. Configure host port binding & firewall
-sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
-echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee -a /etc/sysctl.d/99-podman-ports.conf
-sudo firewall-cmd --permanent --add-service=http
-sudo firewall-cmd --permanent --add-service=https
-sudo firewall-cmd --reload
-
-# 2. Install Podman & Podman Compose
-sudo dnf install -y podman podman-compose
-
-# 3. Create directory and download configuration files
-mkdir -p ~/ratikka && cd ~/ratikka
-curl -sSL -O https://raw.githubusercontent.com/Saavuori/ratikka/main/docker-compose.yml
-curl -sSL -O https://raw.githubusercontent.com/Saavuori/ratikka/main/Caddyfile
-
-# 4. Set your API Key and start the container stack
-echo "DIGITRANSIT_API_KEY=your_key_here" > .env
-export $(grep -v '^#' .env | xargs)
-podman-compose up -d
+curl -sSL -O https://raw.githubusercontent.com/Saavuori/ratikka/main/deploy.sh && bash deploy.sh
 ```
+
+*(The script configures unprivileged port binding, sets the firewall, installs Podman, downloads `docker-compose.yml` and `Caddyfile` from the repository, and starts the container stack).*
+
 
 
 
