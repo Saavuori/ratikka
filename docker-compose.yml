@@ -19,6 +19,8 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.scope=ratikka"
     environment:
       - DIGITRANSIT_API_KEY=${DIGITRANSIT_API_KEY}
       - REDIS_URL=redis://ratikka-cache:6379
@@ -32,6 +34,21 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly no --maxmemory 64mb --maxmemory-policy allkeys-lru
 
+  ratikka-watchtower:
+    image: docker.io/containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_SCOPE=ratikka
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_LOG_LEVEL=info
+      - DOCKER_API_VERSION=1.45
+    labels:
+      - "com.centurylinklabs.watchtower.scope=ratikka"
+
 volumes:
   caddy-data:
   caddy-config:
+
