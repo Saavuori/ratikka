@@ -54,6 +54,9 @@ Set the following environment variables in `.env` or in your environment:
 | `REDIS_URL` | Redis cache connection string | `redis://ratikka-cache:6379` |
 | `MQTT_BROKER` | HSL public MQTT endpoint | `tls://mqtt.hsl.fi:8883` |
 | `PORT` | Go backend server port | `8080` |
+| `GRAFANA_CLOUD_PROMETHEUS_URL` | Prometheus push URL for Grafana Cloud | *(Optional)* |
+| `GRAFANA_CLOUD_PROMETHEUS_USER` | Prometheus username for Grafana Cloud | *(Optional)* |
+| `GRAFANA_CLOUD_PROMETHEUS_TOKEN`| Prometheus access token for Grafana Cloud | *(Optional)* |
 
 ---
 
@@ -114,7 +117,7 @@ To deploy the application on a clean RHEL system:
 curl -sSL -O https://raw.githubusercontent.com/Saavuori/ratikka/main/deploy.sh && bash deploy.sh
 ```
 
-*(The script configures unprivileged port binding, sets the firewall, installs Podman, downloads `docker-compose.yml` and `Caddyfile` from the repository, and starts the container stack).*
+*(The script configures unprivileged port binding, sets the firewall, installs Podman, downloads `docker-compose.yml`, `Caddyfile`, and `config.alloy` from the repository, prompts for API/monitoring keys, and starts the container stack).*
 
 
 

@@ -9,8 +9,21 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/prometheus/client_golang/prometheus"
 	"ratikka/internal/cache"
 )
+
+var (
+	ActiveClientsGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "ratikka_active_websocket_clients",
+		Help: "Number of active WebSocket clients connected to the hub.",
+	})
+)
+
+func init() {
+	prometheus.MustRegister(ActiveClientsGauge)
+}
+
 
 type Client struct {
 	conn *websocket.Conn
@@ -52,6 +65,7 @@ func (h *Hub) Run(ctx context.Context) {
 		case client := <-h.register:
 			h.clientsMu.Lock()
 			h.clients[client] = true
+			ActiveClientsGauge.Set(float64(len(h.clients)))
 			h.clientsMu.Unlock()
 		case client := <-h.unregister:
 			h.clientsMu.Lock()
@@ -59,6 +73,7 @@ func (h *Hub) Run(ctx context.Context) {
 				delete(h.clients, client)
 				close(client.send)
 			}
+			ActiveClientsGauge.Set(float64(len(h.clients)))
 			h.clientsMu.Unlock()
 		case <-ticker.C:
 			h.broadcastSnapshot(ctx)

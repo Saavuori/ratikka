@@ -1,0 +1,35 @@
+prometheus.exporter.unix "node" {
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+  rootfs_path = "/rootfs"
+}
+
+prometheus.scrape "scrape_node" {
+  targets    = prometheus.exporter.unix.node.targets
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.scrape "scrape_backend" {
+  targets = [
+    {"__address__" = "ratikka-backend:8080"},
+  ]
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.scrape "scrape_cadvisor" {
+  targets = [
+    {"__address__" = "ratikka-cadvisor:8080"},
+  ]
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_PROMETHEUS_URL")
+
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_PROMETHEUS_USER")
+      password = sys.env("GRAFANA_CLOUD_PROMETHEUS_TOKEN")
+    }
+  }
+}

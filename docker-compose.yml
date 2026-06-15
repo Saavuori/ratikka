@@ -48,7 +48,35 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.scope=ratikka"
 
+  ratikka-cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /var/lib/containers/:/var/lib/containers:ro
+      - /dev/disk/:/dev/disk:ro
+
+  ratikka-alloy:
+    image: docker.io/grafana/alloy:latest
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro,Z
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    environment:
+      - GRAFANA_CLOUD_PROMETHEUS_URL=${GRAFANA_CLOUD_PROMETHEUS_URL}
+      - GRAFANA_CLOUD_PROMETHEUS_USER=${GRAFANA_CLOUD_PROMETHEUS_USER}
+      - GRAFANA_CLOUD_PROMETHEUS_TOKEN=${GRAFANA_CLOUD_PROMETHEUS_TOKEN}
+    depends_on:
+      - ratikka-backend
+      - ratikka-cadvisor
+
 volumes:
   caddy-data:
   caddy-config:
+
 

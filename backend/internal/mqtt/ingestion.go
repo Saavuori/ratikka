@@ -9,8 +9,27 @@ import (
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/prometheus/client_golang/prometheus"
 	"ratikka/internal/cache"
 )
+
+var (
+	MessagesReceivedCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "ratikka_mqtt_messages_received_total",
+		Help: "Total number of MQTT messages received from HSL broker.",
+	}, []string{"route"})
+
+	ParseErrorsCounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "ratikka_mqtt_parse_errors_total",
+		Help: "Total number of MQTT messages that failed to unmarshal.",
+	})
+)
+
+func init() {
+	prometheus.MustRegister(MessagesReceivedCounter)
+	prometheus.MustRegister(ParseErrorsCounter)
+}
+
 
 // HFPPayload represents the raw payload structure from HSL MQTT
 type HFPPayload struct {
@@ -111,6 +130,7 @@ func (w *IngestionWorker) Stop() {
 func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 	var payload HFPPayload
 	if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
+		ParseErrorsCounter.Inc()
 		// Log but don't crash on parsing errors (graceful parsing degradation)
 		log.Printf("Error unmarshaling MQTT payload: %v (raw: %s)\n", err, string(msg.Payload()))
 		return
@@ -143,6 +163,12 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 	if vp.Route != "" && vp.Oday != "" && vp.Dir != "" && vp.Start != "" {
 		tripId = constructGTFSTripID(vp.Route, vp.Oday, vp.Dir, vp.Start)
 	}
+
+	routeLabel := vp.Route
+	if routeLabel == "" {
+		routeLabel = "unknown"
+	}
+	MessagesReceivedCounter.WithLabelValues(routeLabel).Inc()
 
 	thinned := VehiclePosition{
 		Veh:    vp.Veh,
