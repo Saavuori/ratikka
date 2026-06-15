@@ -31,19 +31,9 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly no --maxmemory 64mb --maxmemory-policy allkeys-lru
 
-  ratikka-watchtower:
-    image: docker.io/containrrr/watchtower
-    restart: unless-stopped
-    volumes:
-      - /run/user/1000/podman/podman.sock:/var/run/docker.sock
-    environment:
-      - WATCHTOWER_POLL_INTERVAL=300
-      - WATCHTOWER_SCOPE=ratikka
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_LOG_LEVEL=info
-      - DOCKER_API_VERSION=1.45
-    labels:
-      - "com.centurylinklabs.watchtower.scope=ratikka"
+  # Note: auto-updates are handled by update.sh cron (every 5 min) instead of Watchtower,
+  # because Watchtower is incompatible with rootless Podman on RHEL.
+
 
   ratikka-cadvisor:
     image: gcr.io/cadvisor/cadvisor-arm64:v0.49.1
