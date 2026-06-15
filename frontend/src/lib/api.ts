@@ -1,4 +1,4 @@
-import type { TripDetailsResponse, StopDetailsResponse, VersionResponse } from '../types';
+import type { TripDetailsResponse, StopDetailsResponse, VersionResponse, RouteDetailsResponse } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -22,6 +22,14 @@ export async function fetchVersionInfo(): Promise<VersionResponse> {
   const res = await fetch(`${API_BASE}/version`);
   if (!res.ok) {
     throw new Error(`Failed to fetch version info: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchRouteDetails(shortName: string): Promise<RouteDetailsResponse> {
+  const res = await fetch(`${API_BASE}/route/${encodeURIComponent(shortName)}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch route details: ${res.statusText}`);
   }
   return res.json();
 }

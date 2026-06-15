@@ -5,11 +5,21 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: true,
     proxy: {
-      '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
+      '/api/v1/stream': {
+        target: 'ws://127.0.0.1:8080',
         ws: true,
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('error', (err) => {
+            console.error('WS Proxy Error:', err);
+          });
+        }
+      },
+      '/api': {
+        target: 'http://127.0.0.1:8080',
+        changeOrigin: true,
       },
     },
   },

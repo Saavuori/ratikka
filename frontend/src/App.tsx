@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useTramData } from './hooks/useTramData';
 import { Map } from './components/Map';
@@ -6,6 +6,7 @@ import { FilterPanel } from './components/FilterPanel';
 import { TramPopup } from './components/TramPopup';
 import { StopPopup } from './components/StopPopup';
 import { VersionBadge } from './components/VersionBadge';
+import { fetchRouteDetails } from './lib/api';
 import type { VehiclePosition } from './types';
 
 function App() {
@@ -23,6 +24,48 @@ function App() {
   // Line & Stop filtering states
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
   const [stopTripIds, setStopTripIds] = useState<string[] | null>(null);
+  const [routeGeometries, setRouteGeometries] = useState<Record<string, { geometries: string[]; color?: string }>>({});
+
+  // Fetch route geometries when selectedLines filter or selectedTram changes
+  useEffect(() => {
+    const linesToHighlight = [...selectedLines];
+    if (selectedTram && !linesToHighlight.includes(selectedTram.desi)) {
+      linesToHighlight.push(selectedTram.desi);
+    }
+
+    if (linesToHighlight.length === 0) {
+      setRouteGeometries({});
+      return;
+    }
+
+    setRouteGeometries((prev) => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach((line) => {
+        if (!linesToHighlight.includes(line)) {
+          delete updated[line];
+        }
+      });
+      return updated;
+    });
+
+    linesToHighlight.forEach((line) => {
+      if (!routeGeometries[line]) {
+        fetchRouteDetails(line)
+          .then((data) => {
+            setRouteGeometries((prev) => ({
+              ...prev,
+              [line]: {
+                geometries: data.geometries,
+                color: data.color,
+              },
+            }));
+          })
+          .catch((err) => {
+            console.error(`Failed to fetch route geometry for ${line}:`, err);
+          });
+      }
+    });
+  }, [selectedLines, selectedTram]);
 
   const handleSelectTram = (tram: VehiclePosition | null) => {
     setSelectedStop(null); // Mutually exclusive view
@@ -103,6 +146,7 @@ function App() {
         onSelectTram={handleSelectTram}
         onSelectStop={handleSelectStop}
         lineFilters={selectedLines}
+        routeGeometries={routeGeometries}
       />
 
       {/* Sidebar Filters Panel - receives unfiltered trams to show total counts */}
@@ -114,10 +158,9 @@ function App() {
         connectionStatus={connectionStatus}
       />
 
-      {/* Selected Vehicle Details Panel */}
       {selectedTram && (
         <TramPopup
-          tram={selectedTram}
+          tram={trams[selectedTram.veh] || selectedTram}
           onClose={() => {
             setSelectedTram(null);
             setStopTripIds(null);

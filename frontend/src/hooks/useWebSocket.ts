@@ -18,7 +18,8 @@ export function useWebSocket({ onMessage }: UseWebSocketOptions) {
 
     setStatus('connecting');
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/stream`;
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/api/v1/stream`;
 
     const socket = new WebSocket(wsUrl);
     socketRef.current = socket;
@@ -72,6 +73,7 @@ export function useWebSocket({ onMessage }: UseWebSocketOptions) {
         // Remove close listener to prevent auto-reconnect on deliberate unmount
         socketRef.current.onclose = null;
         socketRef.current.close();
+        socketRef.current = null;
       }
       if (reconnectTimeoutRef.current) {
         window.clearTimeout(reconnectTimeoutRef.current);

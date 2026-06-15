@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"ratikka/internal/cache"
@@ -102,6 +103,7 @@ type RouteResponse struct {
 }
 
 type StopArrival struct {
+	GtfsId           string  `json:"gtfsId"`
 	Name             string  `json:"name"`
 	Code             string  `json:"code"`
 	Lat              float64 `json:"lat"`
@@ -112,12 +114,25 @@ type StopArrival struct {
 	Realtime         bool    `json:"realtime"`
 }
 
+func convertTripID(id string) string {
+	replacer := strings.NewReplacer(
+		"_Mo_", "_Ma_",
+		"_Tu_", "_Ti_",
+		"_We_", "_Ke_",
+		"_Th_", "_To_",
+		"_Fr_", "_Pe_",
+		"_Sa_", "_La_",
+	)
+	return replacer.Replace(id)
+}
+
 func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
 	tripId := r.PathValue("tripId")
 	if tripId == "" {
 		http.Error(w, "missing tripId", http.StatusBadRequest)
 		return
 	}
+	tripId = convertTripID(tripId)
 
 	queryStr := `
 		query GetTripDetails($tripId: String!) {
@@ -130,7 +145,7 @@ func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
 					color
 				}
 				tripHeadsign
-				stoptimesForTrip {
+				stoptimes {
 					scheduledArrival
 					realtimeArrival
 					arrivalDelay
@@ -176,15 +191,16 @@ func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
 			Color:     t.Route.Color,
 		},
 		Headsign: t.TripHeadsign,
-		Stops:    make([]StopArrival, 0, len(t.StoptimesForTrip)),
+		Stops:    make([]StopArrival, 0, len(t.Stoptimes)),
 	}
 
 	if t.TripGeometry != nil {
 		resp.Geometry = t.TripGeometry.Points
 	}
 
-	for _, stoptime := range t.StoptimesForTrip {
+	for _, stoptime := range t.Stoptimes {
 		resp.Stops = append(resp.Stops, StopArrival{
+			GtfsId:           stoptime.Stop.GtfsId,
 			Name:             stoptime.Stop.Name,
 			Code:             stoptime.Stop.Code,
 			Lat:              stoptime.Stop.Lat,
@@ -329,4 +345,106 @@ func formatSeconds(sec int) string {
 	h := (sec / 3600) % 24
 	m := (sec / 60) % 60
 	return fmt.Sprintf("%02d:%02d", h, m)
+}
+
+type RouteDetailsResponse struct {
+	ShortName  string   `json:"shortName"`
+	Color      string   `json:"color"`
+	Geometries []string `json:"geometries"`
+}
+
+type rawRouteResponse struct {
+	Routes []struct {
+		GtfsId    string `json:"gtfsId"`
+		ShortName string `json:"shortName"`
+		Mode      string `json:"mode"`
+		Color     string `json:"color"`
+		Patterns  []struct {
+			PatternGeometry struct {
+				Points string `json:"points"`
+			} `json:"patternGeometry"`
+		} `json:"patterns"`
+	} `json:"routes"`
+}
+
+func (h *Handlers) RouteDetails(w http.ResponseWriter, r *http.Request) {
+	shortName := r.PathValue("shortName")
+	if shortName == "" {
+		http.Error(w, "missing shortName", http.StatusBadRequest)
+		return
+	}
+
+	queryStr := `
+		query GetRouteDetails($shortName: String!) {
+			routes(name: $shortName, transportModes: [TRAM]) {
+				gtfsId
+				shortName
+				mode
+				color
+				patterns {
+					patternGeometry {
+						points
+					}
+				}
+			}
+		}
+	`
+
+	variables := map[string]interface{}{"shortName": shortName}
+	var raw rawRouteResponse
+
+	if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
+		log.Printf("GraphQL query error for route %s: %v\n", shortName, err)
+		http.Error(w, "upstream api error", http.StatusBadGateway)
+		return
+	}
+
+	if len(raw.Routes) == 0 {
+		http.Error(w, "route not found", http.StatusNotFound)
+		return
+	}
+
+	// Find exact match or fallback to first
+	var matchedRoute *struct {
+		GtfsId    string `json:"gtfsId"`
+		ShortName string `json:"shortName"`
+		Mode      string `json:"mode"`
+		Color     string `json:"color"`
+		Patterns  []struct {
+			PatternGeometry struct {
+				Points string `json:"points"`
+			} `json:"patternGeometry"`
+		} `json:"patterns"`
+	}
+
+	for _, route := range raw.Routes {
+		if route.ShortName == shortName {
+			matchedRoute = &route
+			break
+		}
+	}
+
+	if matchedRoute == nil {
+		matchedRoute = &raw.Routes[0]
+	}
+
+	// Extract unique geometries
+	geometries := make([]string, 0, len(matchedRoute.Patterns))
+	seen := make(map[string]bool)
+	for _, pattern := range matchedRoute.Patterns {
+		pts := pattern.PatternGeometry.Points
+		if pts != "" && !seen[pts] {
+			seen[pts] = true
+			geometries = append(geometries, pts)
+		}
+	}
+
+	resp := RouteDetailsResponse{
+		ShortName:  matchedRoute.ShortName,
+		Color:      matchedRoute.Color,
+		Geometries: geometries,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }

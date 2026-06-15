@@ -100,6 +100,92 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
           </div>
         </div>
 
+
+        {/* Next Stop Info Callout */}
+        {!loading && !error && tripDetails && (() => {
+          const currentIndex = tripDetails.stops.findIndex(s => s.gtfsId === tram.stop);
+          const currentStop = currentIndex !== -1 ? tripDetails.stops[currentIndex] : null;
+          const isStopped = tram.drst === 1 || tram.spd === 0;
+
+          if (!currentStop) return null;
+
+          if (isStopped) {
+            const nextStop = currentIndex + 1 < tripDetails.stops.length ? tripDetails.stops[currentIndex + 1] : null;
+            return (
+              <div style={{
+                background: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                borderRadius: '12px',
+                padding: '12px 16px',
+                marginBottom: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                boxShadow: '0 4px 12px rgba(245, 158, 11, 0.05)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: '#f59e0b', display: 'block', letterSpacing: '0.05em' }}>Current Stop</span>
+                    <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#f1f5f9' }}>{currentStop.name}</span>
+                  </div>
+                  <span style={{
+                    fontSize: '0.65rem',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                    border: '1px solid #f59e0b',
+                    color: '#fbbf24',
+                    textTransform: 'uppercase',
+                    fontWeight: 'bold'
+                  }}>Stopped</span>
+                </div>
+
+                {nextStop && (
+                  <div style={{
+                    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                    paddingTop: '8px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <div>
+                      <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--accent-green)', display: 'block', letterSpacing: '0.05em' }}>Next Stop</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#cbd5e1' }}>{nextStop.name}</span>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 700, color: '#94a3b8', display: 'block' }}>ETA</span>
+                      <span style={{ fontSize: '1.0rem', fontWeight: 800, color: 'var(--accent-green)' }}>{nextStop.realtimeArrival}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          } else {
+            return (
+              <div style={{
+                background: 'rgba(16, 185, 129, 0.08)',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                borderRadius: '12px',
+                padding: '12px 16px',
+                marginBottom: '16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.05)'
+              }}>
+                <div>
+                  <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--accent-green)', display: 'block', letterSpacing: '0.05em' }}>Next Stop</span>
+                  <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#f1f5f9' }}>{currentStop.name}</span>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 700, color: '#94a3b8', display: 'block' }}>ETA</span>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-green)' }}>{currentStop.realtimeArrival}</span>
+                </div>
+              </div>
+            );
+          }
+        })()}
+
         {/* Loading Spinner */}
         {loading && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 0', gap: '12px', color: '#94a3b8' }}>
@@ -117,48 +203,105 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
         )}
 
         {/* Stops timeline */}
-        {!loading && !error && tripDetails && (
-          <div>
-            <div className="legend-title" style={{ marginBottom: '12px' }}>
-              Route Stop Schedule ({tripDetails.headsign ? `to ${tripDetails.headsign}` : 'Ongoing'})
-            </div>
+        {!loading && !error && tripDetails && (() => {
+          const currentIndex = tripDetails.stops.findIndex(s => s.gtfsId === tram.stop);
+          const isStopped = tram.drst === 1 || tram.spd === 0;
 
-            {tripDetails.stops.length === 0 ? (
-              <div style={{ fontSize: '0.75rem', color: '#64748b', padding: '16px 0', textAlign: 'center' }}>
-                No stop times available for this trip
+          let currentStopIndex = -1;
+          let nextStopIndex = -1;
+
+          if (currentIndex !== -1) {
+            if (isStopped) {
+              currentStopIndex = currentIndex;
+              nextStopIndex = currentIndex + 1 < tripDetails.stops.length ? currentIndex + 1 : -1;
+            } else {
+              nextStopIndex = currentIndex;
+            }
+          }
+
+          return (
+            <div>
+              <div className="legend-title" style={{ marginBottom: '12px' }}>
+                Route Stop Schedule ({tripDetails.headsign ? `to ${tripDetails.headsign}` : 'Ongoing'})
               </div>
-            ) : (
-              <div className="timeline-list">
-                {tripDetails.stops.map((stop, idx) => {
-                  return (
-                    <div key={idx} className="timeline-item">
-                      <span className="timeline-dot" />
 
-                      <div className="timeline-stop-info">
-                        <h4 className="timeline-stop-name">
-                          {stop.name}
-                        </h4>
-                        <span className="timeline-stop-code">
-                          Code: {stop.code || 'N/A'}
-                        </span>
-                      </div>
-                      <div className="timeline-time-info">
-                        <span className="timeline-time">
-                          {stop.realtimeArrival}
-                        </span>
-                        {stop.delay !== 0 && (
-                          <span className={`timeline-delay ${getDelayColor(stop.delay)}`}>
-                            {stop.delay < 0 ? '-' : '+'}{Math.round(Math.abs(stop.delay) / 60)} min
+              {tripDetails.stops.length === 0 ? (
+                <div style={{ fontSize: '0.75rem', color: '#64748b', padding: '16px 0', textAlign: 'center' }}>
+                  No stop times available for this trip
+                </div>
+              ) : (
+                <div className="timeline-list">
+                  {tripDetails.stops.map((stop, idx) => {
+                    const isPassed = currentIndex !== -1 && (isStopped ? idx < currentStopIndex : idx < nextStopIndex);
+                    const isCurrent = idx === currentStopIndex;
+                    const isNext = idx === nextStopIndex;
+
+                    let itemClass = "timeline-item";
+                    if (isPassed) itemClass += " passed";
+                    else if (isCurrent) itemClass += " active current";
+                    else if (isNext) itemClass += " active next";
+                    else itemClass += " upcoming";
+
+                    return (
+                      <div key={idx} className={itemClass}>
+                        <span className="timeline-dot" />
+
+                        <div className="timeline-stop-info">
+                          <h4 className="timeline-stop-name">
+                            {stop.name}
+                            {isCurrent && (
+                              <span style={{
+                                marginLeft: '8px',
+                                fontSize: '0.65rem',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                                border: '1px solid #f59e0b',
+                                color: '#fbbf24',
+                                textTransform: 'uppercase',
+                                fontWeight: 'bold',
+                                display: 'inline-block',
+                                verticalAlign: 'middle'
+                              }}>Stopped</span>
+                            )}
+                            {isNext && (
+                              <span style={{
+                                marginLeft: '8px',
+                                fontSize: '0.65rem',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                                border: '1px solid var(--accent-green)',
+                                color: '#34d399',
+                                textTransform: 'uppercase',
+                                fontWeight: 'bold',
+                                display: 'inline-block',
+                                verticalAlign: 'middle'
+                              }}>Next</span>
+                            )}
+                          </h4>
+                          <span className="timeline-stop-code">
+                            Code: {stop.code || 'N/A'}
                           </span>
-                        )}
+                        </div>
+                        <div className="timeline-time-info">
+                          <span className="timeline-time">
+                            {stop.realtimeArrival}
+                          </span>
+                          {stop.delay !== 0 && (
+                            <span className={`timeline-delay ${getDelayColor(stop.delay)}`}>
+                              {stop.delay < 0 ? '-' : '+'}{Math.round(Math.abs(stop.delay) / 60)} min
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

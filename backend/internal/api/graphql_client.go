@@ -45,7 +45,7 @@ type rawTripResponse struct {
 		GtfsId           string       `json:"gtfsId"`
 		Route            rawRouteInfo `json:"route"`
 		TripHeadsign     string       `json:"tripHeadsign"`
-		StoptimesForTrip []struct {
+		Stoptimes []struct {
 			ScheduledArrival   int `json:"scheduledArrival"`
 			RealtimeArrival    int `json:"realtimeArrival"`
 			ArrivalDelay       int `json:"arrivalDelay"`
@@ -61,7 +61,7 @@ type rawTripResponse struct {
 				Lat    float64 `json:"lat"`
 				Lon    float64 `json:"lon"`
 			} `json:"stop"`
-		} `json:"stoptimesForTrip"`
+		} `json:"stoptimes"`
 		TripGeometry *struct {
 			Length int    `json:"length"`
 			Points string `json:"points"`

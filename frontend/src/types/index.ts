@@ -27,6 +27,7 @@ export interface RouteResponse {
 }
 
 export interface StopArrival {
+  gtfsId?: string;
   name: string;
   code: string;
   lat: number;
@@ -43,6 +44,12 @@ export interface TripDetailsResponse {
   headsign: string;
   stops: StopArrival[];
   geometry?: string;
+}
+
+export interface RouteDetailsResponse {
+  shortName: string;
+  color: string;
+  geometries: string[];
 }
 
 export interface StopInfo {

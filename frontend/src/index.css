@@ -52,6 +52,17 @@ body {
   -webkit-user-select: none;
 }
 
+.map-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.map-container {
+  width: 100%;
+  height: 100%;
+}
+
 /* Glassmorphic Panel Base styling */
 .glass-panel {
   position: absolute;
@@ -349,6 +360,43 @@ body {
   border-color: var(--accent-green);
   background-color: var(--accent-green);
   box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+}
+
+/* Timeline progress states */
+.timeline-item.passed {
+  opacity: 0.45;
+}
+
+.timeline-item.passed .timeline-dot {
+  border-color: #475569;
+  background: #334155;
+}
+
+.timeline-item.active.current .timeline-dot {
+  border-color: #f59e0b;
+  background-color: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+}
+
+.timeline-item.active.current .timeline-stop-name {
+  color: #fbbf24;
+  font-weight: 800;
+}
+
+.timeline-item.active.next .timeline-dot {
+  border-color: var(--accent-green);
+  background-color: var(--accent-green);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+.timeline-item.active.next .timeline-stop-name {
+  color: var(--accent-green);
+  font-weight: 800;
+}
+
+.timeline-item.upcoming .timeline-dot {
+  border-color: #64748b;
+  background: #1e293b;
 }
 
 .timeline-stop-info {

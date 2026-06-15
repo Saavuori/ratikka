@@ -103,7 +103,7 @@ func TestHandlers_TripDetails(t *testing.T) {
 					"color": "007AC9"
 				},
 				"tripHeadsign": "Jätkäsaari",
-				"stoptimesForTrip": [
+				"stoptimes": [
 					{
 						"scheduledArrival": 33480,
 						"realtimeArrival": 33420,
@@ -310,5 +310,86 @@ func TestHandlers_StopDetails(t *testing.T) {
 	}
 	if dep.TripId != "HSL:1009_20260615_Su_2_0910" {
 		t.Errorf("expected tripId, got %s", dep.TripId)
+	}
+}
+
+func TestConvertTripID(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"HSL:1009_20260615_Mo_2_1404", "HSL:1009_20260615_Ma_2_1404"},
+		{"HSL:1003_20260615_Tu_2_1340", "HSL:1003_20260615_Ti_2_1340"},
+		{"HSL:2015_20260615_We_1_1320", "HSL:2015_20260615_Ke_1_1320"},
+		{"HSL:1008T_20260615_Th_1_1333", "HSL:1008T_20260615_To_1_1333"},
+		{"HSL:1006_20260615_Fr_1_1342", "HSL:1006_20260615_Pe_1_1342"},
+		{"HSL:1010_20260615_Sa_2_1350", "HSL:1010_20260615_La_2_1350"},
+		{"HSL:1004_20260615_Su_2_1336", "HSL:1004_20260615_Su_2_1336"},
+	}
+
+	for _, tc := range tests {
+		got := convertTripID(tc.input)
+		if got != tc.expected {
+			t.Errorf("convertTripID(%q) = %q; expected %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
+func TestHandlers_RouteDetails(t *testing.T) {
+	mockGraphQLResponse := `{
+		"data": {
+			"routes": [
+				{
+					"gtfsId": "HSL:1009",
+					"shortName": "9",
+					"mode": "TRAM",
+					"color": "007AC9",
+					"patterns": [
+						{
+							"patternGeometry": {
+								"points": "polyline_points_9"
+							}
+						}
+					]
+				}
+			]
+		}
+	}`
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(mockGraphQLResponse))
+	}))
+	defer ts.Close()
+
+	oldEndpoint := DigitransitURLEndpoint
+	DigitransitURLEndpoint = ts.URL
+	defer func() { DigitransitURLEndpoint = oldEndpoint }()
+
+	memCache := cache.NewMemoryCache()
+	mqtt := &mockMqttWorker{connected: true}
+	gql := NewGraphQLClient("test-api-key")
+	handlers := NewHandlers(memCache, gql, mqtt)
+
+	req := httptest.NewRequest("GET", "/api/v1/route/9", nil)
+	req.SetPathValue("shortName", "9")
+
+	rr := httptest.NewRecorder()
+	handlers.RouteDetails(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+
+	var resp RouteDetailsResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.ShortName != "9" {
+		t.Errorf("expected shortName 9, got %s", resp.ShortName)
+	}
+	if len(resp.Geometries) != 1 || resp.Geometries[0] != "polyline_points_9" {
+		t.Errorf("unexpected geometries: %v", resp.Geometries)
 	}
 }

@@ -163,7 +163,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for {
 		_, _, err := conn.Read(r.Context())
 		if err != nil {
-			// Expected when connection is closed
+			log.Printf("WS Connection closed or error: %v\n", err)
 			break
 		}
 	}
