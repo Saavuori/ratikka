@@ -18,12 +18,7 @@ sudo dnf install -y podman podman-compose
 echo "==> Setting up deployment directory and configurations..."
 mkdir -p ~/ratikka/monitoring/alloy && cd ~/ratikka
 
-cat << 'CADDY' > Caddyfile
-:80 {
-    reverse_proxy ratikka-backend:8080
-    encode gzip zstd
-}
-CADDY
+# Caddyfile will be generated dynamically below based on domain configuration
 
 cat << 'COMPOSE' > docker-compose.yml
 services:
@@ -173,11 +168,27 @@ set_env_var() {
 }
 
 set_env_var "DIGITRANSIT_API_KEY" "Enter your DIGITRANSIT_API_KEY (Required)" "true"
+set_env_var "DOMAIN_NAME" "Enter your Domain Name (e.g. ratikka.duckdns.org, leave blank for :80)" "false"
 set_env_var "GRAFANA_CLOUD_PROMETHEUS_URL" "Enter your GRAFANA_CLOUD_PROMETHEUS_URL (Optional, for monitoring)" "false"
 set_env_var "GRAFANA_CLOUD_PROMETHEUS_USER" "Enter your GRAFANA_CLOUD_PROMETHEUS_USER (Optional, for monitoring)" "false"
 set_env_var "GRAFANA_CLOUD_PROMETHEUS_TOKEN" "Enter your GRAFANA_CLOUD_PROMETHEUS_TOKEN (Optional, for monitoring)" "false"
 
 export $(grep -v '^#' .env | xargs)
+
+# 5. Generate Caddyfile based on configured domain
+echo "==> Configuring Caddy gateway..."
+caddy_domain=${DOMAIN_NAME:-:80}
+cat << CADDY > Caddyfile
+$caddy_domain {
+    reverse_proxy ratikka-backend:8080
+    encode gzip zstd
+}
+CADDY
+
 podman-compose up -d
 
-echo "==> Deployment complete! Access the dashboard at http://localhost"
+if [ "$caddy_domain" = ":80" ]; then
+    echo "==> Deployment complete! Access the dashboard at http://localhost"
+else
+    echo "==> Deployment complete! Access the dashboard at https://$caddy_domain"
+fi
