@@ -86,13 +86,16 @@ npm run dev
 
 ---
 
-## Deployment (Docker Compose)
+## Deployment
+
+### Local Deployment (Docker Compose)
 
 Builds the Node frontend, copies assets, compiles Go, and launches the entire network stack:
 
 ```bash
 # Set your API Key
-$env:DIGITRANSIT_API_KEY="your-key"
+export DIGITRANSIT_API_KEY="your-key"   # Linux/macOS
+# or $env:DIGITRANSIT_API_KEY="your-key"  # Windows PowerShell
 
 # Build and start services
 docker compose up --build -d
@@ -102,3 +105,55 @@ curl http://localhost/api/v1/health
 ```
 
 Access the map dashboard in your web browser at `http://localhost`.
+
+### Production Deployment (RHEL & Podman)
+
+For deployment on a clean RHEL system (using rootless Podman and Podman Compose):
+
+#### Automated Deployment
+An automated installer script [deploy.sh](file:///c:/Antigravity/ratikka/deploy.sh) is provided to configure the environment:
+
+1. Clone the repository to the RHEL host.
+2. Run the deployment script:
+   ```bash
+   chmod +x deploy.sh
+   ./deploy.sh
+   ```
+
+#### Manual Deployment
+If you prefer configuring the system manually, follow these steps:
+
+1. **Allow Rootless Port Binding**:
+   Allow rootless Podman to bind directly to web ports 80 and 443:
+   ```bash
+   sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+   echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee -a /etc/sysctl.d/99-podman-ports.conf
+   ```
+
+2. **Configure Firewall**:
+   Open host-level firewalls for public HTTP/HTTPS traffic:
+   ```bash
+   sudo firewall-cmd --permanent --add-service=http
+   sudo firewall-cmd --permanent --add-service=https
+   sudo firewall-cmd --reload
+   ```
+
+3. **Install Core Toolchain**:
+   Install Podman, Podman Compose, and Git:
+   ```bash
+   sudo dnf install -y podman podman-compose git
+   ```
+
+4. **Initialize Environment**:
+   Create a `.env` file in the project root containing your API key:
+   ```bash
+   echo "DIGITRANSIT_API_KEY=your_api_key_here" > .env
+   ```
+
+5. **Start Services**:
+   Launch the container stack:
+   ```bash
+   export $(grep -v '^#' .env | xargs)
+   podman-compose up -d --build
+   ```
+
