@@ -108,101 +108,48 @@ Access the map dashboard in your web browser at `http://localhost`.
 
 ### Production Deployment (RHEL & Podman)
 
-Because the application is built and published by the CI/CD workflow, the pre-compiled production images are hosted on the GitHub Container Registry (`ghcr.io/saavuori/ratikka`). **There is no need to clone the repository or compile source code on the production host.**
+Because the application is built and published by the CI/CD workflow, the production images are hosted on the GitHub Container Registry (`ghcr.io/saavuori/ratikka`). You do not need to clone the repository or compile source code on the target machine.
 
-#### Automated Deployment (Bootstrap Script)
+To deploy the application on a clean RHEL system:
 
-You can deploy the application on a clean RHEL system by downloading and executing the standalone bootstrap script:
-
+#### 1. Configure Host Permissions & Firewall
+Run the following commands to configure RHEL for rootless Podman port binding (ports 80/443) and open the firewall:
 ```bash
-# 1. Download the deployment script
-curl -sSL -o deploy.sh https://raw.githubusercontent.com/Saavuori/ratikka/main/deploy.sh
+# Allow rootless Podman to bind web ports
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee -a /etc/sysctl.d/99-podman-ports.conf
 
-# 2. Make it executable and run it
-chmod +x deploy.sh
-./deploy.sh
+# Open HTTP and HTTPS firewalls
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=https
+sudo firewall-cmd --reload || echo "Firewall configuration skipped or firewalld not running"
 ```
 
-The script will configure unprivileged ports, set the firewall, install `podman` and `podman-compose`, create a deployment directory (`~/ratikka`), write the required configuration files (`Caddyfile` and `docker-compose.yml`), and start the container stack.
+#### 2. Install Podman & Podman Compose
+```bash
+sudo dnf install -y podman podman-compose
+```
 
-#### Manual Deployment (Without Cloning)
+#### 3. Setup Deployment Directory & Download Configurations
+Create a folder and download only the orchestration configurations directly from the repository:
+```bash
+# Create and move to workspace
+mkdir -p ~/ratikka && cd ~/ratikka
 
-If you prefer configuring the system manually:
+# Fetch configuration files
+curl -sSL -O https://raw.githubusercontent.com/Saavuori/ratikka/main/docker-compose.yml
+curl -sSL -O https://raw.githubusercontent.com/Saavuori/ratikka/main/Caddyfile
+```
 
-1. **Allow Rootless Port Binding**:
-   Allow rootless Podman to bind directly to web ports 80 and 443:
-   ```bash
-   sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
-   echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee -a /etc/sysctl.d/99-podman-ports.conf
-   ```
+#### 4. Configure API Key & Run
+```bash
+# Save your API key
+echo "DIGITRANSIT_API_KEY=your_digitransit_api_key" > .env
 
-2. **Configure Firewall**:
-   Open host-level firewalls for public HTTP/HTTPS traffic:
-   ```bash
-   sudo firewall-cmd --permanent --add-service=http
-   sudo firewall-cmd --permanent --add-service=https
-   sudo firewall-cmd --reload || echo "Firewall configuration skipped or firewalld not running"
-   ```
+# Export variables and start services rootless
+export $(grep -v '^#' .env | xargs)
+podman-compose up -d
+```
 
-3. **Install Podman and Podman Compose**:
-   ```bash
-   sudo dnf install -y podman podman-compose
-   ```
-
-4. **Prepare Deployment Workspace**:
-   Create a directory `~/ratikka` and add the configurations:
-   
-   *Create `~/ratikka/Caddyfile`:*
-   ```caddy
-   :80 {
-       reverse_proxy ratikka-backend:8080
-       encode gzip zstd
-   }
-   ```
-
-   *Create `~/ratikka/docker-compose.yml`:*
-   ```yaml
-   services:
-     ratikka-caddy:
-       image: docker.io/library/caddy:2-alpine
-       restart: unless-stopped
-       ports:
-         - "80:80"
-         - "443:443"
-         - "443:443/udp"
-       volumes:
-         - ./Caddyfile:/etc/caddy/Caddyfile:ro,Z
-         - caddy-data:/data:Z
-         - caddy-config:/config:Z
-       depends_on:
-         - ratikka-backend
-
-     ratikka-backend:
-       image: ghcr.io/saavuori/ratikka:latest
-       restart: unless-stopped
-       environment:
-         - DIGITRANSIT_API_KEY=${DIGITRANSIT_API_KEY}
-         - REDIS_URL=redis://ratikka-cache:6379
-         - MQTT_BROKER=tls://mqtt.hsl.fi:8883
-         - PORT=8080
-       depends_on:
-         - ratikka-cache
-
-     ratikka-cache:
-       image: docker.io/library/redis:7-alpine
-       restart: unless-stopped
-       command: redis-server --appendonly no --maxmemory 64mb --maxmemory-policy allkeys-lru
-
-   volumes:
-     caddy-data:
-     caddy-config:
-   ```
-
-5. **Initialize Environment and Start**:
-   ```bash
-   echo "DIGITRANSIT_API_KEY=your_api_key_here" > .env
-   export $(grep -v '^#' .env | xargs)
-   podman-compose up -d
-   ```
 
 
