@@ -111,7 +111,7 @@ Access the map dashboard in your web browser at `http://localhost`.
 For deployment on a clean RHEL system (using rootless Podman and Podman Compose):
 
 #### Automated Deployment
-An automated installer script [deploy.sh](file:///c:/Antigravity/ratikka/deploy.sh) is provided to configure the environment:
+An automated installer script [deploy.sh](./deploy.sh) is provided to configure the environment:
 
 1. Clone the repository to the RHEL host.
 2. Run the deployment script:
