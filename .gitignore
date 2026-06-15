@@ -9,7 +9,7 @@ dist/
 backend/internal/api/dist/*
 !backend/internal/api/dist/index.html
 backend/internal/api/placeholder_dist/
-ratikka
+/ratikka
 
 # IDE and OS files
 .idea/
