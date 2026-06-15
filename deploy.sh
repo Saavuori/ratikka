@@ -14,12 +14,134 @@ sudo firewall-cmd --reload || echo "Firewall reload skipped (firewalld may not b
 echo "==> Installing Podman & Podman Compose..."
 sudo dnf install -y podman podman-compose
 
-# 3. Create directory and download configurations
+# 3. Create directory and configurations
 echo "==> Setting up deployment directory and configurations..."
 mkdir -p ~/ratikka/monitoring/alloy && cd ~/ratikka
-curl -sSL -O https://raw.githubusercontent.com/Saavuori/ratikka/main/docker-compose.yml
-curl -sSL -O https://raw.githubusercontent.com/Saavuori/ratikka/main/Caddyfile
-curl -sSL -o monitoring/alloy/config.alloy https://raw.githubusercontent.com/Saavuori/ratikka/main/monitoring/alloy/config.alloy
+
+cat << 'CADDY' > Caddyfile
+:80 {
+    reverse_proxy ratikka-backend:8080
+    encode gzip zstd
+}
+CADDY
+
+cat << 'COMPOSE' > docker-compose.yml
+services:
+  ratikka-caddy:
+    image: docker.io/library/caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,Z
+      - caddy-data:/data:Z
+      - caddy-config:/config:Z
+    depends_on:
+      - ratikka-backend
+
+  ratikka-backend:
+    image: ghcr.io/saavuori/ratikka:latest
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.scope=ratikka"
+    environment:
+      - DIGITRANSIT_API_KEY=${DIGITRANSIT_API_KEY}
+      - REDIS_URL=redis://ratikka-cache:6379
+      - MQTT_BROKER=tls://mqtt.hsl.fi:8883
+      - PORT=8080
+    depends_on:
+      - ratikka-cache
+
+  ratikka-cache:
+    image: docker.io/library/redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly no --maxmemory 64mb --maxmemory-policy allkeys-lru
+
+  ratikka-watchtower:
+    image: docker.io/containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_SCOPE=ratikka
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_LOG_LEVEL=info
+      - DOCKER_API_VERSION=1.45
+    labels:
+      - "com.centurylinklabs.watchtower.scope=ratikka"
+
+  ratikka-cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /var/lib/containers/:/var/lib/containers:ro
+      - /dev/disk/:/dev/disk:ro
+
+  ratikka-alloy:
+    image: docker.io/grafana/alloy:latest
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro,Z
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    environment:
+      - GRAFANA_CLOUD_PROMETHEUS_URL=${GRAFANA_CLOUD_PROMETHEUS_URL}
+      - GRAFANA_CLOUD_PROMETHEUS_USER=${GRAFANA_CLOUD_PROMETHEUS_USER}
+      - GRAFANA_CLOUD_PROMETHEUS_TOKEN=${GRAFANA_CLOUD_PROMETHEUS_TOKEN}
+    depends_on:
+      - ratikka-backend
+      - ratikka-cadvisor
+
+volumes:
+  caddy-data:
+  caddy-config:
+COMPOSE
+
+cat << 'ALLOY' > monitoring/alloy/config.alloy
+prometheus.exporter.unix "node" {
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+  rootfs_path = "/rootfs"
+}
+
+prometheus.scrape "scrape_node" {
+  targets    = prometheus.exporter.unix.node.targets
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.scrape "scrape_backend" {
+  targets = [
+    {"__address__" = "ratikka-backend:8080"},
+  ]
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.scrape "scrape_cadvisor" {
+  targets = [
+    {"__address__" = "ratikka-cadvisor:8080"},
+  ]
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_PROMETHEUS_URL")
+
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_PROMETHEUS_USER")
+      password = sys.env("GRAFANA_CLOUD_PROMETHEUS_TOKEN")
+    }
+  }
+}
+ALLOY
 
 # 4. Set environment configurations
 if [ -f .env ]; then
@@ -59,4 +181,3 @@ export $(grep -v '^#' .env | xargs)
 podman-compose up -d
 
 echo "==> Deployment complete! Access the dashboard at http://localhost"
-

@@ -15,9 +15,6 @@ services:
 
   ratikka-backend:
     image: ghcr.io/saavuori/ratikka:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
     restart: unless-stopped
     labels:
       - "com.centurylinklabs.watchtower.scope=ratikka"
