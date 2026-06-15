@@ -1,0 +1,18 @@
+# Node modules & build outputs
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+
+# Go binary build
+backend/internal/api/dist/*
+!backend/internal/api/dist/index.html
+backend/internal/api/placeholder_dist/
+ratikka
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,36 @@
+services:
+  ratikka-caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,Z
+      - caddy-data:/data:Z
+      - caddy-config:/config:Z
+    depends_on:
+      - ratikka-backend
+
+  ratikka-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - DIGITRANSIT_API_KEY=${DIGITRANSIT_API_KEY}
+      - REDIS_URL=redis://ratikka-cache:6379
+      - MQTT_BROKER=tls://mqtt.hsl.fi:8883
+      - PORT=8080
+    depends_on:
+      - ratikka-cache
+
+  ratikka-cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly no --maxmemory 64mb --maxmemory-policy allkeys-lru
+
+volumes:
+  caddy-data:
+  caddy-config:
