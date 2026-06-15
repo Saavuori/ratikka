@@ -248,6 +248,30 @@ body {
   align-items: center;
 }
 
+.callout-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.callout-val {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #f1f5f9;
+}
+
+.callout-val.next-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.callout-val.next-eta {
+  font-size: 1.0rem;
+  font-weight: 800;
+  color: var(--accent-green);
+}
+
 .stop-status-badge {
   margin-left: 8px;
   font-size: 0.65rem;
@@ -1042,36 +1066,110 @@ body {
     font-size: 0.9rem !important;
   }
 
+  /* Telemetry metrics on a single horizontal row */
   .metric-grid {
-    margin-top: 8px !important;
-    margin-bottom: 8px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    margin: 8px 0 !important;
+    background: rgba(30, 41, 59, 0.4) !important;
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    border-radius: 8px !important;
+    padding: 6px 12px !important;
     gap: 8px !important;
   }
 
   .metric-card {
-    padding: 8px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 4px !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
   }
 
   .metric-label {
-    font-size: 0.6rem !important;
+    font-size: 0.65rem !important;
+    margin-top: 0 !important;
+    margin-right: 2px !important;
+    text-transform: capitalize !important;
   }
 
   .metric-val {
-    font-size: 0.8rem !important;
+    font-size: 0.75rem !important;
+    margin-top: 0 !important;
   }
 
+  /* Compact next stop callout as a single line */
   .next-stop-callout {
-    padding: 8px 12px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 6px 10px !important;
     margin-bottom: 8px !important;
     border-radius: 8px !important;
+    background: rgba(30, 41, 59, 0.25) !important;
+    border: 1px solid rgba(255, 255, 255, 0.04) !important;
+    box-shadow: none !important;
   }
 
   .next-stop-callout.stopped {
-    gap: 4px !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    gap: 0 !important;
+  }
+
+  .next-stop-callout.moving {
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+  }
+
+  .callout-main {
+    display: flex !important;
+    align-items: center !important;
+  }
+
+  .callout-label {
+    display: none !important; /* Hide labels like "Current Stop" on mobile */
+  }
+
+  .callout-badge {
+    display: none !important; /* Hide Stopped badge, dot is enough */
+  }
+
+  .callout-val {
+    font-size: 0.75rem !important;
+  }
+
+  .callout-val.next-name {
+    font-size: 0.75rem !important;
+  }
+
+  .callout-val.next-eta {
+    font-size: 0.75rem !important;
+    margin-left: 4px !important;
   }
 
   .next-stop-sub {
-    padding-top: 6px !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+  }
+
+  .next-stop-sub::before {
+    content: "→" !important;
+    color: var(--accent-green) !important;
+    margin-right: 4px !important;
+    font-weight: bold !important;
   }
 
   /* Hide raw status text badges on mobile stops list to prevent text wrap */

@@ -101,12 +101,12 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
             const nextStop = currentIndex + 1 < tripDetails.stops.length ? tripDetails.stops[currentIndex + 1] : null;
             return (
               <div className="next-stop-callout stopped">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="callout-main">
                   <div>
-                    <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: '#f59e0b', display: 'block', letterSpacing: '0.05em' }}>Current Stop</span>
-                    <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#f1f5f9' }}>{currentStop.name}</span>
+                    <span className="callout-label" style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: '#f59e0b', display: 'block', letterSpacing: '0.05em' }}>Current Stop</span>
+                    <span className="callout-val">{currentStop.name}</span>
                   </div>
-                  <span style={{
+                  <span className="callout-badge" style={{
                     fontSize: '0.65rem',
                     padding: '2px 6px',
                     borderRadius: '4px',
@@ -121,12 +121,12 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
                 {nextStop && (
                   <div className="next-stop-sub">
                     <div>
-                      <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--accent-green)', display: 'block', letterSpacing: '0.05em' }}>Next Stop</span>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#cbd5e1' }}>{nextStop.name}</span>
+                      <span className="callout-label" style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--accent-green)', display: 'block', letterSpacing: '0.05em' }}>Next Stop</span>
+                      <span className="callout-val next-name">{nextStop.name}</span>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 700, color: '#94a3b8', display: 'block' }}>ETA</span>
-                      <span style={{ fontSize: '1.0rem', fontWeight: 800, color: 'var(--accent-green)' }}>{nextStop.realtimeArrival}</span>
+                      <span className="callout-label" style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 700, color: '#94a3b8', display: 'block' }}>ETA</span>
+                      <span className="callout-val next-eta">{nextStop.realtimeArrival}</span>
                     </div>
                   </div>
                 )}
@@ -136,12 +136,12 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
             return (
               <div className="next-stop-callout moving">
                 <div>
-                  <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--accent-green)', display: 'block', letterSpacing: '0.05em' }}>Next Stop</span>
-                  <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#f1f5f9' }}>{currentStop.name}</span>
+                  <span className="callout-label" style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--accent-green)', display: 'block', letterSpacing: '0.05em' }}>Next Stop</span>
+                  <span className="callout-val">{currentStop.name}</span>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 700, color: '#94a3b8', display: 'block' }}>ETA</span>
-                  <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-green)' }}>{currentStop.realtimeArrival}</span>
+                  <span className="callout-label" style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 700, color: '#94a3b8', display: 'block' }}>ETA</span>
+                  <span className="callout-val next-eta">{currentStop.realtimeArrival}</span>
                 </div>
               </div>
             );
