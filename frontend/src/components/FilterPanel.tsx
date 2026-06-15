@@ -72,12 +72,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', fontSize: '0.75rem', color: '#94a3b8' }}>
-        <span>Active Vehicles: <strong style={{ color: '#e2e8f0' }}>{activeVehiclesCount}</strong></span>
+      <div className="panel-stats">
+        <span className="stats-active-vehicles">Active Vehicles: <strong style={{ color: '#e2e8f0' }}>{activeVehiclesCount}</strong></span>
+        <span className="stats-active-vehicles-compact">Active: <strong style={{ color: '#e2e8f0' }}>{activeVehiclesCount}</strong></span>
         {selectedLines.length > 0 && (
           <button
             onClick={onClearFilters}
-            style={{ background: 'none', border: 'none', color: '#34d399', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+            className="clear-filters-btn"
           >
             Show All
           </button>
@@ -85,8 +86,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       </div>
 
       {/* Filter Section */}
-      <div style={{ flex: 1, overflowY: 'auto', marginTop: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '12px', letterSpacing: '0.05em' }}>
+      <div className="filter-scroll-area">
+        <div className="filter-section-title">
           <Filter size={12} />
           <span>Filter by Line</span>
         </div>
@@ -114,6 +115,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                   <span className="line-btn-icon">
                     {isSelected ? <Eye size={10} /> : <EyeOff size={10} />}
                   </span>
+                  <span className="mobile-line-badge">{lineCount}</span>
                 </button>
               );
             })}
@@ -124,18 +126,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       {/* Legend */}
       <div className="legend-section">
         <div className="legend-title">Map Legend</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div className="legend-list">
           <div className="legend-item">
             <span className="legend-color" style={{ backgroundColor: '#0984e3' }} />
-            <span>Tram moving</span>
+            <span>Moving</span>
           </div>
           <div className="legend-item">
             <span className="legend-color" style={{ backgroundColor: '#e17055' }} />
-            <span>Tram stopped / doors open</span>
+            <span>Stopped</span>
           </div>
           <div className="legend-item">
             <span className="legend-color" style={{ backgroundColor: '#20bf6b' }} />
-            <span>Tram stop (click for departures)</span>
+            <span>Stop</span>
           </div>
         </div>
       </div>

@@ -93,6 +93,66 @@ body {
   transform: translateX(-100%) translateX(-16px);
 }
 
+.panel-stats {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.clear-filters-btn {
+  background: none;
+  border: none;
+  color: #34d399;
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0;
+  font-family: inherit;
+  transition: opacity 0.2s;
+}
+
+.clear-filters-btn:hover {
+  opacity: 0.8;
+}
+
+.filter-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.filter-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  letter-spacing: 0.05em;
+}
+
+.legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stats-active-vehicles-compact {
+  display: none;
+}
+
+.stats-active-vehicles {
+  display: block;
+}
+
+.mobile-line-badge {
+  display: none;
+}
+
 /* Sidebar Collapse Toggle Tab */
 .filter-toggle-tab {
   position: absolute;
@@ -687,14 +747,14 @@ body {
     border-left: none;
     border-right: none;
     border-bottom: none;
-    padding: 14px 16px;
+    padding: 12px 16px;
     z-index: 110;
     box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
   }
 
   /* Adjust headers to be compact on mobile */
   .panel-header {
-    padding-bottom: 8px !important;
+    padding-bottom: 6px !important;
   }
 
   .panel-title {
@@ -702,8 +762,110 @@ body {
   }
 
   .panel-subtitle {
-    font-size: 0.68rem !important;
-    margin-top: 1px !important;
+    display: none !important; /* Hide subtitle to save space */
+  }
+
+  /* Compact connection status indicator */
+  .status-pill {
+    padding: 4px !important;
+    background: transparent !important;
+    border: none !important;
+  }
+
+  .status-text {
+    display: none !important; /* Hide connected text, only show light */
+  }
+
+  /* Compact Stats Bar */
+  .panel-stats {
+    padding: 6px 0 !important;
+  }
+
+  .stats-active-vehicles {
+    display: none !important;
+  }
+
+  .stats-active-vehicles-compact {
+    display: block !important;
+    font-size: 0.7rem;
+    color: #94a3b8;
+  }
+
+  /* Hide filter icon section title on mobile to save vertical space */
+  .filter-section-title {
+    display: none !important;
+  }
+
+  .filter-scroll-area {
+    margin-top: 4px !important;
+  }
+
+  /* Re-style grid of lines into a wrapping set of pill-chips */
+  .line-grid {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    margin-top: 4px !important;
+  }
+
+  .line-btn {
+    width: auto !important;
+    min-width: 36px !important;
+    height: 28px !important;
+    flex-direction: row !important;
+    padding: 0 10px !important;
+    border-radius: 9999px !important;
+    gap: 0 !important;
+    justify-content: center !important;
+    align-items: center !important;
+    box-sizing: border-box !important;
+  }
+
+  .line-btn-count {
+    display: none !important; /* hide count text like "2 trams" */
+  }
+
+  .line-btn-icon {
+    display: none !important; /* hide eye icon */
+  }
+
+  .line-btn-label {
+    font-size: 0.8rem !important;
+    font-weight: 800 !important;
+  }
+
+  .mobile-line-badge {
+    display: none !important;
+  }
+
+  /* Horizontal Compact Legend */
+  .legend-section {
+    padding-top: 8px !important;
+    margin-top: 8px !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+  }
+
+  .legend-title {
+    display: none !important; /* Hide legend title to save space */
+  }
+
+  .legend-list {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 12px !important;
+    justify-content: center !important;
+  }
+
+  .legend-item {
+    margin-bottom: 0 !important;
+    font-size: 0.7rem !important;
+    gap: 4px !important;
+  }
+
+  .legend-color {
+    width: 8px !important;
+    height: 8px !important;
+    border-width: 1px !important;
   }
 
   /* Make MapLibre navigation controls (zoom, compass) compact on mobile */
