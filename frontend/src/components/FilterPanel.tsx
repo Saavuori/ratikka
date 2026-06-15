@@ -1,6 +1,6 @@
 import React from 'react';
 import type { VehiclePosition } from '../types';
-import { Filter, Eye, EyeOff } from 'lucide-react';
+import { Filter, Eye, EyeOff, ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal } from 'lucide-react';
 
 interface FilterPanelProps {
   trams: Record<string, VehiclePosition>;
@@ -8,6 +8,8 @@ interface FilterPanelProps {
   onToggleLine: (line: string) => void;
   onClearFilters: () => void;
   connectionStatus: string;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
@@ -16,6 +18,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   onToggleLine,
   onClearFilters,
   connectionStatus,
+  isCollapsed,
+  onToggleCollapse,
 }) => {
   const activeLines = Array.from(
     new Set(Object.values(trams).map((t) => t.desi))
@@ -31,7 +35,20 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   const activeVehiclesCount = Object.keys(trams).length;
 
   return (
-    <div className="glass-panel filter-panel">
+    <div className={`glass-panel filter-panel ${isCollapsed ? 'collapsed' : ''}`}>
+      {/* Collapse/Expand Toggle Tab */}
+      <button 
+        className="filter-toggle-tab" 
+        onClick={onToggleCollapse}
+        aria-label={isCollapsed ? 'Show Filters' : 'Hide Filters'}
+      >
+        <span className="icon-desktop">
+          {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+        </span>
+        <span className="icon-mobile">
+          {isCollapsed ? <SlidersHorizontal size={18} /> : <ChevronDown size={18} />}
+        </span>
+      </button>
       {/* Header */}
       <div className="panel-header">
         <div>

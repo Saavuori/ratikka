@@ -83,9 +83,54 @@ body {
 .filter-panel {
   top: 16px;
   left: 16px;
-  width: 320px;
+  width: 280px;
   max-height: calc(100vh - 32px);
-  padding: 20px;
+  padding: 16px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.filter-panel.collapsed {
+  transform: translateX(-100%) translateX(-16px);
+}
+
+/* Sidebar Collapse Toggle Tab */
+.filter-toggle-tab {
+  position: absolute;
+  right: -36px;
+  top: 16px;
+  width: 36px;
+  height: 40px;
+  background: var(--bg-panel);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-glow);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #cbd5e1;
+  box-shadow: 4px 4px 12px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0;
+  z-index: 101;
+}
+
+.filter-toggle-tab:hover {
+  color: #34d399;
+  background: rgba(15, 23, 42, 0.95);
+  border-color: var(--accent-green);
+}
+
+.filter-toggle-tab .icon-desktop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filter-toggle-tab .icon-mobile {
+  display: none;
 }
 
 /* DetailPopup Specific (Shared between Tram and Stop popups) */
@@ -164,8 +209,8 @@ body {
 /* Grid & List Containers */
 .line-grid {
   display: grid;
-  grid-template-cols: repeat(4, 1fr);
-  gap: 8px;
+  grid-template-cols: repeat(3, 1fr);
+  gap: 6px;
   margin-top: 12px;
 }
 
@@ -175,7 +220,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 10px 4px;
+  padding: 8px 4px;
   border-radius: 10px;
   background: rgba(30, 41, 59, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.04);
@@ -198,7 +243,7 @@ body {
 }
 
 .line-btn-label {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 800;
 }
 
@@ -583,4 +628,79 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+/* Mobile responsive layout (max-width: 768px) */
+@media (max-width: 768px) {
+  /* Position filter panel as bottom sheet */
+  .filter-panel {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-height: 55vh;
+    border-radius: 16px 16px 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding: 16px 20px;
+    z-index: 100;
+  }
+
+  .filter-panel.collapsed {
+    transform: translateY(100%);
+  }
+
+  /* Re-align the toggle tab for mobile bottom-sheet style */
+  .filter-toggle-tab {
+    right: 16px;
+    top: -40px;
+    width: 44px;
+    height: 40px;
+    border-radius: 8px 8px 0 0;
+    border: 1px solid var(--border-glow);
+    border-bottom: none;
+    border-left: 1px solid var(--border-glow);
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  .filter-toggle-tab .icon-desktop {
+    display: none;
+  }
+
+  .filter-toggle-tab .icon-mobile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Position detail panels (Tram/Stop popups) as bottom sheets */
+  .detail-popup {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-height: 50vh;
+    border-radius: 16px 16px 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding: 20px;
+    z-index: 110;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Adjust scrollable container heights to fit within 50vh bottom sheets */
+  .timeline-container, 
+  .departure-list {
+    max-height: calc(50vh - 120px) !important;
+  }
+
+  /* Version badge repositioning to avoid overlaps */
+  .version-badge {
+    bottom: 48px;
+    left: 8px;
+  }
 }

@@ -21,6 +21,18 @@ function App() {
     code: string;
   } | null>(null);
 
+  // Sidebar collapse state: defaults to collapsed on mobile, open on desktop
+  const [isFilterCollapsed, setIsFilterCollapsed] = useState<boolean>(
+    typeof window !== 'undefined' ? window.innerWidth <= 768 : false
+  );
+
+  // Auto-collapse sidebar when a tram or stop is selected on mobile
+  useEffect(() => {
+    if ((selectedTram || selectedStop) && window.innerWidth <= 768) {
+      setIsFilterCollapsed(true);
+    }
+  }, [selectedTram, selectedStop]);
+
   // Line & Stop filtering states
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
   const [stopTripIds, setStopTripIds] = useState<string[] | null>(null);
@@ -156,6 +168,8 @@ function App() {
         onToggleLine={handleToggleLine}
         onClearFilters={handleClearFilters}
         connectionStatus={connectionStatus}
+        isCollapsed={isFilterCollapsed}
+        onToggleCollapse={() => setIsFilterCollapsed(!isFilterCollapsed)}
       />
 
       {selectedTram && (
