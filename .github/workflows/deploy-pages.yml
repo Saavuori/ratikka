@@ -1,0 +1,51 @@
+name: Deploy Changelog to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - 'CHANGELOG.md'
+      - 'scripts/build-changelog.js'
+      - 'scripts/changelog-template.html'
+      - '.github/workflows/deploy-pages.yml'
+
+# Allow only one concurrent deployment, skipping runs in-progress
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Compile CHANGELOG.md to HTML
+        run: node scripts/build-changelog.js
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist-changelog'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ratikka Changelog — Live HSL Tracker Updates</title>
+  <!-- Outfit / Inter fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-color: #020617;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --accent-green: #00b894;
+      --accent-blue: #0984e3;
+      --accent-coral: #e17055;
+      --accent-gold: #fdcb6e;
+      --border-glow: rgba(255, 255, 255, 0.05);
+      --glass-bg: rgba(15, 23, 42, 0.65);
+      --glass-glow: rgba(255, 255, 255, 0.03);
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-primary);
+      font-family: 'Inter', -apple-system, sans-serif;
+      margin: 0;
+      padding: 0;
+      line-height: 1.6;
+      min-height: 100vh;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(0, 184, 148, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(9, 132, 227, 0.08) 0px, transparent 50%);
+      background-attachment: fixed;
+    }
+
+    /* Container */
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 60px 20px;
+      position: relative;
+    }
+
+    /* Header styling */
+    header {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+
+    header h1 {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 3rem;
+      margin: 0 0 10px 0;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #34d399 0%, #00b894 50%, #0984e3 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 2px 10px rgba(0, 184, 148, 0.2));
+    }
+
+    header p {
+      color: var(--text-secondary);
+      font-size: 1.1rem;
+      margin: 0;
+      font-weight: 500;
+    }
+
+    /* Timeline and Card Design */
+    .changelog-content {
+      position: relative;
+      padding-left: 32px;
+      border-left: 2px solid rgba(255, 255, 255, 0.06);
+      margin-left: 10px;
+    }
+
+    /* Horizontal lines are hidden, we use custom card layout */
+    hr {
+      border: none;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.06);
+      margin: 48px 0;
+      display: none; /* Hidden because each version header acts as a new card */
+    }
+
+    /* Version Section */
+    .version-header {
+      position: relative;
+      margin-top: 50px;
+    }
+
+    .version-header::before {
+      content: '';
+      position: absolute;
+      left: -43px;
+      top: 10px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--bg-color);
+      border: 4px solid var(--accent-green);
+      box-shadow: 0 0 12px var(--accent-green);
+      transition: all 0.3s ease;
+      z-index: 2;
+    }
+
+    .version-header:hover::before {
+      background: var(--accent-green);
+      transform: scale(1.2);
+    }
+
+    .version-header h2 {
+      margin: 0 0 20px 0;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 1.65rem;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .version-tag {
+      background: rgba(0, 184, 148, 0.1);
+      border: 1px solid rgba(0, 184, 148, 0.25);
+      color: #34d399;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+
+    .version-date {
+      color: var(--text-secondary);
+      font-size: 1rem;
+      font-weight: 500;
+    }
+
+    /* Grouping changes inside a glassmorphic Card */
+    .version-card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border-glow);
+      border-radius: 16px;
+      padding: 24px 30px;
+      margin-bottom: 50px;
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .version-card:hover {
+      border-color: rgba(0, 184, 148, 0.2);
+      box-shadow: 0 15px 35px -8px rgba(0, 184, 148, 0.08);
+    }
+
+    /* Subheadings: Added, Fixed, Changed, etc. */
+    h3 {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 1.1rem;
+      margin: 25px 0 12px 0;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    h3:first-of-type {
+      margin-top: 0;
+    }
+
+    /* Category Tag Colors */
+    .category-added {
+      color: #34d399; /* Mint green */
+    }
+    .category-fixed {
+      color: #fbbf24; /* Amber Gold */
+    }
+    .category-changed {
+      color: #60a5fa; /* Blue */
+    }
+    .category-removed {
+      color: #f87171; /* Coral Red */
+    }
+
+    /* Lists */
+    ul {
+      margin: 0 0 20px 0;
+      padding-left: 20px;
+      list-style-type: none;
+    }
+
+    li {
+      margin-bottom: 10px;
+      position: relative;
+      color: #cbd5e1;
+      font-size: 0.95rem;
+    }
+
+    li::before {
+      content: "•";
+      color: rgba(255, 255, 255, 0.25);
+      font-size: 1.2rem;
+      position: absolute;
+      left: -16px;
+      top: -2px;
+      transition: color 0.2s ease;
+    }
+
+    li:hover::before {
+      color: var(--accent-green);
+    }
+
+    /* Inline elements styling */
+    strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    code {
+      font-family: 'Courier New', Courier, monospace;
+      background: rgba(30, 41, 59, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      color: #e2e8f0;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.85em;
+    }
+
+    a {
+      color: #34d399;
+      text-decoration: none;
+      border-bottom: 1px dashed rgba(52, 211, 153, 0.4);
+      transition: all 0.2s ease;
+    }
+
+    a:hover {
+      color: #059669;
+      border-bottom-style: solid;
+      border-bottom-color: #059669;
+    }
+
+    /* Back to Map Link */
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      margin-bottom: 24px;
+      transition: color 0.2s ease;
+      font-weight: 500;
+    }
+
+    .back-link:hover {
+      color: var(--text-primary);
+    }
+
+    /* Footer styling */
+    footer {
+      text-align: center;
+      margin-top: 60px;
+      color: #64748b;
+      font-size: 0.8rem;
+      font-family: monospace;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      padding-top: 30px;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 600px) {
+      header h1 {
+        font-size: 2.2rem;
+      }
+      .version-card {
+        padding: 20px 22px;
+      }
+      .changelog-content {
+        padding-left: 20px;
+      }
+      .version-header::before {
+        left: -31px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a href="../" class="back-link">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="19" y1="12" x2="5" y2="12"></line>
+        <polyline points="12 19 5 12 12 5"></polyline>
+      </svg>
+      Back to Map Tracker
+    </a>
+    
+    <header>
+      <h1>Ratikka Changelog</h1>
+      <p>Continuous updates and live tracking releases for HSL Trams & Buses</p>
+    </header>
+
+    <div class="changelog-content">
+      {{CONTENT}}
+    </div>
+
+    <footer>
+      <span>RATIKKA TRACKER // DEPLOYED AT {{BUILD_DATE}}</span>
+    </footer>
+  </div>
+
+  <!-- Wrap individual version contents in div.version-card dynamically on load -->
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const content = document.querySelector(".changelog-content");
+      if (!content) return;
+
+      const children = Array.from(content.children);
+      let currentCard = null;
+
+      children.forEach((child) => {
+        if (child.classList.contains("version-header")) {
+          // If we hit a new version header, we create a new card container
+          currentCard = document.createElement("div");
+          currentCard.className = "version-card";
+          
+          // Insert the new card directly after the version header
+          content.insertBefore(currentCard, child.nextSibling);
+        } else if (currentCard && child !== currentCard) {
+          // Move this element inside the current active card
+          currentCard.appendChild(child);
+        }
+      });
+    });
+  </script>
+</body>
+</html>

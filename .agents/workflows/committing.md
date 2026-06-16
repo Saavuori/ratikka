@@ -36,3 +36,10 @@ Use conventional commit prefixes (see `/versioning` workflow):
 ## Pushing to main
 
 Pushing to `main` triggers the full CI/CD pipeline (auto-tag → Docker build → release). See `/versioning` for details.
+
+## Changelog Management
+
+Whenever a new feature is introduced (`feat:`) or a bug is resolved (`fix:`), you **must** update the `CHANGELOG.md` at the root of the repository:
+1. Document the changes under the appropriate section (e.g. `### Added`, `### Fixed`, `### Changed`).
+2. If launching a new tag/version, add a new version heading like: `## [vX.Y.Z] - YYYY-MM-DD`.
+3. The `CHANGELOG.md` file is automatically parsed and deployed to GitHub Pages on every push to `main`.

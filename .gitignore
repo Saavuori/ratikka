@@ -16,3 +16,4 @@ backend/internal/api/placeholder_dist/
 .vscode/
 .DS_Store
 Thumbs.db
+/dist-changelog
