@@ -366,17 +366,7 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
-    // 4. Add Live Stops Source (Vector tiles)
-    if (!map.getSource('stops-poi')) {
-      map.addSource('stops-poi', {
-        type: 'vector',
-        tiles: [
-          `https://cdn.digitransit.fi/map/v3/hsl/fi/stops/{z}/{x}/{y}.pbf?digitransit-subscription-key=${apiKey}`,
-        ],
-        minzoom: 13,
-        maxzoom: 16,
-      });
-    }
+
 
     // 5. Add Route Lines Source
     if (!map.getSource('route-lines')) {
@@ -478,22 +468,7 @@ export const Map: React.FC<MapProps> = ({
       }, 'trams-labels');
     }
 
-    // 11. Add Stops Layer
-    if (!map.getLayer('stops-points')) {
-      map.addLayer({
-        id: 'stops-points',
-        type: 'circle',
-        source: 'stops-poi',
-        'source-layer': 'stops',
-        paint: {
-          'circle-radius': 5.5,
-          'circle-color': '#20bf6b', // green Stop marker
-          'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 1.5,
-        },
-        filter: ['==', ['get', 'type'], 'TRAM'], // Only show tram stops
-      });
-    }
+
 
     // 12. Add Citybike Source
     if (!map.getSource('citybike')) {
@@ -600,6 +575,31 @@ export const Map: React.FC<MapProps> = ({
       }
     });
 
+    // Apply stops route filters to built-in vector stops
+    if (map.getLayer('stops_tram')) {
+      if (lineFilters.length === 0) {
+        map.setFilter('stops_tram', ['==', ['get', 'mode'], 'TRAM']);
+      } else {
+        map.setFilter('stops_tram', [
+          'all',
+          ['==', ['get', 'mode'], 'TRAM'],
+          ['any', ...lineFilters.map((line) => ['in', line, ['coalesce', ['get', 'routes'], '']])]
+        ] as any);
+      }
+    }
+
+    if (map.getLayer('stops_case')) {
+      if (lineFilters.length === 0) {
+        map.setFilter('stops_case', ['!=', ['get', 'mode'], 'RAIL']);
+      } else {
+        map.setFilter('stops_case', [
+          'all',
+          ['!=', ['get', 'mode'], 'RAIL'],
+          ['any', ...lineFilters.map((line) => ['in', line, ['coalesce', ['get', 'routes'], '']])]
+        ] as any);
+      }
+    }
+
     // Apply active route visibility and 3D mode setting
     updateRouteVisibility(map, showRouteNetworkRef.current);
     update3DMode(map, is3DRef.current, mapThemeRef.current);
@@ -651,7 +651,7 @@ export const Map: React.FC<MapProps> = ({
       }
     });
 
-    map.on('click', 'stops-points', (e) => {
+    map.on('click', 'stops_tram', (e) => {
       if (!e.features || e.features.length === 0) return;
       const feat = e.features[0];
       const stopId = feat.properties?.gtfsId || feat.properties?.id;
@@ -725,8 +725,8 @@ export const Map: React.FC<MapProps> = ({
 
     map.on('mouseenter', 'trams-circles', setCursorPointer);
     map.on('mouseleave', 'trams-circles', resetCursor);
-    map.on('mouseenter', 'stops-points', setCursorPointer);
-    map.on('mouseleave', 'stops-points', resetCursor);
+    map.on('mouseenter', 'stops_tram', setCursorPointer);
+    map.on('mouseleave', 'stops_tram', resetCursor);
     map.on('mouseenter', 'citybike_icon', setCursorPointer);
     map.on('mouseleave', 'citybike_icon', resetCursor);
     map.on('mouseenter', 'citybike_stops', setCursorPointer);
@@ -814,6 +814,36 @@ export const Map: React.FC<MapProps> = ({
       updateRouteVisibility(map, showRouteNetwork);
     }
   }, [showRouteNetwork]);
+
+  // Dynamic Stop Route Filtering
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getStyle()) return;
+
+    if (map.getLayer('stops_tram')) {
+      if (lineFilters.length === 0) {
+        map.setFilter('stops_tram', ['==', ['get', 'mode'], 'TRAM']);
+      } else {
+        map.setFilter('stops_tram', [
+          'all',
+          ['==', ['get', 'mode'], 'TRAM'],
+          ['any', ...lineFilters.map((line) => ['in', line, ['coalesce', ['get', 'routes'], '']])]
+        ] as any);
+      }
+    }
+
+    if (map.getLayer('stops_case')) {
+      if (lineFilters.length === 0) {
+        map.setFilter('stops_case', ['!=', ['get', 'mode'], 'RAIL']);
+      } else {
+        map.setFilter('stops_case', [
+          'all',
+          ['!=', ['get', 'mode'], 'RAIL'],
+          ['any', ...lineFilters.map((line) => ['in', line, ['coalesce', ['get', 'routes'], '']])]
+        ] as any);
+      }
+    }
+  }, [lineFilters]);
 
   return (
     <div className="map-wrapper">
