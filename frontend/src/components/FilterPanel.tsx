@@ -1,6 +1,6 @@
 import React from 'react';
 import type { VehiclePosition } from '../types';
-import { Filter, Eye, ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Route } from 'lucide-react';
+import { Filter, ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Route } from 'lucide-react';
 
 interface FilterPanelProps {
   trams: Record<string, VehiclePosition>;
@@ -107,7 +107,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                   className={`line-btn ${isSelected ? 'active' : ''}`}
                 >
                   <span className="line-btn-label">{line}</span>
-                  {isSelected ? <Eye size={10} className="line-btn-icon-inline" /> : null}
                 </button>
               );
             })}
