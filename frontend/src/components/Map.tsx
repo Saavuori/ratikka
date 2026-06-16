@@ -1106,6 +1106,16 @@ export const Map: React.FC<MapProps> = ({
 
     mapRef.current = map;
 
+    // Add GeolocateControl for mobile/user self-location tracking
+    const geolocate = new maplibregl.GeolocateControl({
+      positionOptions: {
+        enableHighAccuracy: true,
+      },
+      trackUserLocation: true,
+      showUserLocation: true,
+    });
+    map.addControl(geolocate, 'bottom-right');
+
     map.on('style.load', () => {
       setupCustomMapElements(map);
     });
