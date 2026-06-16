@@ -567,6 +567,14 @@ export const Map: React.FC<MapProps> = ({
     // Draw route geometries now that style and layer are loaded
     drawRouteGeometries(map, routeGeometriesRef.current);
 
+    // Hide default bus stops from the vector style
+    const busStopLayers = ['stops_bus', 'stops_trunk'];
+    busStopLayers.forEach((layerId) => {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, 'visibility', 'none');
+      }
+    });
+
     // Apply active route visibility and 3D mode setting
     updateRouteVisibility(map, showRouteNetworkRef.current);
     update3DMode(map, is3DRef.current, mapThemeRef.current);
