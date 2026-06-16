@@ -151,7 +151,7 @@ set_env_var() {
 }
 
 set_env_var "DIGITRANSIT_API_KEY" "Enter your DIGITRANSIT_API_KEY (Required)" "true"
-set_env_var "DOMAIN_NAME" "Enter your Domain Name (e.g. ratikka.duckdns.org, leave blank for :80)" "false"
+set_env_var "DOMAIN_NAME" "Enter your Domain Name (e.g. hsl-live.duckdns.org, leave blank for :80)" "false"
 set_env_var "GRAFANA_CLOUD_PROMETHEUS_URL" "Enter your GRAFANA_CLOUD_PROMETHEUS_URL (Optional, for monitoring)" "false"
 set_env_var "GRAFANA_CLOUD_PROMETHEUS_USER" "Enter your GRAFANA_CLOUD_PROMETHEUS_USER (Optional, for monitoring)" "false"
 set_env_var "GRAFANA_CLOUD_PROMETHEUS_TOKEN" "Enter your GRAFANA_CLOUD_PROMETHEUS_TOKEN (Optional, for monitoring)" "false"

@@ -1,10 +1,10 @@
 # 🚋 HSL - LIVE — Live Helsinki Tram & Bus Tracker
 
-[![Live Application](https://img.shields.io/badge/Live-ratikka.duckdns.org-00b894?style=for-the-badge&logo=react)](https://ratikka.duckdns.org/)
+[![Live Application](https://img.shields.io/badge/Live-hsl--live.duckdns.org-00b894?style=for-the-badge&logo=react)](https://hsl-live.duckdns.org/)
 
 A premium, high-performance web application mapping **all active Helsinki trams, buses, and City Bike stations** in real-time. Built with stunning glassmorphism aesthetics, fluid 60fps telemetry interpolation, and immersive interactive modes.
 
-👉 **Experience the live dashboard at [ratikka.duckdns.org](https://ratikka.duckdns.org/)**
+👉 **Experience the live dashboard at [hsl-live.duckdns.org](https://hsl-live.duckdns.org/)**
 
 ---
 
