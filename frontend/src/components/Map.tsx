@@ -182,6 +182,7 @@ export const Map: React.FC<MapProps> = ({
       zoom: 14,
       maxZoom: 18,
       minZoom: 10,
+      attributionControl: false,
     });
 
     mapRef.current = map;
