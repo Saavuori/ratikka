@@ -112,21 +112,45 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
             <Navigation size={15} strokeWidth={2.8} style={{ color: tram.mode === 'bus' ? '#0984e3' : '#00b894', transform: `rotate(${tram.hdg - mapBearing - 45}deg)`, transition: 'transform 0.2s ease' }} />
             <span className="tram-card-metric-val" style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
               {speedKmh} <span className="tram-card-metric-unit" style={{ fontSize: '0.6rem', marginRight: '2px' }}>km/h</span>
-              {tram.acc !== undefined && (() => {
+              {(() => {
                 const acc = tram.acc;
-                if (acc >= 0.5) {
-                  return <span title={`Accelerating strongly (${acc.toFixed(2)} m/s²)`} style={{ display: 'inline-flex' }}><ChevronsUp size={11} style={{ color: '#34d399', flexShrink: 0 }} /></span>;
+                let icon = null;
+                let title = "No acceleration data";
+
+                if (acc !== undefined) {
+                  if (acc >= 0.5) {
+                    icon = <ChevronsUp size={11} style={{ color: '#34d399', flexShrink: 0 }} />;
+                    title = `Accelerating strongly (${acc.toFixed(2)} m/s²)`;
+                  } else if (acc >= 0.1) {
+                    icon = <ChevronUp size={11} style={{ color: '#34d399', flexShrink: 0 }} />;
+                    title = `Accelerating (${acc.toFixed(2)} m/s²)`;
+                  } else if (acc <= -0.5) {
+                    icon = <ChevronsDown size={11} style={{ color: '#f87171', flexShrink: 0 }} />;
+                    title = `Braking strongly (${acc.toFixed(2)} m/s²)`;
+                  } else if (acc <= -0.1) {
+                    icon = <ChevronDown size={11} style={{ color: '#f87171', flexShrink: 0 }} />;
+                    title = `Decelerating (${acc.toFixed(2)} m/s²)`;
+                  } else {
+                    title = `Cruising (${acc.toFixed(2)} m/s²)`;
+                  }
                 }
-                if (acc >= 0.1) {
-                  return <span title={`Accelerating (${acc.toFixed(2)} m/s²)`} style={{ display: 'inline-flex' }}><ChevronUp size={11} style={{ color: '#34d399', flexShrink: 0 }} /></span>;
-                }
-                if (acc <= -0.5) {
-                  return <span title={`Braking strongly (${acc.toFixed(2)} m/s²)`} style={{ display: 'inline-flex' }}><ChevronsDown size={11} style={{ color: '#f87171', flexShrink: 0 }} /></span>;
-                }
-                if (acc <= -0.1) {
-                  return <span title={`Decelerating (${acc.toFixed(2)} m/s²)`} style={{ display: 'inline-flex' }}><ChevronDown size={11} style={{ color: '#f87171', flexShrink: 0 }} /></span>;
-                }
-                return null;
+
+                return (
+                  <span 
+                    title={title} 
+                    style={{ 
+                      display: 'inline-flex', 
+                      width: '12px', 
+                      height: '12px',
+                      justifyContent: 'center', 
+                      alignItems: 'center',
+                      flexShrink: 0,
+                      marginLeft: '2px'
+                    }}
+                  >
+                    {icon}
+                  </span>
+                );
               })()}
             </span>
           </div>
