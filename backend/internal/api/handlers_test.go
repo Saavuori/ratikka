@@ -325,6 +325,10 @@ func TestConvertTripID(t *testing.T) {
 		{"HSL:1006_20260615_Fr_1_1342", "HSL:1006_20260615_Pe_1_1342"},
 		{"HSL:1010_20260615_Sa_2_1350", "HSL:1010_20260615_La_2_1350"},
 		{"HSL:1004_20260615_Su_2_1336", "HSL:1004_20260615_Su_2_1336"},
+		// Tuesday 2026-06-16 should align to Monday 2026-06-15
+		{"HSL:1009_20260616_Tu_1_1415", "HSL:1009_20260615_Ti_1_1415"},
+		// Sunday 2026-06-21 should align to Monday 2026-06-15
+		{"HSL:1009_20260621_Su_1_1415", "HSL:1009_20260615_Su_1_1415"},
 	}
 
 	for _, tc := range tests {

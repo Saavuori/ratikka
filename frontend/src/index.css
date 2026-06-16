@@ -24,6 +24,31 @@
   --accent-coral: #e17055;
   --accent-gold: #fdcb6e;
   --bg-card: hsla(217, 33%, 17%, 0.4);
+
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --bg-button: rgba(30, 41, 59, 0.3);
+  --bg-button-hover: rgba(30, 41, 59, 0.5);
+  --border-button: rgba(255, 255, 255, 0.04);
+  --border-button-hover: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  color: #1e293b;
+  background-color: #f8fafc;
+
+  --bg-panel: rgba(255, 255, 255, 0.88);
+  --border-glow: rgba(148, 163, 184, 0.3);
+  --border-focus: rgba(16, 185, 129, 0.6);
+  --bg-card: rgba(241, 245, 249, 0.6);
+
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --bg-button: rgba(148, 163, 184, 0.1);
+  --bg-button-hover: rgba(148, 163, 184, 0.2);
+  --border-button: rgba(148, 163, 184, 0.15);
+  --border-button-hover: rgba(148, 163, 184, 0.3);
 }
 
 body {
@@ -73,7 +98,7 @@ body {
   border: 1px solid var(--border-glow);
   border-radius: 16px;
   box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.7);
-  color: #f1f5f9;
+  color: var(--text-primary);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -99,7 +124,7 @@ body {
   align-items: center;
   padding: 10px 0;
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .clear-filters-btn {
@@ -129,7 +154,7 @@ body {
   gap: 8px;
   font-size: 0.75rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--text-secondary);
   text-transform: uppercase;
   margin-bottom: 12px;
   letter-spacing: 0.05em;
@@ -170,7 +195,7 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #cbd5e1;
+  color: var(--text-primary);
   box-shadow: 4px 4px 12px rgba(0, 0, 0, 0.3);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   padding: 0;
@@ -179,7 +204,7 @@ body {
 
 .filter-toggle-tab:hover {
   color: #34d399;
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--bg-panel);
   border-color: var(--accent-green);
 }
 
@@ -224,7 +249,7 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #cbd5e1;
+  color: var(--text-primary);
   box-shadow: -4px 4px 12px rgba(0, 0, 0, 0.3);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   padding: 0;
@@ -233,7 +258,7 @@ body {
 
 .detail-toggle-tab:hover {
   color: #34d399;
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--bg-panel);
   border-color: var(--accent-green);
 }
 
@@ -362,7 +387,7 @@ body {
 .panel-subtitle {
   margin: 2px 0 0 0;
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 /* Connection Status pill */
@@ -401,7 +426,7 @@ body {
   font-size: 0.65rem;
   font-weight: 600;
   text-transform: capitalize;
-  color: #cbd5e1;
+  color: var(--text-primary);
 }
 
 /* Grid & List Containers */
@@ -420,16 +445,16 @@ body {
   justify-content: center;
   padding: 6px 2px;
   border-radius: 6px;
-  background: rgba(30, 41, 59, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: var(--bg-button);
+  border: 1px solid var(--border-button);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .line-btn:hover {
-  border-color: rgba(255, 255, 255, 0.15);
-  background: rgba(30, 41, 59, 0.5);
+  border-color: var(--border-button-hover);
+  background: var(--bg-button-hover);
   transform: translateY(-1px);
 }
 
@@ -468,7 +493,7 @@ body {
 .legend-title {
   font-size: 0.6rem;
   font-weight: 700;
-  color: #94a3b8;
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 6px;
@@ -479,7 +504,7 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 0.65rem;
-  color: #cbd5e1;
+  color: var(--text-primary);
   margin-bottom: 4px;
 }
 
@@ -509,10 +534,10 @@ body {
   gap: 6px;
   width: 100%;
   padding: 6px 8px;
-  background: rgba(30, 41, 59, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: var(--bg-button);
+  border: 1px solid var(--border-button);
   border-radius: 6px;
-  color: #cbd5e1;
+  color: var(--text-primary);
   font-size: 0.65rem;
   font-weight: 600;
   cursor: pointer;
@@ -523,8 +548,8 @@ body {
 }
 
 .settings-btn:hover {
-  border-color: rgba(255, 255, 255, 0.15);
-  background: rgba(30, 41, 59, 0.5);
+  border-color: var(--border-button-hover);
+  background: var(--bg-button-hover);
   transform: translateY(-1px);
   color: #fff;
 }
@@ -732,7 +757,7 @@ body {
 .timeline-stop-name {
   font-size: 0.8rem;
   font-weight: 700;
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .timeline-stop-code {
@@ -750,7 +775,7 @@ body {
 .timeline-time {
   font-size: 0.8rem;
   font-weight: 700;
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .timeline-delay {
@@ -769,11 +794,11 @@ body {
 .route-chip {
   padding: 3px 8px;
   border-radius: 6px;
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-card);
+  border: 1px solid var(--border-glow);
   font-size: 0.75rem;
   font-weight: 800;
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .departure-list {
@@ -796,7 +821,7 @@ body {
 }
 
 .departure-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-button-hover);
 }
 
 .departure-left {
@@ -833,7 +858,7 @@ body {
 .departure-dest {
   font-size: 0.8rem;
   font-weight: 700;
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .departure-sub {
@@ -855,7 +880,7 @@ body {
 .departure-time {
   font-size: 0.8rem;
   font-weight: 700;
-  color: #e2e8f0;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: flex-end;

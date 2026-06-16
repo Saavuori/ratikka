@@ -28,6 +28,7 @@ function App() {
 
   useEffect(() => {
     localStorage.setItem('mapTheme', mapTheme);
+    document.documentElement.setAttribute('data-theme', mapTheme);
   }, [mapTheme]);
 
   useEffect(() => {

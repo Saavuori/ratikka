@@ -129,6 +129,7 @@ type StopArrival struct {
 }
 
 func convertTripID(id string) string {
+	// First convert English day abbreviations to Finnish
 	replacer := strings.NewReplacer(
 		"_Mo_", "_Ma_",
 		"_Tu_", "_Ti_",
@@ -137,7 +138,29 @@ func convertTripID(id string) string {
 		"_Fr_", "_Pe_",
 		"_Sa_", "_La_",
 	)
-	return replacer.Replace(id)
+	id = replacer.Replace(id)
+
+	// Now split by "_" to find and convert the date to the Monday of that week
+	parts := strings.Split(id, "_")
+	if len(parts) > 1 {
+		dateStr := parts[1]
+		if len(dateStr) == 8 { // YYYYMMDD format
+			if t, err := time.Parse("20060102", dateStr); err == nil {
+				wd := t.Weekday()
+				daysToSubtract := 0
+				if wd == time.Sunday {
+					daysToSubtract = 6
+				} else {
+					daysToSubtract = int(wd) - 1
+				}
+				monday := t.AddDate(0, 0, -daysToSubtract)
+				parts[1] = monday.Format("20060102")
+				id = strings.Join(parts, "_")
+			}
+		}
+	}
+
+	return id
 }
 
 func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
