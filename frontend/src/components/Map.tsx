@@ -654,10 +654,15 @@ export const Map: React.FC<MapProps> = ({
     map.on('click', 'stops_tram', (e) => {
       if (!e.features || e.features.length === 0) return;
       const feat = e.features[0];
-      const stopId = feat.properties?.gtfsId || feat.properties?.id;
+      const rawId = feat.properties?.gtfsId || feat.properties?.id || feat.id;
       const name = feat.properties?.name || 'Unknown Stop';
       const code = feat.properties?.code || '';
-      if (stopId) {
+      
+      if (rawId) {
+        let stopId = rawId.toString();
+        if (!stopId.startsWith('HSL:')) {
+          stopId = 'HSL:' + stopId;
+        }
         callbacksRef.current.onSelectStop(stopId, name, code);
       }
     });
