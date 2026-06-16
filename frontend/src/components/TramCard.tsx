@@ -87,35 +87,57 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
   const currentStop = isStopped && currentStopIndex !== -1 ? tripDetails?.stops[currentStopIndex] : null;
   const nextStop = nextStopIndex !== -1 ? tripDetails?.stops[nextStopIndex] : null;
 
+  const hasStopInfo = !!(tripDetails && (currentStop || nextStop));
+
   return (
-    <div className="tram-card-overlay">
+    <div 
+      className="tram-card-overlay" 
+      style={hasStopInfo ? {
+        borderRadius: '14px',
+        padding: '6px 12px',
+        gap: '10px'
+      } : {}}
+    >
       {/* Line number badge */}
       <div className="tram-card-desi">{tram.desi}</div>
 
-      {/* Metrics row */}
-      <div className="tram-card-metrics">
-        <div className="tram-card-metric">
-          <Navigation size={13} style={{ color: '#94a3b8', transform: `rotate(${tram.hdg - mapBearing - 45}deg)`, transition: 'transform 0.2s ease' }} />
-          <span className="tram-card-metric-val">{speedKmh} <span className="tram-card-metric-unit">km/h</span></span>
+      <div className="tram-card-divider" />
+
+      {/* Middle stack: Metrics on top, Stop info on bottom */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '130px', maxWidth: '180px' }}>
+        {/* Metrics row */}
+        <div className="tram-card-metrics" style={{ gap: '8px' }}>
+          <div className="tram-card-metric">
+            <Navigation size={12} style={{ color: '#94a3b8', transform: `rotate(${tram.hdg - mapBearing - 45}deg)`, transition: 'transform 0.2s ease' }} />
+            <span className="tram-card-metric-val" style={{ fontSize: '0.75rem' }}>{speedKmh} <span className="tram-card-metric-unit" style={{ fontSize: '0.6rem' }}>km/h</span></span>
+          </div>
+          <div className="tram-card-divider" style={{ height: '10px' }} />
+          <div className="tram-card-metric">
+            <Clock size={12} style={{ color: '#94a3b8' }} />
+            <span className="tram-card-metric-val" style={{ color: getDelayColor(tram.dl), fontSize: '0.75rem' }}>
+              {formatDelay(tram.dl)}
+            </span>
+          </div>
         </div>
-        <div className="tram-card-divider" />
-        <div className="tram-card-metric">
-          <Clock size={13} style={{ color: '#94a3b8' }} />
-          <span className="tram-card-metric-val" style={{ color: getDelayColor(tram.dl) }}>
-            {formatDelay(tram.dl)}
-          </span>
-        </div>
-        {tripDetails && (currentStop || nextStop) && (
-          <>
-            <div className="tram-card-divider" />
-            <div className="tram-card-metric" style={{ fontSize: '0.75rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {isStopped && currentStop ? (
-                <span style={{ color: '#fbbf24', fontWeight: 600 }}>At {currentStop.name}</span>
-              ) : nextStop ? (
-                <span style={{ color: '#e2e8f0', fontWeight: 500 }}>Next: {nextStop.name} <span style={{ color: '#34d399', fontSize: '0.7rem', fontWeight: 600 }}>{nextStop.realtimeArrival}</span></span>
-              ) : null}
-            </div>
-          </>
+
+        {/* Stop info row */}
+        {hasStopInfo && (
+          <div style={{ 
+            fontSize: '0.65rem', 
+            color: '#94a3b8', 
+            overflow: 'hidden', 
+            textOverflow: 'ellipsis', 
+            whiteSpace: 'nowrap',
+            textAlign: 'left'
+          }}>
+            {isStopped && currentStop ? (
+              <span style={{ color: '#fbbf24', fontWeight: 600 }}>At {currentStop.name}</span>
+            ) : nextStop ? (
+              <span style={{ color: '#e2e8f0', fontWeight: 500 }}>
+                Next: {nextStop.name} <span style={{ color: '#34d399', fontSize: '0.62rem', fontWeight: 600 }}>{nextStop.realtimeArrival}</span>
+              </span>
+            ) : null}
+          </div>
         )}
       </div>
 
