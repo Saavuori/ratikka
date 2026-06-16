@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -82,6 +83,19 @@ func (h *Handlers) Version(w http.ResponseWriter, r *http.Request) {
 		Version:   Version,
 		BuildDate: BuildDate,
 		GitCommit: GitCommit,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
+}
+
+// Config Response
+type ConfigResponse struct {
+	DigitransitMapKey string `json:"digitransit_map_key"`
+}
+
+func (h *Handlers) Config(w http.ResponseWriter, r *http.Request) {
+	res := ConfigResponse{
+		DigitransitMapKey: os.Getenv("DIGITRANSIT_API_KEY"),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)

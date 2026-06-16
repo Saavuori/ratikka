@@ -31,6 +31,20 @@ export const Map: React.FC<MapProps> = ({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
 
+  const [apiKey, setApiKey] = React.useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/v1/config')
+      .then((res) => res.json())
+      .then((data) => {
+        setApiKey(data.digitransit_map_key || '');
+      })
+      .catch((err) => {
+        console.error('Failed to fetch map key config:', err);
+        setApiKey('');
+      });
+  }, []);
+
   // References to keep state fresh in map event handlers and tick loop without closure issues
   const latestTramsRef = useRef<Record<string, VehiclePosition>>(trams);
   const callbacksRef = useRef({ onSelectTram, onSelectStop });
@@ -171,9 +185,8 @@ export const Map: React.FC<MapProps> = ({
 
   // Initial Map Setup
   useEffect(() => {
+    if (apiKey === null) return;
     if (!mapContainerRef.current) return;
-
-    const apiKey = import.meta.env.VITE_DIGITRANSIT_MAP_KEY || '';
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
@@ -378,7 +391,7 @@ export const Map: React.FC<MapProps> = ({
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
       map.remove();
     };
-  }, []);
+  }, [apiKey]);
 
   // Update selection ring filter
   useEffect(() => {
