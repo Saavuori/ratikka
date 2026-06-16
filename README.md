@@ -1,8 +1,28 @@
-# Ratikka — Live Helsinki Tram Tracker
+# 🚋 Ratikka — Live Helsinki Tram Tracker & Dashboard
 
-A real-time containerized web application that maps **all active Helsinki trams** on a vector map. Users can filter vehicles by line, click stops to view timetables, and track specific tram trip geometries with stop ETAs.
+[![Live Application](https://img.shields.io/badge/Live-ratikka.duckdns.org-00b894?style=for-the-badge&logo=react)](https://ratikka.duckdns.org/)
 
-Designed for standalone high-performance operation on an **aarch64 (ARM64) Linux instance** (Oracle Linux 9 / UEK), but fully supports local Windows/Linux development.
+A premium, high-performance web application mapping **all active Helsinki trams and City Bike stations** in real-time. Built with stunning glassmorphism aesthetics, fluid 60fps telemetry interpolation, and immersive interactive modes.
+
+👉 **Experience the live dashboard at [ratikka.duckdns.org](https://ratikka.duckdns.org/)**
+
+---
+
+## 📸 Screenshots & UI
+
+| Desktop Dashboard & Live Timetables | Glassmorphic Dark Theme | Compact Mobile View |
+| :---: | :---: | :---: |
+| ![Desktop Layout](docs/screenshots/desktop_layout.png) | ![Dark Theme Map](docs/screenshots/dark_theme_map.png) | ![Mobile Layout](docs/screenshots/mobile_layout.png) |
+
+---
+
+## ✨ Key Features
+
+* **Real-time 60fps Tram Interpolation**: Live MQTT vehicle coordinate updates are mathematically interpolated (lerp) for buttery-smooth vehicle movement.
+* **Immersive Chase Mode (Follow Tram)**: Lock onto any tram to automatically track it from behind. The camera auto-centers and auto-rotates (bearing) matching the tram's live heading.
+* **Interactive 3D Buildings & Map Customization**: Toggle between HSL Vector Light Map and CartoDB Dark Matter styles with customizable building extrusions (3D buildings) and public transit route networks.
+* **Live City Bike Station Capacity**: Click HSL City Bike POI stops to fetch live availability counts (bikes available vs. empty spaces) directly from Digitransit.
+* **Glassmorphic UI Panels**: Premium responsive control cards that adjust seamlessly across mobile and desktop.
 
 ---
 
