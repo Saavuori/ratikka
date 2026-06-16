@@ -84,7 +84,65 @@ function App() {
       setIsDetailCollapsed(false);
     }
   }, [selectedTram?.tripId, selectedStop?.id, selectedBikeStation?.id]);
+  // Slide (swipe) gesture detection for left and right panels on touch devices
+  useEffect(() => {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const edgeThreshold = 45; // px from screen edge to trigger edge swipes
+    const swipeThreshold = 55; // px of horizontal movement to trigger swipe
 
+    const handleTouchStart = (e: TouchEvent) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.changedTouches.length === 0) return;
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+      const deltaX = touchEndX - touchStartX;
+      const deltaY = touchEndY - touchStartY;
+
+      // Ensure it's mostly a horizontal swipe
+      if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5 && Math.abs(deltaX) > swipeThreshold) {
+        const screenWidth = window.innerWidth;
+
+        // Left Panel (FilterPanel) Swipes
+        if (deltaX > 0) {
+          // Swipe right: Open left panel if swipe started near left edge
+          if (touchStartX < edgeThreshold) {
+            setIsFilterCollapsed(false);
+          }
+        } else {
+          // Swipe left: Close left panel if it is currently open and swipe started inside it
+          if (!isFilterCollapsed && touchStartX < 250) {
+            setIsFilterCollapsed(true);
+          }
+        }
+
+        // Right Panel (DetailPopup / StopPopup / BikePopup) Swipes
+        if (deltaX < 0) {
+          // Swipe left: Open right panel if swipe started near right edge
+          if (screenWidth - touchStartX < edgeThreshold) {
+            setIsDetailCollapsed(false);
+          }
+        } else {
+          // Swipe right: Close right panel if it is currently open and swipe started inside it
+          if (!isDetailCollapsed && screenWidth - touchStartX < 350) {
+            setIsDetailCollapsed(true);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isFilterCollapsed, isDetailCollapsed]);
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
   const [stopTripIds, setStopTripIds] = useState<string[] | null>(null);
   const [mapBearing, setMapBearing] = useState<number>(0);
