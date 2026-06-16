@@ -32,7 +32,7 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, routeName, onClose }) 
       {/* Metrics row */}
       <div className="tram-card-metrics">
         <div className="tram-card-metric">
-          <Navigation size={13} style={{ color: '#94a3b8' }} />
+          <Navigation size={13} style={{ color: '#94a3b8', transform: `rotate(${tram.hdg - 45}deg)`, transition: 'transform 0.4s ease' }} />
           <span className="tram-card-metric-val">{speedKmh} <span className="tram-card-metric-unit">km/h</span></span>
         </div>
         <div className="tram-card-divider" />
