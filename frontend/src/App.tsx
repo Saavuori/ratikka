@@ -26,6 +26,9 @@ function App() {
   // Route name reported back from TramPopup for the TramCard
   const [tramRouteName, setTramRouteName] = useState<string | undefined>(undefined);
 
+  // Detail panel collapse state: defaults to false (open when item is selected)
+  const [isDetailCollapsed, setIsDetailCollapsed] = useState<boolean>(false);
+
   // Sidebar collapse state: defaults to collapsed on mobile, open on desktop
   const [isFilterCollapsed, setIsFilterCollapsed] = useState<boolean>(
     typeof window !== 'undefined' ? window.innerWidth <= 768 : false
@@ -42,6 +45,13 @@ function App() {
   useEffect(() => {
     setTramRouteName(undefined);
   }, [selectedTram?.tripId]);
+
+  // Auto-expand detail panel when a new tram or stop is selected
+  useEffect(() => {
+    if (selectedTram || selectedStop) {
+      setIsDetailCollapsed(false);
+    }
+  }, [selectedTram?.tripId, selectedStop?.id]);
 
   // Line & Stop filtering states
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
@@ -209,6 +219,8 @@ function App() {
           tram={liveTram!}
           onClose={handleCloseTram}
           onRouteNameReady={setTramRouteName}
+          isCollapsed={isDetailCollapsed}
+          onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
         />
       )}
 
@@ -221,6 +233,8 @@ function App() {
           onClose={handleCloseStop}
           onSelectTripId={(tripId, lineDesi) => handleSelectTripFromStop(tripId, lineDesi)}
           onStopDeparturesLoaded={setStopTripIds}
+          isCollapsed={isDetailCollapsed}
+          onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
         />
       )}
 

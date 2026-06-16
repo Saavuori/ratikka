@@ -2,15 +2,23 @@
 import React, { useEffect, useState } from 'react';
 import type { VehiclePosition, TripDetailsResponse } from '../types';
 import { fetchTripDetails } from '../lib/api';
-import { X, AlertTriangle, Loader2 } from 'lucide-react';
+import { X, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface TramPopupProps {
   tram: VehiclePosition;
   onClose: () => void;
   onRouteNameReady?: (name: string) => void;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
-export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose, onRouteNameReady }) => {
+export const TramPopup: React.FC<TramPopupProps> = ({
+  tram,
+  onClose,
+  onRouteNameReady,
+  isCollapsed,
+  onToggleCollapse,
+}) => {
   const [tripDetails, setTripDetails] = useState<TripDetailsResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +81,20 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose, onRouteName
   };
 
   return (
-    <div className="glass-panel detail-popup">
+    <div className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}>
+      {/* Collapse/Expand Toggle Tab */}
+      <button
+        className="detail-toggle-tab"
+        onClick={onToggleCollapse}
+        aria-label={isCollapsed ? 'Show Schedule' : 'Hide Schedule'}
+      >
+        <span className="icon-desktop">
+          {isCollapsed ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+        </span>
+        <span className="icon-mobile">
+          {isCollapsed ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+        </span>
+      </button>
       {/* Header */}
       <div className="panel-header" style={{ padding: '0 0 12px 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

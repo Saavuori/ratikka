@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import type { StopDetailsResponse } from '../types';
 import { fetchStopDetails } from '../lib/api';
-import { X, Clock, AlertTriangle, Loader2 } from 'lucide-react';
+import { X, Clock, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface StopPopupProps {
   stopId: string;
@@ -11,6 +11,8 @@ interface StopPopupProps {
   onClose: () => void;
   onSelectTripId: (tripId: string, lineDesi: string) => void;
   onStopDeparturesLoaded?: (tripIds: string[]) => void;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 export const StopPopup: React.FC<StopPopupProps> = ({
@@ -20,6 +22,8 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   onClose,
   onSelectTripId,
   onStopDeparturesLoaded,
+  isCollapsed,
+  onToggleCollapse,
 }) => {
   const [details, setDetails] = useState<StopDetailsResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -58,7 +62,20 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   };
 
   return (
-    <div className="glass-panel detail-popup">
+    <div className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}>
+      {/* Collapse/Expand Toggle Tab */}
+      <button
+        className="detail-toggle-tab"
+        onClick={onToggleCollapse}
+        aria-label={isCollapsed ? 'Show Timetable' : 'Hide Timetable'}
+      >
+        <span className="icon-desktop">
+          {isCollapsed ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+        </span>
+        <span className="icon-mobile">
+          {isCollapsed ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+        </span>
+      </button>
       {/* Header */}
       <div className="panel-header" style={{ padding: '0 0 16px 0' }}>
         <div>
