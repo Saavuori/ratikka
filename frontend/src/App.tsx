@@ -308,6 +308,8 @@ function App() {
       <Map
         trams={displayedTrams}
         selectedTramId={selectedTram?.veh && selectedTram.veh !== '0' ? selectedTram.veh : selectedTram?.tripId || null}
+        selectedStopId={selectedStop?.id || null}
+        selectedBikeStationId={selectedBikeStation?.id || null}
         onSelectTram={handleSelectTram}
         onSelectStop={handleSelectStop}
         onSelectBikeStation={handleSelectBikeStation}

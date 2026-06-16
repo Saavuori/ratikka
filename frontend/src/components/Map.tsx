@@ -1,13 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { VehiclePosition } from '../types';
+import type { VehiclePosition, TripDetailsResponse } from '../types';
 import { lerp, lerpAngle } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
+import { fetchTripDetails } from '../lib/api';
 
 interface MapProps {
   trams: Record<string, VehiclePosition>;
   selectedTramId: string | null;
+  selectedStopId: string | null;
+  selectedBikeStationId: string | null;
   onSelectTram: (tram: VehiclePosition | null) => void;
   onSelectStop: (stopId: string, name: string, code: string) => void;
   onSelectBikeStation: (station: { id: string; name: string } | null) => void;
@@ -30,6 +33,8 @@ interface RenderPosition {
 export const Map: React.FC<MapProps> = ({
   trams,
   selectedTramId,
+  selectedStopId,
+  selectedBikeStationId,
   onSelectTram,
   onSelectStop,
   onSelectBikeStation,
@@ -44,6 +49,13 @@ export const Map: React.FC<MapProps> = ({
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+
+  const [selectedTripDetails, setSelectedTripDetails] = React.useState<TripDetailsResponse | null>(null);
+  const selectedTripDetailsRef = useRef<TripDetailsResponse | null>(null);
+
+  useEffect(() => {
+    selectedTripDetailsRef.current = selectedTripDetails;
+  }, [selectedTripDetails]);
 
   const [apiKey, setApiKey] = React.useState<string | null>(null);
 
@@ -64,6 +76,8 @@ export const Map: React.FC<MapProps> = ({
   const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing, onMapBearingChange });
   const routeGeometriesRef = useRef<Record<string, { geometries: string[]; color?: string; stops?: string[] }>>(routeGeometries);
   const selectedTramIdRef = useRef<string | null>(selectedTramId);
+  const selectedStopIdRef = useRef<string | null>(selectedStopId);
+  const selectedBikeStationIdRef = useRef<string | null>(selectedBikeStationId);
   const showRouteNetworkRef = useRef<boolean>(showRouteNetwork);
   const is3DRef = useRef<boolean>(is3D);
   const mapThemeRef = useRef<'light' | 'dark'>(mapTheme);
@@ -85,6 +99,14 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     selectedTramIdRef.current = selectedTramId;
   }, [selectedTramId]);
+
+  useEffect(() => {
+    selectedStopIdRef.current = selectedStopId;
+  }, [selectedStopId]);
+
+  useEffect(() => {
+    selectedBikeStationIdRef.current = selectedBikeStationId;
+  }, [selectedBikeStationId]);
 
   useEffect(() => {
     showRouteNetworkRef.current = showRouteNetwork;
@@ -273,6 +295,91 @@ export const Map: React.FC<MapProps> = ({
         source.setData({
           type: 'FeatureCollection',
           features,
+        });
+      }
+
+      // Update next stop highlight and route line segment
+      let selectedVehiclePos: [number, number] | null = null;
+      let nextStopId: string | null = null;
+      if (selectedTramIdRef.current) {
+        const selectedTram = latestTramsRef.current[selectedTramIdRef.current];
+        if (selectedTram) {
+          nextStopId = selectedTram.stop || null;
+          const activeFeature = features.find((f) => f.properties.veh === selectedTramIdRef.current);
+          if (activeFeature) {
+            selectedVehiclePos = activeFeature.geometry.coordinates as [number, number];
+          }
+        }
+      }
+
+      // 1. Next stop halo filter update
+      if (map.getLayer('next-stop-highlight')) {
+        const rawStopId = nextStopId || '';
+        const cleanStopId = rawStopId.replace(/^HSL:/, '');
+        if (rawStopId === '') {
+          map.setFilter('next-stop-highlight', ['==', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']], '']);
+        } else {
+          map.setFilter('next-stop-highlight', [
+            'match',
+            ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']],
+            [rawStopId, cleanStopId],
+            true,
+            false
+          ]);
+        }
+      }
+
+      // 2. Next stop route line rendering
+      let routeSegmentCoords: [number, number][] = [];
+      if (selectedVehiclePos && nextStopId && selectedTripDetailsRef.current) {
+        const tripStops = selectedTripDetailsRef.current.stops;
+        const cleanStopId = nextStopId.replace(/^HSL:/, '');
+        const matchedStop = tripStops.find(s => s.gtfsId === nextStopId || s.gtfsId?.replace(/^HSL:/, '') === cleanStopId);
+
+        if (matchedStop && selectedTripDetailsRef.current.geometry) {
+          const stopCoords: [number, number] = [matchedStop.lon, matchedStop.lat];
+          const polylineCoords = decodePolyline(selectedTripDetailsRef.current.geometry);
+
+          if (polylineCoords.length > 0) {
+            const getClosestPointIndex = (coords: [number, number][], target: [number, number]): number => {
+              let minD = Infinity;
+              let index = 0;
+              for (let i = 0; i < coords.length; i++) {
+                const d = Math.pow(coords[i][0] - target[0], 2) + Math.pow(coords[i][1] - target[1], 2);
+                if (d < minD) {
+                  minD = d;
+                  index = i;
+                }
+              }
+              return index;
+            };
+
+            const idxTram = getClosestPointIndex(polylineCoords, selectedVehiclePos);
+            const idxStop = getClosestPointIndex(polylineCoords, stopCoords);
+
+            const startIdx = Math.min(idxTram, idxStop);
+            const endIdx = Math.max(idxTram, idxStop);
+            const slice = polylineCoords.slice(startIdx, endIdx + 1);
+
+            routeSegmentCoords = [selectedVehiclePos, ...slice, stopCoords];
+          } else {
+            routeSegmentCoords = [selectedVehiclePos, stopCoords];
+          }
+        }
+      }
+
+      const routeSource = map.getSource('next-stop-route') as maplibregl.GeoJSONSource;
+      if (routeSource) {
+        routeSource.setData({
+          type: 'FeatureCollection',
+          features: routeSegmentCoords.length > 0 ? [{
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: routeSegmentCoords,
+            },
+            properties: {},
+          }] : [],
         });
       }
 
@@ -686,6 +793,104 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
+    // Source for selected vehicle to next stop route
+    if (!map.getSource('next-stop-route')) {
+      map.addSource('next-stop-route', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [],
+        },
+      });
+    }
+
+    // Selected stop highlight halo layer
+    if (!map.getLayer('stops-selected-highlight')) {
+      map.addLayer({
+        id: 'stops-selected-highlight',
+        type: 'circle',
+        source: 'stops',
+        'source-layer': 'stops',
+        paint: {
+          'circle-radius': [
+            'interpolate',
+            ['exponential', 1.15],
+            ['zoom'],
+            12, 12,
+            22, 45
+          ],
+          'circle-color': 'rgba(253, 203, 110, 0.25)', // glowing gold halo
+          'circle-stroke-color': '#fdcb6e',
+          'circle-stroke-width': 3.5,
+        },
+        filter: ['==', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']], '']
+      }, 'trams-circles');
+    }
+
+    // Selected bike station highlight halo layer
+    if (!map.getLayer('citybike-selected-highlight')) {
+      map.addLayer({
+        id: 'citybike-selected-highlight',
+        type: 'circle',
+        source: 'citybike',
+        'source-layer': 'rentalStations',
+        paint: {
+          'circle-radius': [
+            'interpolate',
+            ['exponential', 1.15],
+            ['zoom'],
+            12, 14,
+            22, 48
+          ],
+          'circle-color': 'rgba(253, 203, 110, 0.25)', // glowing gold halo
+          'circle-stroke-color': '#fdcb6e',
+          'circle-stroke-width': 3.5,
+        },
+        filter: ['==', ['to-string', ['coalesce', ['get', 'stationId'], ['get', 'id'], '']], '']
+      }, 'citybike_icon');
+    }
+
+    // Next stop highlight halo layer
+    if (!map.getLayer('next-stop-highlight')) {
+      map.addLayer({
+        id: 'next-stop-highlight',
+        type: 'circle',
+        source: 'stops',
+        'source-layer': 'stops',
+        paint: {
+          'circle-radius': [
+            'interpolate',
+            ['exponential', 1.15],
+            ['zoom'],
+            12, 12,
+            22, 45
+          ],
+          'circle-color': 'rgba(32, 191, 107, 0.25)', // glowing green halo
+          'circle-stroke-color': '#20bf6b',
+          'circle-stroke-width': 3,
+        },
+        filter: ['==', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']], '']
+      }, 'trams-circles');
+    }
+
+    // Route segment to next stop layer (rendered under trams-circles)
+    if (!map.getLayer('next-stop-route-layer')) {
+      map.addLayer({
+        id: 'next-stop-route-layer',
+        type: 'line',
+        source: 'next-stop-route',
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round',
+        },
+        paint: {
+          'line-color': '#20bf6b', // glowing green
+          'line-width': 6.5,
+          'line-opacity': 0.85,
+        },
+      }, 'trams-circles');
+    }
+
     // Draw route geometries now that style and layer are loaded
     drawRouteGeometries(map, routeGeometriesRef.current);
 
@@ -934,6 +1139,75 @@ export const Map: React.FC<MapProps> = ({
       console.warn('[Map] trams-selected-layer not found');
     }
   }, [selectedTramId]);
+
+  // Update selected stop highlight filter
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getStyle()) return;
+
+    if (map.getLayer('stops-selected-highlight')) {
+      const rawId = selectedStopId || '';
+      const cleanId = rawId.replace(/^HSL:/, '');
+      if (rawId === '') {
+        map.setFilter('stops-selected-highlight', ['==', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']], '']);
+      } else {
+        map.setFilter('stops-selected-highlight', [
+          'match',
+          ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']],
+          [rawId, cleanId],
+          true,
+          false
+        ]);
+      }
+    }
+  }, [selectedStopId]);
+
+  // Update selected bike station highlight filter
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getStyle()) return;
+
+    if (map.getLayer('citybike-selected-highlight')) {
+      const rawId = selectedBikeStationId || '';
+      if (rawId === '') {
+        map.setFilter('citybike-selected-highlight', ['==', ['to-string', ['coalesce', ['get', 'stationId'], ['get', 'id'], '']], '']);
+      } else {
+        map.setFilter('citybike-selected-highlight', [
+          'match',
+          ['to-string', ['coalesce', ['get', 'stationId'], ['get', 'id'], '']],
+          [rawId],
+          true,
+          false
+        ]);
+      }
+    }
+  }, [selectedBikeStationId]);
+
+  // Fetch trip details when selected vehicle changes
+  useEffect(() => {
+    if (!selectedTramId) {
+      setSelectedTripDetails(null);
+      return;
+    }
+
+    const selectedTram = trams[selectedTramId];
+    const tripId = selectedTram?.tripId || (selectedTramId.startsWith('HSL:') ? selectedTramId : null);
+    
+    if (!tripId) {
+      setSelectedTripDetails(null);
+      return;
+    }
+
+    console.log('[Map] Fetching trip details for selected vehicle:', selectedTramId, 'trip:', tripId);
+    fetchTripDetails(tripId)
+      .then((data) => {
+        setSelectedTripDetails(data);
+      })
+      .catch((err) => {
+        console.error('Failed to load trip details for map highlights:', err);
+        setSelectedTripDetails(null);
+      });
+  }, [selectedTramId, trams]);
 
   // Center, orient and tilt map on selected tram
   useEffect(() => {
