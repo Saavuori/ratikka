@@ -79,7 +79,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       {/* Header */}
       <div className="panel-header" style={{ paddingBottom: '8px' }}>
         <h1 className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
-          Ratikka
+          HSL - LIVE
           <span
             className={`status-dot ${
               connectionStatus === 'connected'
