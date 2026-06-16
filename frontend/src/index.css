@@ -505,13 +505,19 @@ body {
   margin-bottom: 6px;
 }
 
+.legend-list {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   font-size: 0.65rem;
   color: var(--text-primary);
-  margin-bottom: 4px;
 }
 
 .legend-color {
