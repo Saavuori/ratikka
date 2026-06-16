@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { VehiclePosition, TripDetailsResponse } from '../types';
-import { Navigation, Clock, X, Target } from 'lucide-react';
+import { Navigation, Clock, X, Target, ChevronsUp, ChevronUp, ChevronDown, ChevronsDown } from 'lucide-react';
 import { fetchTripDetails } from '../lib/api';
 
 interface TramCardProps {
@@ -109,7 +109,25 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
         <div className="tram-card-metrics" style={{ gap: '8px' }}>
           <div className="tram-card-metric">
             <Navigation size={12} style={{ color: '#94a3b8', transform: `rotate(${tram.hdg - mapBearing - 45}deg)`, transition: 'transform 0.2s ease' }} />
-            <span className="tram-card-metric-val" style={{ fontSize: '0.75rem' }}>{speedKmh} <span className="tram-card-metric-unit" style={{ fontSize: '0.6rem' }}>km/h</span></span>
+            <span className="tram-card-metric-val" style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+              {speedKmh} <span className="tram-card-metric-unit" style={{ fontSize: '0.6rem', marginRight: '2px' }}>km/h</span>
+              {tram.acc !== undefined && (() => {
+                const acc = tram.acc;
+                if (acc >= 0.5) {
+                  return <span title={`Accelerating strongly (${acc.toFixed(2)} m/s²)`} style={{ display: 'inline-flex' }}><ChevronsUp size={11} style={{ color: '#34d399', flexShrink: 0 }} /></span>;
+                }
+                if (acc >= 0.1) {
+                  return <span title={`Accelerating (${acc.toFixed(2)} m/s²)`} style={{ display: 'inline-flex' }}><ChevronUp size={11} style={{ color: '#34d399', flexShrink: 0 }} /></span>;
+                }
+                if (acc <= -0.5) {
+                  return <span title={`Braking strongly (${acc.toFixed(2)} m/s²)`} style={{ display: 'inline-flex' }}><ChevronsDown size={11} style={{ color: '#f87171', flexShrink: 0 }} /></span>;
+                }
+                if (acc <= -0.1) {
+                  return <span title={`Decelerating (${acc.toFixed(2)} m/s²)`} style={{ display: 'inline-flex' }}><ChevronDown size={11} style={{ color: '#f87171', flexShrink: 0 }} /></span>;
+                }
+                return null;
+              })()}
+            </span>
           </div>
           <div className="tram-card-divider" style={{ height: '10px' }} />
           <div className="tram-card-metric">

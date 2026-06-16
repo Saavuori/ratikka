@@ -12,6 +12,7 @@ export interface VehiclePosition {
   ts: number;
   tripId: string;
   mode: string;
+  acc?: number;
 }
 
 export interface PositionsMessage {

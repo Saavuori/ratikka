@@ -40,6 +40,7 @@ type HFPPayload struct {
 		Long  float64     `json:"long"`
 		Hdg   int         `json:"hdg"`
 		Spd   float64     `json:"spd"`
+		Acc   float64     `json:"acc"`
 		Dl    int         `json:"dl"`
 		Drst  int         `json:"drst"`
 		Route string      `json:"route"`
@@ -59,6 +60,7 @@ type VehiclePosition struct {
 	Lng    float64 `json:"lng"`
 	Hdg    int     `json:"hdg"`
 	Spd    float64 `json:"spd"`
+	Acc    float64 `json:"acc"`
 	Dl     int     `json:"dl"`
 	Drst   int     `json:"drst"`
 	Route  string  `json:"route"`
@@ -198,6 +200,7 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 		Lng:    vp.Long, // Translate "long" in HFP to "lng" in internal api
 		Hdg:    vp.Hdg,
 		Spd:    vp.Spd,
+		Acc:    vp.Acc,
 		Dl:     vp.Dl,
 		Drst:   vp.Drst,
 		Route:  vp.Route,
