@@ -53,7 +53,7 @@ export const Map: React.FC<MapProps> = ({
     const source = map.getSource('route-lines') as maplibregl.GeoJSONSource;
     if (!source) return;
 
-    const features: any[] = [];
+    const features: { type: 'Feature'; geometry: { type: 'LineString'; coordinates: [number, number][] }; properties: { line: string; color: string } }[] = [];
     Object.entries(geometries).forEach(([line, data]) => {
       const colorHex = data.color
         ? (data.color.startsWith('#') ? data.color : `#${data.color}`)
@@ -84,8 +84,61 @@ export const Map: React.FC<MapProps> = ({
   // Animation references to run independent of React re-renders
   const prevPositionsRef = useRef<Record<string, RenderPosition>>({});
   const targetPositionsRef = useRef<Record<string, RenderPosition>>({});
-  const lastUpdateRef = useRef<number>(performance.now());
+  const lastUpdateRef = useRef<number>(0);
   const animationFrameRef = useRef<number | null>(null);
+
+  // Interpolation and GeoJSON updates loop
+  function startAnimationLoop() {
+    const tick = () => {
+      const map = mapRef.current;
+      if (!map || !map.getSource('trams')) {
+        animationFrameRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      const now = performance.now();
+      // Snapshot updates are expected every 1000ms. Clamp delta to 1.0.
+      const elapsed = now - lastUpdateRef.current;
+      const t = Math.min(elapsed / 1000, 1.0);
+
+      const features = Object.entries(targetPositionsRef.current).map(([id, target]) => {
+        const prev = prevPositionsRef.current[id] || target;
+        
+        // Lerp position coordinates
+        const lat = lerp(prev.lat, target.lat, t);
+        const lng = lerp(prev.lng, target.lng, t);
+        const hdg = lerpAngle(prev.hdg, target.hdg, t);
+
+        const tramInfo = latestTramsRef.current[id];
+
+        return {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'Point' as const,
+            coordinates: [lng, lat],
+          },
+          properties: {
+            veh: id,
+            desi: tramInfo?.desi || '',
+            hdg: hdg,
+            stopped: tramInfo?.drst === 1 || tramInfo?.spd === 0,
+          },
+        };
+      });
+
+      const source = map.getSource('trams') as maplibregl.GeoJSONSource;
+      if (source) {
+        source.setData({
+          type: 'FeatureCollection',
+          features,
+        });
+      }
+
+      animationFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(tick);
+  }
 
   // Sync incoming tram data to animation refs
   useEffect(() => {
@@ -94,7 +147,8 @@ export const Map: React.FC<MapProps> = ({
     const newTarget: Record<string, RenderPosition> = {};
 
     // Filter trams based on line filters
-    const filteredTrams = Object.entries(trams).filter(([_, tram]) => {
+    const filteredTrams = Object.entries(trams).filter((entry) => {
+      const tram = entry[1];
       if (lineFilters.length === 0) return true;
       return lineFilters.includes(tram.desi);
     });
@@ -381,58 +435,6 @@ export const Map: React.FC<MapProps> = ({
     }
   }, [routeGeometries]);
 
-  // Interpolation and GeoJSON updates loop
-  const startAnimationLoop = () => {
-    const tick = () => {
-      const map = mapRef.current;
-      if (!map || !map.getSource('trams')) {
-        animationFrameRef.current = requestAnimationFrame(tick);
-        return;
-      }
-
-      const now = performance.now();
-      // Snapshot updates are expected every 1000ms. Clamp delta to 1.0.
-      const elapsed = now - lastUpdateRef.current;
-      const t = Math.min(elapsed / 1000, 1.0);
-
-      const features = Object.entries(targetPositionsRef.current).map(([id, target]) => {
-        const prev = prevPositionsRef.current[id] || target;
-        
-        // Lerp position coordinates
-        const lat = lerp(prev.lat, target.lat, t);
-        const lng = lerp(prev.lng, target.lng, t);
-        const hdg = lerpAngle(prev.hdg, target.hdg, t);
-
-        const tramInfo = latestTramsRef.current[id];
-
-        return {
-          type: 'Feature' as const,
-          geometry: {
-            type: 'Point' as const,
-            coordinates: [lng, lat],
-          },
-          properties: {
-            veh: id,
-            desi: tramInfo?.desi || '',
-            hdg: hdg,
-            stopped: tramInfo?.drst === 1 || tramInfo?.spd === 0,
-          },
-        };
-      });
-
-      const source = map.getSource('trams') as maplibregl.GeoJSONSource;
-      if (source) {
-        source.setData({
-          type: 'FeatureCollection',
-          features,
-        });
-      }
-
-      animationFrameRef.current = requestAnimationFrame(tick);
-    };
-
-    animationFrameRef.current = requestAnimationFrame(tick);
-  };
 
   return (
     <div className="map-wrapper">

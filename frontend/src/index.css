@@ -83,7 +83,7 @@ body {
 .filter-panel {
   top: 16px;
   left: 16px;
-  width: 280px;
+  width: 220px;
   max-height: calc(100vh - 32px);
   padding: 16px;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1206,3 +1206,128 @@ body {
     display: none !important;
   }
 }
+
+/* TramCard Overlay (Top Center Floating Card) */
+.tram-card-overlay {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 105;
+  background: var(--bg-panel);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-glow);
+  border-radius: 9999px; /* Pill shaped */
+  padding: 8px 16px 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tram-card-desi {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: rgba(16, 185, 129, 0.15);
+  border: 1.5px solid var(--accent-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #34d399;
+}
+
+.tram-card-metrics {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tram-card-metric {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tram-card-metric-val {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  white-space: nowrap;
+}
+
+.tram-card-metric-unit {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.tram-card-divider {
+  width: 1px;
+  height: 16px;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.tram-card-route {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tram-card-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  margin-left: 4px;
+}
+
+.tram-card-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
+}
+
+/* Mobile responsive for TramCard */
+@media (max-width: 768px) {
+  .tram-card-overlay {
+    top: 12px;
+    padding: 6px 12px 6px 8px;
+    gap: 8px;
+    max-width: 90%;
+  }
+
+  .tram-card-desi {
+    width: 26px;
+    height: 26px;
+    font-size: 0.8rem;
+  }
+
+  .tram-card-metrics {
+    gap: 8px;
+  }
+
+  .tram-card-metric-val {
+    font-size: 0.75rem;
+  }
+
+  .tram-card-route {
+    font-size: 0.75rem;
+    max-width: 100px;
+  }
+}
+

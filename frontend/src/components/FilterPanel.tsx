@@ -1,6 +1,6 @@
 import React from 'react';
 import type { VehiclePosition } from '../types';
-import { Filter, Eye, EyeOff, ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal } from 'lucide-react';
+import { Filter, Eye, ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal } from 'lucide-react';
 
 interface FilterPanelProps {
   trams: Record<string, VehiclePosition>;
@@ -32,13 +32,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     return numA - numB;
   });
 
-  const activeVehiclesCount = Object.keys(trams).length;
-
   return (
     <div className={`glass-panel filter-panel ${isCollapsed ? 'collapsed' : ''}`}>
       {/* Collapse/Expand Toggle Tab */}
-      <button 
-        className="filter-toggle-tab" 
+      <button
+        className="filter-toggle-tab"
         onClick={onToggleCollapse}
         aria-label={isCollapsed ? 'Show Filters' : 'Hide Filters'}
       >
@@ -49,10 +47,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           {isCollapsed ? <SlidersHorizontal size={18} /> : <ChevronDown size={18} />}
         </span>
       </button>
+
       {/* Header */}
       <div className="panel-header">
         <div>
-          <h1 className="panel-title">Ratikka Live</h1>
+          <h1 className="panel-title">Ratikka</h1>
           <p className="panel-subtitle">Helsinki Live Tram Map</p>
         </div>
 
@@ -71,25 +70,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="panel-stats">
-        <span className="stats-active-vehicles">Active Vehicles: <strong style={{ color: '#e2e8f0' }}>{activeVehiclesCount}</strong></span>
-        <span className="stats-active-vehicles-compact">Active: <strong style={{ color: '#e2e8f0' }}>{activeVehiclesCount}</strong></span>
-        {selectedLines.length > 0 && (
-          <button
-            onClick={onClearFilters}
-            className="clear-filters-btn"
-          >
-            Show All
-          </button>
-        )}
-      </div>
-
       {/* Filter Section */}
-      <div className="filter-scroll-area">
-        <div className="filter-section-title">
-          <Filter size={12} />
-          <span>Filter by Line</span>
+      <div className="filter-scroll-area" style={{ marginTop: '8px' }}>
+        <div className="panel-header-row">
+          <div className="filter-section-title" style={{ marginBottom: 0 }}>
+            <Filter size={12} />
+            <span>Lines</span>
+          </div>
+          {selectedLines.length > 0 && (
+            <button onClick={onClearFilters} className="clear-filters-btn">
+              Show All
+            </button>
+          )}
         </div>
 
         {activeLines.length === 0 ? (
@@ -97,11 +89,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             Waiting for live vehicle stream...
           </div>
         ) : (
-          <div className="line-grid">
+          <div className="line-grid" style={{ marginTop: '8px' }}>
             {activeLines.map((line) => {
               const isSelected = selectedLines.includes(line);
-              const lineCount = Object.values(trams).filter((t) => t.desi === line).length;
-
               return (
                 <button
                   key={line}
@@ -109,13 +99,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                   className={`line-btn ${isSelected ? 'active' : ''}`}
                 >
                   <span className="line-btn-label">{line}</span>
-                  <span className="line-btn-count">
-                    {lineCount} {lineCount === 1 ? 'tram' : 'trams'}
-                  </span>
-                  <span className="line-btn-icon">
-                    {isSelected ? <Eye size={10} /> : <EyeOff size={10} />}
-                  </span>
-                  <span className="mobile-line-badge">{lineCount}</span>
+                  {isSelected ? <Eye size={10} className="line-btn-icon-inline" /> : null}
                 </button>
               );
             })}
@@ -125,7 +109,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
       {/* Legend */}
       <div className="legend-section">
-        <div className="legend-title">Map Legend</div>
+        <div className="legend-title">Legend</div>
         <div className="legend-list">
           <div className="legend-item">
             <span className="legend-color" style={{ backgroundColor: '#0984e3' }} />

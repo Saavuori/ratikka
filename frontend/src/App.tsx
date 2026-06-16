@@ -1,9 +1,11 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useTramData } from './hooks/useTramData';
 import { Map } from './components/Map';
 import { FilterPanel } from './components/FilterPanel';
 import { TramPopup } from './components/TramPopup';
+import { TramCard } from './components/TramCard';
 import { StopPopup } from './components/StopPopup';
 import { VersionBadge } from './components/VersionBadge';
 import { fetchRouteDetails } from './lib/api';
@@ -21,6 +23,9 @@ function App() {
     code: string;
   } | null>(null);
 
+  // Route name reported back from TramPopup for the TramCard
+  const [tramRouteName, setTramRouteName] = useState<string | undefined>(undefined);
+
   // Sidebar collapse state: defaults to collapsed on mobile, open on desktop
   const [isFilterCollapsed, setIsFilterCollapsed] = useState<boolean>(
     typeof window !== 'undefined' ? window.innerWidth <= 768 : false
@@ -33,8 +38,14 @@ function App() {
     }
   }, [selectedTram, selectedStop]);
 
+  // Clear route name when tram changes
+  useEffect(() => {
+    setTramRouteName(undefined);
+  }, [selectedTram?.tripId]);
+
   // Line & Stop filtering states
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
+  // null = no stop filter active; string[] = only show these tripIds
   const [stopTripIds, setStopTripIds] = useState<string[] | null>(null);
   const [routeGeometries, setRouteGeometries] = useState<Record<string, { geometries: string[]; color?: string }>>({});
 
@@ -80,14 +91,14 @@ function App() {
   }, [selectedLines, selectedTram]);
 
   const handleSelectTram = (tram: VehiclePosition | null) => {
-    setSelectedStop(null); // Mutually exclusive view
+    setSelectedStop(null);
     setStopTripIds(null);
     setSelectedTram(tram);
   };
 
   const handleSelectStop = (stopId: string, name: string, code: string) => {
-    setSelectedTram(null); // Mutually exclusive view
-    setStopTripIds(null);
+    setSelectedTram(null);
+    setStopTripIds(null); // Reset stop filter to show all trams while loading the new stop
     setSelectedStop({ id: stopId, name, code });
   };
 
@@ -106,18 +117,18 @@ function App() {
     setSelectedLines([]);
   };
 
-  const handleSelectTripFromStop = (tripId: string) => {
-    // Find if the tram for this trip is currently online in our live cache
+  const handleSelectTripFromStop = (tripId: string, lineDesi: string) => {
+    // Find if the tram for this trip is currently online
     const matchedTram = Object.values(trams).find((t) => t.tripId === tripId);
     setStopTripIds(null);
     if (matchedTram) {
       setSelectedStop(null);
       setSelectedTram(matchedTram);
     } else {
-      // If the vehicle is not online, we can still construct a temporary mock tram view to query details
+      // Tram not online yet — build a stub so we can still show the schedule
       const dummyTram: VehiclePosition = {
         veh: 0,
-        desi: 'T',
+        desi: lineDesi || '?',
         lat: 0,
         lng: 0,
         hdg: 0,
@@ -134,20 +145,31 @@ function App() {
     }
   };
 
-  // Filter trams displayed on the map by selected line AND selected stop departures
+  // Stop departure filter: only filter after trip IDs are loaded.
+  // While loading (selectedStop set but stopTripIds not yet arrived) keep all trams visible.
   const displayedTrams = Object.fromEntries(
-    Object.entries(trams).filter(([_, tram]) => {
-      // Filter by selected lines if any
+    Object.entries(trams).filter((entry) => {
+      const tram = entry[1];
       if (selectedLines.length > 0 && !selectedLines.includes(tram.desi)) {
         return false;
       }
-      // Filter by stop departures if active
+      // Only filter by stop trips when we actually have the list
       if (stopTripIds !== null && !stopTripIds.includes(tram.tripId)) {
         return false;
       }
       return true;
     })
   );
+
+  // The live tram being tracked (prefer live data over stale selectedTram snapshot)
+  const liveTram = selectedTram
+    ? (selectedTram.veh ? trams[selectedTram.veh] || selectedTram : selectedTram)
+    : null;
+
+  const handleCloseTram = () => {
+    setSelectedTram(null);
+    setStopTripIds(null);
+  };
 
   return (
     <div className="dashboard-container">
@@ -161,7 +183,7 @@ function App() {
         routeGeometries={routeGeometries}
       />
 
-      {/* Sidebar Filters Panel - receives unfiltered trams to show total counts */}
+      {/* Sidebar Filters Panel */}
       <FilterPanel
         trams={trams}
         selectedLines={selectedLines}
@@ -172,13 +194,21 @@ function App() {
         onToggleCollapse={() => setIsFilterCollapsed(!isFilterCollapsed)}
       />
 
+      {/* Floating top-center tram telemetry card */}
+      {liveTram && liveTram.veh !== 0 && (
+        <TramCard
+          tram={liveTram}
+          routeName={tramRouteName}
+          onClose={handleCloseTram}
+        />
+      )}
+
+      {/* Schedule detail panel (right side) */}
       {selectedTram && (
         <TramPopup
-          tram={trams[selectedTram.veh] || selectedTram}
-          onClose={() => {
-            setSelectedTram(null);
-            setStopTripIds(null);
-          }}
+          tram={liveTram!}
+          onClose={handleCloseTram}
+          onRouteNameReady={setTramRouteName}
         />
       )}
 
@@ -189,12 +219,12 @@ function App() {
           stopName={selectedStop.name}
           stopCode={selectedStop.code}
           onClose={handleCloseStop}
-          onSelectTripId={handleSelectTripFromStop}
+          onSelectTripId={(tripId, lineDesi) => handleSelectTripFromStop(tripId, lineDesi)}
           onStopDeparturesLoaded={setStopTripIds}
         />
       )}
 
-      {/* Subtle Version/Commit Footer */}
+      {/* Version Badge */}
       <VersionBadge />
     </div>
   );

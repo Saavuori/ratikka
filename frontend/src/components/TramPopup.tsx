@@ -1,14 +1,16 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import React, { useEffect, useState } from 'react';
 import type { VehiclePosition, TripDetailsResponse } from '../types';
 import { fetchTripDetails } from '../lib/api';
-import { X, Clock, Navigation, AlertTriangle, Loader2 } from 'lucide-react';
+import { X, AlertTriangle, Loader2 } from 'lucide-react';
 
 interface TramPopupProps {
   tram: VehiclePosition;
   onClose: () => void;
+  onRouteNameReady?: (name: string) => void;
 }
 
-export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
+export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose, onRouteNameReady }) => {
   const [tripDetails, setTripDetails] = useState<TripDetailsResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,11 +24,15 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
 
     setLoading(true);
     setError(null);
+    setTripDetails(null);
 
     fetchTripDetails(tram.tripId)
       .then((data) => {
         setTripDetails(data);
         setLoading(false);
+        if (onRouteNameReady && data.route?.longName) {
+          onRouteNameReady(data.route.longName);
+        }
       })
       .catch((err) => {
         console.error(err);
@@ -35,30 +41,49 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
       });
   }, [tram.tripId]);
 
-  const formatDelay = (seconds: number) => {
-    if (seconds === 0) return 'On time';
-    const mins = Math.round(Math.abs(seconds) / 60);
-    return seconds < 0 ? `${mins} min early` : `${mins} min late`;
+  const getDelayColor = (seconds: number) => {
+    if (seconds > 60) return '#f87171';
+    if (seconds < -60) return '#38bdf8';
+    return '#34d399';
   };
 
-  const getDelayColor = (seconds: number) => {
-    if (seconds > 60) return 'text-rose-400';
-    if (seconds < -60) return 'text-sky-400';
-    return 'text-emerald-400';
+  // Determine current position in the schedule.
+  // tram.stop = the GTFS ID of the stop the tram most recently passed or is currently at.
+  // drst === 1 means doors open = stopped at a stop.
+  const getStopIndices = () => {
+    if (!tripDetails) return { currentStopIndex: -1, nextStopIndex: -1, lastKnownIndex: -1 };
+
+    const isStopped = tram.drst === 1;
+    const lastKnownIndex = tripDetails.stops.findIndex(s => s.gtfsId === tram.stop);
+
+    if (lastKnownIndex === -1) {
+      return { currentStopIndex: -1, nextStopIndex: -1, lastKnownIndex: -1 };
+    }
+
+    if (isStopped) {
+      // Doors open: we ARE at this stop
+      const currentStopIndex = lastKnownIndex;
+      const nextStopIndex = lastKnownIndex + 1 < tripDetails.stops.length ? lastKnownIndex + 1 : -1;
+      return { currentStopIndex, nextStopIndex, lastKnownIndex };
+    } else {
+      // Moving: we have departed lastKnownIndex, heading to lastKnownIndex + 1
+      const nextStopIndex = lastKnownIndex + 1 < tripDetails.stops.length ? lastKnownIndex + 1 : lastKnownIndex;
+      return { currentStopIndex: -1, nextStopIndex, lastKnownIndex };
+    }
   };
 
   return (
     <div className="glass-panel detail-popup">
-      {/* Top Banner */}
-      <div className="panel-header" style={{ padding: '0 0 16px 0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div className="desi-circle">
-            {tram.desi}
-          </div>
+      {/* Header */}
+      <div className="panel-header" style={{ padding: '0 0 12px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="desi-circle">{tram.desi}</div>
           <div>
-            <h2 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>Tram #{tram.veh}</h2>
-            <p className="panel-subtitle">
-              {tripDetails?.route.longName || 'Fetching route details...'}
+            <h2 style={{ fontSize: '0.8rem', fontWeight: 700, margin: 0, color: '#e2e8f0' }}>
+              {tripDetails?.headsign ? `→ ${tripDetails.headsign}` : `Line ${tram.desi}`}
+            </h2>
+            <p className="panel-subtitle" style={{ marginTop: '1px' }}>
+              {tripDetails?.route.longName || 'Loading route…'}
             </p>
           </div>
         </div>
@@ -67,180 +92,127 @@ export const TramPopup: React.FC<TramPopupProps> = ({ tram, onClose }) => {
         </button>
       </div>
 
-      {/* Body Content */}
-      <div className="timeline-container" style={{ flex: 1, marginTop: '16px' }}>
-        {/* Real-time telemetry cards */}
-        <div className="metric-grid">
-          <div className="metric-card">
-            <span className="metric-label">Speed</span>
-            <span className="metric-val">
-              <Navigation size={14} style={{ transform: 'rotate(90deg)', color: '#94a3b8' }} />
-              {Math.round(tram.spd * 3.6)} km/h
-            </span>
-          </div>
+      {/* Next Stop Callout */}
+      {!loading && !error && tripDetails && (() => {
+        const { currentStopIndex, nextStopIndex, lastKnownIndex } = getStopIndices();
+        const isStopped = tram.drst === 1;
 
-          <div className="metric-card">
-            <span className="metric-label">Schedule Offset</span>
-            <span className={`metric-val ${getDelayColor(tram.dl)}`}>
-              <Clock size={14} />
-              {formatDelay(tram.dl)}
-            </span>
-          </div>
-        </div>
+        if (lastKnownIndex === -1) return null;
 
+        const currentStop = isStopped && currentStopIndex !== -1 ? tripDetails.stops[currentStopIndex] : null;
+        const nextStop = nextStopIndex !== -1 ? tripDetails.stops[nextStopIndex] : null;
 
-        {/* Next Stop Info Callout */}
-        {!loading && !error && tripDetails && (() => {
-          const currentIndex = tripDetails.stops.findIndex(s => s.gtfsId === tram.stop);
-          const currentStop = currentIndex !== -1 ? tripDetails.stops[currentIndex] : null;
-          const isStopped = tram.drst === 1 || tram.spd === 0;
-
-          if (!currentStop) return null;
-
-          if (isStopped) {
-            const nextStop = currentIndex + 1 < tripDetails.stops.length ? tripDetails.stops[currentIndex + 1] : null;
-            return (
-              <div className="next-stop-callout stopped">
-                <div className="callout-main">
-                  <div>
-                    <span className="callout-label" style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: '#f59e0b', display: 'block', letterSpacing: '0.05em' }}>Current Stop</span>
-                    <span className="callout-val">{currentStop.name}</span>
-                  </div>
-                  <span className="callout-badge" style={{
-                    fontSize: '0.65rem',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                    border: '1px solid #f59e0b',
-                    color: '#fbbf24',
-                    textTransform: 'uppercase',
-                    fontWeight: 'bold'
-                  }}>Stopped</span>
-                </div>
-
-                {nextStop && (
-                  <div className="next-stop-sub">
-                    <div>
-                      <span className="callout-label" style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--accent-green)', display: 'block', letterSpacing: '0.05em' }}>Next Stop</span>
-                      <span className="callout-val next-name">{nextStop.name}</span>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <span className="callout-label" style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 700, color: '#94a3b8', display: 'block' }}>ETA</span>
-                      <span className="callout-val next-eta">{nextStop.realtimeArrival}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          } else {
-            return (
-              <div className="next-stop-callout moving">
+        return (
+          <div className={`next-stop-callout ${isStopped ? 'stopped' : 'moving'}`}>
+            {isStopped && currentStop && (
+              <div className="callout-main">
                 <div>
-                  <span className="callout-label" style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--accent-green)', display: 'block', letterSpacing: '0.05em' }}>Next Stop</span>
+                  <span style={{ fontSize: '0.6rem', textTransform: 'uppercase', fontWeight: 800, color: '#f59e0b', display: 'block', letterSpacing: '0.05em' }}>
+                    At stop
+                  </span>
                   <span className="callout-val">{currentStop.name}</span>
                 </div>
+                <span style={{
+                  fontSize: '0.6rem', padding: '2px 6px', borderRadius: '4px',
+                  backgroundColor: 'rgba(245,158,11,0.15)', border: '1px solid #f59e0b',
+                  color: '#fbbf24', textTransform: 'uppercase', fontWeight: 'bold'
+                }}>Stopped</span>
+              </div>
+            )}
+
+            {nextStop && (
+              <div className={isStopped ? 'next-stop-sub' : 'callout-main'}>
+                <div>
+                  <span style={{ fontSize: '0.6rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--accent-green)', display: 'block', letterSpacing: '0.05em' }}>
+                    Next stop
+                  </span>
+                  <span className="callout-val next-name">{nextStop.name}</span>
+                </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span className="callout-label" style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 700, color: '#94a3b8', display: 'block' }}>ETA</span>
-                  <span className="callout-val next-eta">{currentStop.realtimeArrival}</span>
+                  <span style={{ fontSize: '0.6rem', textTransform: 'uppercase', fontWeight: 700, color: '#94a3b8', display: 'block' }}>ETA</span>
+                  <span className="callout-val next-eta">{nextStop.realtimeArrival}</span>
                 </div>
               </div>
-            );
-          }
-        })()}
+            )}
 
-        {/* Loading Spinner */}
-        {loading && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 0', gap: '12px', color: '#94a3b8' }}>
-            <Loader2 className="animate-spin" style={{ color: '#34d399' }} size={24} />
-            <span style={{ fontSize: '0.75rem' }}>Querying trip arrivals...</span>
+            {!nextStop && (
+              <div style={{ fontSize: '0.75rem', color: '#64748b', textAlign: 'center' }}>End of line</div>
+            )}
           </div>
-        )}
+        );
+      })()}
 
-        {/* Error Fallback */}
-        {error && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 0', gap: '8px', color: '#ef4444', textAlign: 'center' }}>
-            <AlertTriangle size={24} />
-            <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{error}</span>
-          </div>
-        )}
+      {/* Loading */}
+      {loading && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '36px 0', gap: '12px', color: '#94a3b8' }}>
+          <Loader2 className="animate-spin" style={{ color: '#34d399' }} size={22} />
+          <span style={{ fontSize: '0.7rem' }}>Loading schedule…</span>
+        </div>
+      )}
 
-        {/* Stops timeline */}
-        {!loading && !error && tripDetails && (() => {
-          const currentIndex = tripDetails.stops.findIndex(s => s.gtfsId === tram.stop);
-          const isStopped = tram.drst === 1 || tram.spd === 0;
+      {/* Error */}
+      {error && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 0', gap: '8px', color: '#ef4444', textAlign: 'center' }}>
+          <AlertTriangle size={22} />
+          <span style={{ fontSize: '0.7rem', fontWeight: 600 }}>{error}</span>
+        </div>
+      )}
 
-          let currentStopIndex = -1;
-          let nextStopIndex = -1;
+      {/* Stop Timeline — past stops collapsed, future stops full */}
+      {!loading && !error && tripDetails && (() => {
+        const { currentStopIndex, nextStopIndex, lastKnownIndex } = getStopIndices();
+        const isStopped = tram.drst === 1;
 
-          if (currentIndex !== -1) {
-            if (isStopped) {
-              currentStopIndex = currentIndex;
-              nextStopIndex = currentIndex + 1 < tripDetails.stops.length ? currentIndex + 1 : -1;
-            } else {
-              nextStopIndex = currentIndex;
-            }
-          }
+        return (
+          <div className="timeline-container">
+            <div className="timeline-list">
+              {tripDetails.stops.map((stop, idx) => {
+                // Determine if this stop is in the past
+                const isPassed = lastKnownIndex !== -1 && (
+                  isStopped ? idx < currentStopIndex : idx <= lastKnownIndex
+                );
+                const isCurrent = idx === currentStopIndex && isStopped;
+                const isNext = idx === nextStopIndex;
+                const isUpcoming = !isPassed && !isCurrent && !isNext;
 
-          return (
-            <div>
-              <div className="legend-title" style={{ marginBottom: '12px' }}>
-                Route Stop Schedule ({tripDetails.headsign ? `to ${tripDetails.headsign}` : 'Ongoing'})
-              </div>
+                // Collapsed past stops — just a dot line
+                if (isPassed) {
+                  return (
+                    <div key={idx} className="timeline-item passed timeline-item--collapsed">
+                      <span className="timeline-dot" />
+                    </div>
+                  );
+                }
 
-              {tripDetails.stops.length === 0 ? (
-                <div style={{ fontSize: '0.75rem', color: '#64748b', padding: '16px 0', textAlign: 'center' }}>
-                  No stop times available for this trip
-                </div>
-              ) : (
-                <div className="timeline-list">
-                  {tripDetails.stops.map((stop, idx) => {
-                    const isPassed = currentIndex !== -1 && (isStopped ? idx < currentStopIndex : idx < nextStopIndex);
-                    const isCurrent = idx === currentStopIndex;
-                    const isNext = idx === nextStopIndex;
+                let itemClass = 'timeline-item';
+                if (isCurrent) itemClass += ' active current';
+                else if (isNext) itemClass += ' active next';
+                else if (isUpcoming) itemClass += ' upcoming';
 
-                    let itemClass = "timeline-item";
-                    if (isPassed) itemClass += " passed";
-                    else if (isCurrent) itemClass += " active current";
-                    else if (isNext) itemClass += " active next";
-                    else itemClass += " upcoming";
-
-                    return (
-                      <div key={idx} className={itemClass}>
-                        <span className="timeline-dot" />
-
-                        <div className="timeline-stop-info">
-                          <h4 className="timeline-stop-name">
-                            {stop.name}
-                            {isCurrent && (
-                              <span className="stop-status-badge current">Stopped</span>
-                            )}
-                            {isNext && (
-                              <span className="stop-status-badge next">Next</span>
-                            )}
-                          </h4>
-                          <span className="timeline-stop-code">
-                            Code: {stop.code || 'N/A'}
-                          </span>
-                        </div>
-                        <div className="timeline-time-info">
-                          <span className="timeline-time">
-                            {stop.realtimeArrival}
-                          </span>
-                          {stop.delay !== 0 && (
-                            <span className={`timeline-delay ${getDelayColor(stop.delay)}`}>
-                              {stop.delay < 0 ? '-' : '+'}{Math.round(Math.abs(stop.delay) / 60)} min
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                return (
+                  <div key={idx} className={itemClass}>
+                    <span className="timeline-dot" />
+                    <div className="timeline-stop-info">
+                      <h4 className="timeline-stop-name">{stop.name}</h4>
+                      {(isCurrent || isNext) && (
+                        <span className="timeline-stop-code">{stop.code}</span>
+                      )}
+                    </div>
+                    <div className="timeline-time-info">
+                      <span className="timeline-time">{stop.realtimeArrival}</span>
+                      {stop.delay !== 0 && (
+                        <span className="timeline-delay" style={{ color: getDelayColor(stop.delay) }}>
+                          {stop.delay < 0 ? '-' : '+'}{Math.round(Math.abs(stop.delay) / 60)}m
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })()}
-      </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

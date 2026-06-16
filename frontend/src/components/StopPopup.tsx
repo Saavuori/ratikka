@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import React, { useEffect, useState } from 'react';
 import type { StopDetailsResponse } from '../types';
 import { fetchStopDetails } from '../lib/api';
@@ -8,7 +9,7 @@ interface StopPopupProps {
   stopName: string;
   stopCode: string;
   onClose: () => void;
-  onSelectTripId: (tripId: string) => void;
+  onSelectTripId: (tripId: string, lineDesi: string) => void;
   onStopDeparturesLoaded?: (tripIds: string[]) => void;
 }
 
@@ -125,7 +126,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
                   <div
                     key={idx}
                     onClick={() => {
-                      if (dep.tripId) onSelectTripId(dep.tripId);
+                      if (dep.tripId) onSelectTripId(dep.tripId, dep.line);
                     }}
                     className="departure-item"
                   >
@@ -137,9 +138,6 @@ export const StopPopup: React.FC<StopPopupProps> = ({
                         <h4 className="departure-dest">
                           {dep.headsign || 'Unknown Destination'}
                         </h4>
-                        <span className="departure-sub">
-                          Click to track tram trip
-                        </span>
                       </div>
                     </div>
                     <div className="departure-right">
