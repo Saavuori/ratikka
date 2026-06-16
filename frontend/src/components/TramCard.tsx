@@ -123,18 +123,23 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
         {/* Stop info row */}
         {hasStopInfo && (
           <div style={{ 
-            fontSize: '0.65rem', 
-            color: '#94a3b8', 
+            fontSize: '0.68rem', 
+            color: 'var(--text-secondary)', 
             overflow: 'hidden', 
             textOverflow: 'ellipsis', 
             whiteSpace: 'nowrap',
             textAlign: 'left'
           }}>
             {isStopped && currentStop ? (
-              <span style={{ color: '#fbbf24', fontWeight: 600 }}>At {currentStop.name}</span>
+              <span style={{ color: '#fbbf24', fontWeight: 600 }}>
+                At <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{currentStop.name}</span>
+              </span>
             ) : nextStop ? (
-              <span style={{ color: '#e2e8f0', fontWeight: 500 }}>
-                Next: {nextStop.name} <span style={{ color: '#34d399', fontSize: '0.62rem', fontWeight: 600 }}>{nextStop.realtimeArrival}</span>
+              <span>
+                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Next: </span>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{nextStop.name}</span>
+                {' '}
+                <span style={{ color: '#10b981', fontSize: '0.65rem', fontWeight: 700 }}>{nextStop.realtimeArrival}</span>
               </span>
             ) : null}
           </div>
