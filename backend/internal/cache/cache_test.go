@@ -43,3 +43,21 @@ func TestMemoryCache_RoundTrip(t *testing.T) {
 		t.Errorf("expected %s, got %s", string(payload), string(val))
 	}
 }
+
+func TestMemoryCache_Delete(t *testing.T) {
+	c := NewMemoryCache()
+	ctx := context.Background()
+
+	vehicleID := "123"
+	payload := []byte(`{"veh":123,"desi":"9"}`)
+	_ = c.SetPosition(ctx, vehicleID, payload)
+
+	if err := c.DeletePosition(ctx, vehicleID); err != nil {
+		t.Fatalf("unexpected error deleting position: %v", err)
+	}
+
+	positions, _ := c.GetAllPositions(ctx)
+	if _, exists := positions[vehicleID]; exists {
+		t.Errorf("expected vehicle %s to be deleted", vehicleID)
+	}
+}

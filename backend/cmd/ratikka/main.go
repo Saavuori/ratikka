@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -57,6 +58,20 @@ func main() {
 	wsHub := ws.NewHub(liveCache)
 	go wsHub.Run(ctx)
 
+	// Spawn background stale vehicle cleanup (older than 60 seconds)
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				cleanupStaleTrams(ctx, liveCache)
+			}
+		}
+	}()
+
 	// 6. Setup REST Handlers & GraphQL API Client
 	gqlClient := api.NewGraphQLClient(cfg.DigitransitAPIKey)
 	handlers := api.NewHandlers(liveCache, gqlClient, mqttWorker)
@@ -96,4 +111,33 @@ func main() {
 	}
 
 	log.Println("Ratikka backend stopped.")
+}
+
+func cleanupStaleTrams(ctx context.Context, c cache.Cache) {
+	positions, err := c.GetAllPositions(ctx)
+	if err != nil {
+		log.Printf("Cleanup error getting positions: %v\n", err)
+		return
+	}
+
+	now := time.Now().Unix()
+	const staleThresholdSeconds = 60 // 1 minute stale limit
+
+	for vehicleID, payload := range positions {
+		var pos struct {
+			Ts int64 `json:"ts"`
+		}
+		if err := json.Unmarshal(payload, &pos); err != nil {
+			log.Printf("Cleanup error unmarshaling position for vehicle %s: %v\n", vehicleID, err)
+			continue
+		}
+
+		if now-pos.Ts > staleThresholdSeconds {
+			if err := c.DeletePosition(ctx, vehicleID); err != nil {
+				log.Printf("Cleanup error deleting stale vehicle %s: %v\n", vehicleID, err)
+			} else {
+				log.Printf("Cleaned up stale vehicle %s (inactive for %d seconds)\n", vehicleID, now-pos.Ts)
+			}
+		}
+	}
 }

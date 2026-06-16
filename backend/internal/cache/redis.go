@@ -48,6 +48,10 @@ func (r *RedisCache) GetAllPositions(ctx context.Context) (map[string][]byte, er
 	return positions, nil
 }
 
+func (r *RedisCache) DeletePosition(ctx context.Context, vehicleID string) error {
+	return r.client.HDel(ctx, RedisKey, vehicleID).Err()
+}
+
 func (r *RedisCache) Ping(ctx context.Context) error {
 	return r.client.Ping(ctx).Err()
 }

@@ -35,6 +35,13 @@ func (m *MemoryCache) GetAllPositions(ctx context.Context) (map[string][]byte, e
 	return copyMap, nil
 }
 
+func (m *MemoryCache) DeletePosition(ctx context.Context, vehicleID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.positions, vehicleID)
+	return nil
+}
+
 func (m *MemoryCache) Ping(ctx context.Context) error {
 	return nil
 }
