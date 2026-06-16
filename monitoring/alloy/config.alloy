@@ -16,12 +16,6 @@ prometheus.scrape "scrape_backend" {
   forward_to = [prometheus.remote_write.grafana_cloud.receiver]
 }
 
-prometheus.scrape "scrape_cadvisor" {
-  targets = [
-    {"__address__" = "ratikka-cadvisor:8080"},
-  ]
-  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
-}
 
 prometheus.remote_write "grafana_cloud" {
   endpoint {

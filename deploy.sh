@@ -68,16 +68,6 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.scope=ratikka"
 
-  ratikka-cadvisor:
-    image: gcr.io/cadvisor/cadvisor-arm64:v0.49.1
-    restart: unless-stopped
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-      - /var/lib/containers/:/var/lib/containers:ro
-      - /dev/disk/:/dev/disk:ro
 
   ratikka-alloy:
     image: docker.io/grafana/alloy:latest
@@ -93,7 +83,6 @@ services:
       - GRAFANA_CLOUD_PROMETHEUS_TOKEN=${GRAFANA_CLOUD_PROMETHEUS_TOKEN}
     depends_on:
       - ratikka-backend
-      - ratikka-cadvisor
 
 volumes:
   caddy-data:
@@ -119,12 +108,6 @@ prometheus.scrape "scrape_backend" {
   forward_to = [prometheus.remote_write.grafana_cloud.receiver]
 }
 
-prometheus.scrape "scrape_cadvisor" {
-  targets = [
-    {"__address__" = "ratikka-cadvisor:8080"},
-  ]
-  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
-}
 
 prometheus.remote_write "grafana_cloud" {
   endpoint {
