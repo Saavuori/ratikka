@@ -175,32 +175,9 @@ export const Map: React.FC<MapProps> = ({
 
     const apiKey = import.meta.env.VITE_DIGITRANSIT_MAP_KEY || '';
 
-    const style: maplibregl.StyleSpecification = {
-      version: 8,
-      sources: {
-        'hsl-raster-source': {
-          type: 'raster',
-          tiles: [
-            `https://cdn.digitransit.fi/map/v3/hsl-map-greyscale/{z}/{x}/{y}@2x.png?digitransit-subscription-key=${apiKey}`
-          ],
-          tileSize: 512,
-        }
-      },
-      layers: [
-        {
-          id: 'hsl-raster-layer',
-          type: 'raster',
-          source: 'hsl-raster-source',
-          minzoom: 0,
-          maxzoom: 22,
-        }
-      ],
-      glyphs: 'https://hslstoragestatic.azureedge.net/mapfonts/{fontstack}/{range}.pbf'
-    };
-
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: style,
+      style: `https://cdn.digitransit.fi/map/v3/styles/hsl-map/style.json?digitransit-subscription-key=${apiKey}`,
       center: [24.9414, 60.1699], // Helsinki center
       zoom: 14,
       maxZoom: 18,

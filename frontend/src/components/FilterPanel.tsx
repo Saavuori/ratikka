@@ -49,14 +49,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       </button>
 
       {/* Header */}
-      <div className="panel-header">
-        <div>
-          <h1 className="panel-title">Ratikka</h1>
-          <p className="panel-subtitle">Helsinki Live Tram Map</p>
-        </div>
-
-        {/* Connection status indicator */}
-        <div className="status-pill">
+      <div className="panel-header" style={{ paddingBottom: '8px' }}>
+        <h1 className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+          Ratikka
           <span
             className={`status-dot ${
               connectionStatus === 'connected'
@@ -65,9 +60,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 ? 'connecting'
                 : 'disconnected'
             }`}
+            title={`WebSocket: ${connectionStatus}`}
+            style={{ width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block' }}
           />
-          <span className="status-text">{connectionStatus}</span>
-        </div>
+        </h1>
       </div>
 
       {/* Filter Section */}

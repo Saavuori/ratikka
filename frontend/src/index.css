@@ -83,9 +83,9 @@ body {
 .filter-panel {
   top: 16px;
   left: 16px;
-  width: 220px;
+  width: 115px;
   max-height: calc(100vh - 32px);
-  padding: 16px;
+  padding: 10px;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -362,19 +362,19 @@ body {
 /* Grid & List Containers */
 .line-grid {
   display: grid;
-  grid-template-cols: repeat(3, 1fr);
-  gap: 6px;
-  margin-top: 12px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  margin-top: 8px;
 }
 
 .line-btn {
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  padding: 8px 4px;
-  border-radius: 10px;
+  padding: 6px 2px;
+  border-radius: 6px;
   background: rgba(30, 41, 59, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.04);
   cursor: pointer;
@@ -415,34 +415,34 @@ body {
 
 /* Legend Styling */
 .legend-section {
-  padding-top: 16px;
+  padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  margin-top: 16px;
+  margin-top: 8px;
 }
 
 .legend-title {
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   font-weight: 700;
   color: #94a3b8;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 0.75rem;
+  gap: 6px;
+  font-size: 0.65rem;
   color: #cbd5e1;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .legend-color {
-  width: 12px;
-  height: 12px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  border: 1.5px solid #ffffff;
+  border: 1px solid #ffffff;
 }
 
 /* Close & Action Buttons */
