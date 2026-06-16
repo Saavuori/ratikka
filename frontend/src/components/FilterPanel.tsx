@@ -1,6 +1,6 @@
 import React from 'react';
 import type { VehiclePosition } from '../types';
-import { Filter, ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Route } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Route } from 'lucide-react';
 
 interface FilterPanelProps {
   trams: Record<string, VehiclePosition>;
@@ -80,17 +80,14 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
       {/* Filter Section */}
       <div className="filter-scroll-area" style={{ marginTop: '8px' }}>
-        <div className="panel-header-row">
-          <div className="filter-section-title" style={{ marginBottom: 0 }}>
-            <Filter size={12} />
-            <span>Lines</span>
-          </div>
-          {selectedLines.length > 0 && (
+        {selectedLines.length > 0 && (
+          <div className="panel-header-row">
+            <div style={{ flexGrow: 1 }} />
             <button onClick={onClearFilters} className="clear-filters-btn">
               Show All
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {activeLines.length === 0 ? (
           <div style={{ fontSize: '0.75rem', color: '#64748b', padding: '16px 0', textAlign: 'center' }}>
