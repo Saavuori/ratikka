@@ -78,9 +78,9 @@ export const TramPopup: React.FC<TramPopupProps> = ({
 
     const isStopped = tram.drst === 1;
     const stopIdToMatch = tram.stop || lastStopId;
-    let lastKnownIndex = tripDetails.stops.findIndex(s => s.gtfsId === stopIdToMatch);
+    let upcomingIndex = tripDetails.stops.findIndex(s => s.gtfsId === stopIdToMatch);
 
-    if (lastKnownIndex === -1) {
+    if (upcomingIndex === -1) {
       // Fallback: Estimate position based on arrival times
       const now = new Date();
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
@@ -92,20 +92,21 @@ export const TramPopup: React.FC<TramPopupProps> = ({
       });
 
       if (nextIndex !== -1) {
-        lastKnownIndex = nextIndex > 0 ? nextIndex - 1 : 0;
+        upcomingIndex = nextIndex;
       } else {
-        lastKnownIndex = tripDetails.stops.length - 1;
+        upcomingIndex = tripDetails.stops.length - 1;
       }
     }
 
     if (isStopped) {
       // Doors open: we ARE at this stop
-      const currentStopIndex = lastKnownIndex;
-      const nextStopIndex = lastKnownIndex + 1 < tripDetails.stops.length ? lastKnownIndex + 1 : -1;
-      return { currentStopIndex, nextStopIndex, lastKnownIndex };
+      const currentStopIndex = upcomingIndex;
+      const nextStopIndex = upcomingIndex + 1 < tripDetails.stops.length ? upcomingIndex + 1 : -1;
+      return { currentStopIndex, nextStopIndex, lastKnownIndex: upcomingIndex };
     } else {
-      // Moving: we have departed lastKnownIndex, heading to lastKnownIndex + 1
-      const nextStopIndex = lastKnownIndex + 1 < tripDetails.stops.length ? lastKnownIndex + 1 : lastKnownIndex;
+      // Moving: heading to upcomingIndex, last passed is upcomingIndex - 1
+      const nextStopIndex = upcomingIndex;
+      const lastKnownIndex = upcomingIndex - 1;
       return { currentStopIndex: -1, nextStopIndex, lastKnownIndex };
     }
   };
@@ -142,10 +143,10 @@ export const TramPopup: React.FC<TramPopupProps> = ({
 
       {/* Next Stop Callout */}
       {!loading && !error && tripDetails && (() => {
-        const { currentStopIndex, nextStopIndex, lastKnownIndex } = getStopIndices();
+        const { currentStopIndex, nextStopIndex } = getStopIndices();
         const isStopped = tram.drst === 1;
 
-        if (lastKnownIndex === -1) return null;
+        if (currentStopIndex === -1 && nextStopIndex === -1) return null;
 
         const currentStop = isStopped && currentStopIndex !== -1 ? tripDetails.stops[currentStopIndex] : null;
         const nextStop = nextStopIndex !== -1 ? tripDetails.stops[nextStopIndex] : null;

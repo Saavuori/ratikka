@@ -54,9 +54,9 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
 
     const isStopped = tram.drst === 1;
     const stopIdToMatch = tram.stop || lastStopId;
-    let lastKnownIndex = tripDetails.stops.findIndex(s => s.gtfsId === stopIdToMatch);
+    let upcomingIndex = tripDetails.stops.findIndex(s => s.gtfsId === stopIdToMatch);
 
-    if (lastKnownIndex === -1) {
+    if (upcomingIndex === -1) {
       const now = new Date();
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
       const nextIndex = tripDetails.stops.findIndex(stop => {
@@ -66,18 +66,19 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
       });
 
       if (nextIndex !== -1) {
-        lastKnownIndex = nextIndex > 0 ? nextIndex - 1 : 0;
+        upcomingIndex = nextIndex;
       } else {
-        lastKnownIndex = tripDetails.stops.length - 1;
+        upcomingIndex = tripDetails.stops.length - 1;
       }
     }
 
     if (isStopped) {
-      const currentStopIndex = lastKnownIndex;
-      const nextStopIndex = lastKnownIndex + 1 < tripDetails.stops.length ? lastKnownIndex + 1 : -1;
-      return { currentStopIndex, nextStopIndex, lastKnownIndex };
+      const currentStopIndex = upcomingIndex;
+      const nextStopIndex = upcomingIndex + 1 < tripDetails.stops.length ? upcomingIndex + 1 : -1;
+      return { currentStopIndex, nextStopIndex, lastKnownIndex: upcomingIndex };
     } else {
-      const nextStopIndex = lastKnownIndex + 1 < tripDetails.stops.length ? lastKnownIndex + 1 : lastKnownIndex;
+      const nextStopIndex = upcomingIndex;
+      const lastKnownIndex = upcomingIndex - 1;
       return { currentStopIndex: -1, nextStopIndex, lastKnownIndex };
     }
   };

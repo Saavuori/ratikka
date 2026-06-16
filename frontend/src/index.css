@@ -109,7 +109,7 @@ body {
   top: 80px;
   left: 0;
   width: 190px;
-  max-height: calc(100vh - 96px);
+  height: calc(100vh - 96px);
   padding: 10px;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 0 12px 12px 0;
@@ -438,7 +438,7 @@ body {
 /* Grid & List Containers */
 .line-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 4px;
   margin-top: 8px;
 }
