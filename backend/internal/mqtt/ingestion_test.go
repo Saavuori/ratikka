@@ -120,6 +120,30 @@ func TestIngestionWorker_HandleMessage(t *testing.T) {
 	if thinned.Mode != "tram" {
 		t.Errorf("expected Mode tram, got %q", thinned.Mode)
 	}
+	if thinned.Odo == nil || *thinned.Odo != 12456 {
+		t.Errorf("expected Odo 12456, got %v", thinned.Odo)
+	}
+	if thinned.Loc == nil || *thinned.Loc != "GPS" {
+		t.Errorf("expected Loc GPS, got %v", thinned.Loc)
+	}
+	if thinned.Oper == nil || *thinned.Oper != 22 {
+		t.Errorf("expected Oper 22, got %v", thinned.Oper)
+	}
+	if thinned.Jrn == nil || *thinned.Jrn != 456 {
+		t.Errorf("expected Jrn 456, got %v", thinned.Jrn)
+	}
+	if thinned.Occu == nil || *thinned.Occu != 0 {
+		t.Errorf("expected Occu 0, got %v", thinned.Occu)
+	}
+	if thinned.Dir != "1" {
+		t.Errorf("expected Dir 1, got %q", thinned.Dir)
+	}
+	if thinned.Oday != "2026-06-15" {
+		t.Errorf("expected Oday 2026-06-15, got %q", thinned.Oday)
+	}
+	if thinned.Start != "09:15" {
+		t.Errorf("expected Start 09:15, got %q", thinned.Start)
+	}
 }
 
 func TestIngestionWorker_HandleMessage_Invalid(t *testing.T) {

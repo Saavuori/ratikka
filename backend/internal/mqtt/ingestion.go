@@ -41,7 +41,7 @@ type HFPPayload struct {
 		Hdg   int         `json:"hdg"`
 		Spd   float64     `json:"spd"`
 		Acc   float64     `json:"acc"`
-		Dl    int         `json:"dl"`
+		Dl     int         `json:"dl"`
 		Drst  int         `json:"drst"`
 		Route string      `json:"route"`
 		Stop  interface{} `json:"stop"`
@@ -49,25 +49,39 @@ type HFPPayload struct {
 		Dir   string      `json:"dir"`
 		Oday  string      `json:"oday"`
 		Start string      `json:"start"`
+		Oper  *int        `json:"oper"`
+		Odo   *float64    `json:"odo"`
+		Jrn   *int        `json:"jrn"`
+		Line  *int        `json:"line"`
+		Loc   *string     `json:"loc"`
+		Occu  *int        `json:"occu"`
 	} `json:"VP"`
 }
 
 // VehiclePosition is the thinned down position payload sent to clients and stored in cache
 type VehiclePosition struct {
-	Veh    string  `json:"veh"`
-	Desi   string  `json:"desi"`
-	Lat    float64 `json:"lat"`
-	Lng    float64 `json:"lng"`
-	Hdg    int     `json:"hdg"`
-	Spd    float64 `json:"spd"`
-	Acc    float64 `json:"acc"`
-	Dl     int     `json:"dl"`
-	Drst   int     `json:"drst"`
-	Route  string  `json:"route"`
-	Stop   *string `json:"stop"`
-	Ts     int64   `json:"ts"`
-	TripId string  `json:"tripId"`
-	Mode   string  `json:"mode"`
+	Veh    string   `json:"veh"`
+	Desi   string   `json:"desi"`
+	Lat    float64  `json:"lat"`
+	Lng    float64  `json:"lng"`
+	Hdg    int      `json:"hdg"`
+	Spd    float64  `json:"spd"`
+	Acc    float64  `json:"acc"`
+	Dl     int      `json:"dl"`
+	Drst   int      `json:"drst"`
+	Route  string   `json:"route"`
+	Stop   *string  `json:"stop"`
+	Ts     int64    `json:"ts"`
+	TripId string   `json:"tripId"`
+	Mode   string   `json:"mode"`
+	Odo    *float64 `json:"odo,omitempty"`
+	Loc    *string  `json:"loc,omitempty"`
+	Oper   *int     `json:"oper,omitempty"`
+	Jrn    *int     `json:"jrn,omitempty"`
+	Occu   *int     `json:"occu,omitempty"`
+	Dir    string   `json:"dir,omitempty"`
+	Oday   string   `json:"oday,omitempty"`
+	Start  string   `json:"start,omitempty"`
 }
 
 type IngestionWorker struct {
@@ -208,6 +222,14 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 		Ts:     vp.Tsi,
 		TripId: tripId,
 		Mode:   mode,
+		Odo:    vp.Odo,
+		Loc:    vp.Loc,
+		Oper:   vp.Oper,
+		Jrn:    vp.Jrn,
+		Occu:   vp.Occu,
+		Dir:    vp.Dir,
+		Oday:   vp.Oday,
+		Start:  vp.Start,
 	}
 
 	thinnedJSON, err := json.Marshal(thinned)

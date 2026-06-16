@@ -13,6 +13,14 @@ export interface VehiclePosition {
   tripId: string;
   mode: string;
   acc?: number;
+  odo?: number;
+  loc?: string;
+  oper?: number;
+  jrn?: number;
+  occu?: number;
+  dir?: string;
+  oday?: string;
+  start?: string;
 }
 
 export interface PositionsMessage {
