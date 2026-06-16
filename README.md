@@ -10,9 +10,9 @@ A premium, high-performance web application mapping **all active Helsinki trams 
 
 ## 📸 Screenshots & UI
 
-| Desktop Dashboard & Live Timetables | Glassmorphic Dark Theme | Compact Mobile View |
+| Desktop Dashboard (Light Theme) | Glassmorphic Light Map | Compact Mobile View |
 | :---: | :---: | :---: |
-| ![Desktop Layout](docs/screenshots/desktop_layout.png) | ![Dark Theme Map](docs/screenshots/dark_theme_map.png) | ![Mobile Layout](docs/screenshots/mobile_layout.png) |
+| ![Desktop Layout](docs/screenshots/desktop_layout_light.png) | ![Light Theme Map](docs/screenshots/light_theme_map.png) | ![Mobile Layout](docs/screenshots/mobile_layout.png) |
 
 ---
 
