@@ -328,28 +328,32 @@ export const Map: React.FC<MapProps> = ({
   const setupCustomMapElements = (map: maplibregl.Map) => {
     if (!apiKey) return;
 
-    // 1. Create Arrow Symbol Image for Heading
+    // 1. Create Arrow Symbol Image for Heading (Tram: sleek circle with thin sharp pointer)
     if (!map.hasImage('tram-arrow')) {
       const arrowSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30" fill="none">
-          <polygon points="15,2 27,27 15,20 3,27" fill="#00b894" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+        <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36" fill="none">
+          <path d="M18,1 L22.5,7.5 L13.5,7.5 Z" fill="#00b894" stroke="#ffffff" stroke-width="1" stroke-linejoin="round"/>
+          <circle cx="18" cy="18" r="12.5" stroke="#00b894" stroke-width="2.5" fill="none"/>
+          <circle cx="18" cy="18" r="12.5" stroke="#ffffff" stroke-width="0.8" fill="none"/>
         </svg>
       `;
-      const arrowImg = new Image(30, 30);
+      const arrowImg = new Image(36, 36);
       arrowImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arrowSvg);
       arrowImg.onload = () => {
         if (!map.hasImage('tram-arrow')) map.addImage('tram-arrow', arrowImg);
       };
     }
 
-    // 1b. Create Bus Arrow Symbol Image for Heading
+    // 1b. Create Bus Arrow Symbol Image for Heading (Bus: boxy rounded-square with wide pointer)
     if (!map.hasImage('bus-arrow')) {
       const arrowSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30" fill="none">
-          <polygon points="15,2 27,27 15,20 3,27" fill="#007ac9" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+        <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36" fill="none">
+          <path d="M18,1 L24.5,7.5 L11.5,7.5 Z" fill="#0984e3" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
+          <rect x="5.5" y="5.5" width="25" height="25" rx="5" stroke="#0984e3" stroke-width="2.5" fill="none"/>
+          <rect x="5.5" y="5.5" width="25" height="25" rx="5" stroke="#ffffff" stroke-width="0.8" fill="none"/>
         </svg>
       `;
-      const arrowImg = new Image(30, 30);
+      const arrowImg = new Image(36, 36);
       arrowImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arrowSvg);
       arrowImg.onload = () => {
         if (!map.hasImage('bus-arrow')) map.addImage('bus-arrow', arrowImg);
@@ -381,8 +385,6 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
-
-
     // 5. Add Route Lines Source
     if (!map.getSource('route-lines')) {
       map.addSource('route-lines', {
@@ -394,7 +396,27 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
-    // 6. Add Tram Arrow Direction Layer
+    // 6. Add Tram Text Circle Layer (Line labels) - ADDED FIRST so it renders underneath the pointers/arrows
+    if (!map.getLayer('trams-circles')) {
+      map.addLayer({
+        id: 'trams-circles',
+        type: 'circle',
+        source: 'trams',
+        paint: {
+          'circle-radius': 11,
+          'circle-color': [
+            'case',
+            ['get', 'stopped'],
+            '#e17055', // stopped/door open -> coral red
+            '#0984e3', // moving -> blue
+          ],
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2.5,
+        },
+      });
+    }
+
+    // 7. Add Tram Arrow Direction Layer (on top of circles)
     if (!map.getLayer('trams-arrows')) {
       map.addLayer({
         id: 'trams-arrows',
@@ -411,26 +433,6 @@ export const Map: React.FC<MapProps> = ({
           'icon-rotation-alignment': 'map',
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
-        },
-      });
-    }
-
-    // 7. Add Tram Text Circle Layer (Line labels)
-    if (!map.getLayer('trams-circles')) {
-      map.addLayer({
-        id: 'trams-circles',
-        type: 'circle',
-        source: 'trams',
-        paint: {
-          'circle-radius': 11,
-          'circle-color': [
-            'case',
-            ['get', 'stopped'],
-            '#e17055', // stopped/door open -> coral red
-            '#0984e3', // moving -> blue
-          ],
-          'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 2.5,
         },
       });
     }
@@ -453,7 +455,7 @@ export const Map: React.FC<MapProps> = ({
       }, 'trams-circles');
     }
 
-    // 9. Add Tram Text Label Layer
+    // 9. Add Tram Text Label Layer (on top of arrows/circles)
     if (!map.getLayer('trams-labels')) {
       map.addLayer({
         id: 'trams-labels',
