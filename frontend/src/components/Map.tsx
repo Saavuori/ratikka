@@ -84,6 +84,12 @@ export const Map: React.FC<MapProps> = ({
   const isFollowingRef = useRef<boolean>(isFollowing);
   const isInteractingRef = useRef<boolean>(false);
 
+  const lastSeenStopIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    lastSeenStopIdRef.current = null;
+  }, [selectedTramId]);
+
   useEffect(() => {
     latestTramsRef.current = trams;
   }, [trams]);
@@ -300,56 +306,89 @@ export const Map: React.FC<MapProps> = ({
 
       // Update next stop highlight and route line segment
       let selectedVehiclePos: [number, number] | null = null;
-      let nextStopId: string | null = null;
-      if (selectedTramIdRef.current) {
+      let nextStopCoords: [number, number] | null = null;
+      let routeSegmentCoords: [number, number][] = [];
+
+      if (selectedTramIdRef.current && selectedTripDetailsRef.current) {
         const selectedTram = latestTramsRef.current[selectedTramIdRef.current];
         if (selectedTram) {
-          nextStopId = selectedTram.stop || null;
           const activeFeature = features.find((f) => f.properties.veh === selectedTramIdRef.current);
           if (activeFeature) {
             selectedVehiclePos = activeFeature.geometry.coordinates as [number, number];
           }
-        }
-      }
 
-      // 1. Next stop and route line rendering
-      let routeSegmentCoords: [number, number][] = [];
-      let nextStopCoords: [number, number] | null = null;
+          const isStopped = selectedTram.drst === 1;
+          if (selectedTram.stop) {
+            lastSeenStopIdRef.current = selectedTram.stop;
+          }
+          const stopIdToMatch = selectedTram.stop || lastSeenStopIdRef.current;
+          const tripStops = selectedTripDetailsRef.current.stops;
 
-      if (selectedVehiclePos && nextStopId && selectedTripDetailsRef.current) {
-        const tripStops = selectedTripDetailsRef.current.stops;
-        const cleanStopId = nextStopId.replace(/^HSL:/, '');
-        const matchedStop = tripStops.find(s => s.gtfsId === nextStopId || s.gtfsId?.replace(/^HSL:/, '') === cleanStopId);
+          let lastKnownIndex = -1;
+          if (stopIdToMatch) {
+            const cleanToMatch = stopIdToMatch.replace(/^HSL:/, '');
+            lastKnownIndex = tripStops.findIndex(s => s.gtfsId === stopIdToMatch || s.gtfsId?.replace(/^HSL:/, '') === cleanToMatch);
+          }
 
-        if (matchedStop) {
-          nextStopCoords = [matchedStop.lon, matchedStop.lat];
-          if (selectedTripDetailsRef.current.geometry) {
-            const polylineCoords = decodePolyline(selectedTripDetailsRef.current.geometry);
+          if (lastKnownIndex === -1) {
+            // Fallback: Estimate position based on arrival times
+            const now = new Date();
+            const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-            if (polylineCoords.length > 0) {
-              const getClosestPointIndex = (coords: [number, number][], target: [number, number]): number => {
-                let minD = Infinity;
-                let index = 0;
-                for (let i = 0; i < coords.length; i++) {
-                  const d = Math.pow(coords[i][0] - target[0], 2) + Math.pow(coords[i][1] - target[1], 2);
-                  if (d < minD) {
-                    minD = d;
-                    index = i;
-                  }
-                }
-                return index;
-              };
+            const nextIndex = tripStops.findIndex(stop => {
+              const [h, m] = stop.realtimeArrival.split(':').map(Number);
+              const stopMinutes = h * 60 + m;
+              return stopMinutes >= currentMinutes;
+            });
 
-              const idxTram = getClosestPointIndex(polylineCoords, selectedVehiclePos);
-              const idxStop = getClosestPointIndex(polylineCoords, nextStopCoords);
-
-              const startIdx = Math.min(idxTram, idxStop);
-              const endIdx = Math.max(idxTram, idxStop);
-              const slice = polylineCoords.slice(startIdx, endIdx + 1);
-
-              routeSegmentCoords = [selectedVehiclePos, ...slice, nextStopCoords];
+            if (nextIndex !== -1) {
+              lastKnownIndex = nextIndex > 0 ? nextIndex - 1 : 0;
             } else {
-              routeSegmentCoords = [selectedVehiclePos, nextStopCoords];
+              lastKnownIndex = tripStops.length - 1;
+            }
+          }
+
+          let nextStopIndex = -1;
+          if (isStopped) {
+            // Doors open: we are currently at lastKnownIndex, next is lastKnownIndex + 1
+            nextStopIndex = lastKnownIndex + 1 < tripStops.length ? lastKnownIndex + 1 : -1;
+          } else {
+            // Moving: departed lastKnownIndex, next is lastKnownIndex + 1
+            nextStopIndex = lastKnownIndex + 1 < tripStops.length ? lastKnownIndex + 1 : lastKnownIndex;
+          }
+
+          if (nextStopIndex !== -1) {
+            const matchedStop = tripStops[nextStopIndex];
+            nextStopCoords = [matchedStop.lon, matchedStop.lat];
+
+            if (selectedVehiclePos && selectedTripDetailsRef.current.geometry) {
+              const polylineCoords = decodePolyline(selectedTripDetailsRef.current.geometry);
+
+              if (polylineCoords.length > 0) {
+                const getClosestPointIndex = (coords: [number, number][], target: [number, number]): number => {
+                  let minD = Infinity;
+                  let index = 0;
+                  for (let i = 0; i < coords.length; i++) {
+                    const d = Math.pow(coords[i][0] - target[0], 2) + Math.pow(coords[i][1] - target[1], 2);
+                    if (d < minD) {
+                      minD = d;
+                      index = i;
+                    }
+                  }
+                  return index;
+                };
+
+                const idxTram = getClosestPointIndex(polylineCoords, selectedVehiclePos);
+                const idxStop = getClosestPointIndex(polylineCoords, nextStopCoords);
+
+                const startIdx = Math.min(idxTram, idxStop);
+                const endIdx = Math.max(idxTram, idxStop);
+                const slice = polylineCoords.slice(startIdx, endIdx + 1);
+
+                routeSegmentCoords = [selectedVehiclePos, ...slice, nextStopCoords];
+              } else {
+                routeSegmentCoords = [selectedVehiclePos, nextStopCoords];
+              }
             }
           }
         }
