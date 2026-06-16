@@ -339,6 +339,43 @@ func TestConvertTripID(t *testing.T) {
 	}
 }
 
+func TestParseTripIdForFuzzy(t *testing.T) {
+	tests := []struct {
+		input     string
+		route     string
+		direction int
+		date      string
+		timeSecs  int
+		ok        bool
+	}{
+		{"HSL:1002_20260616_Tu_2_1653", "HSL:1002", 1, "2026-06-16", 60780, true},
+		{"1009_20260615_Mo_1_0915", "HSL:1009", 0, "2026-06-15", 33300, true},
+		{"invalid_trip_id", "", 0, "", 0, false},
+	}
+
+	for _, tc := range tests {
+		route, dir, date, timeSecs, ok := parseTripIdForFuzzy(tc.input)
+		if ok != tc.ok {
+			t.Errorf("parseTripIdForFuzzy(%q) ok = %v; expected %v", tc.input, ok, tc.ok)
+		}
+		if ok {
+			if route != tc.route {
+				t.Errorf("parseTripIdForFuzzy(%q) route = %q; expected %q", tc.input, route, tc.route)
+			}
+			if dir != tc.direction {
+				t.Errorf("parseTripIdForFuzzy(%q) direction = %d; expected %d", tc.input, dir, tc.direction)
+			}
+			if date != tc.date {
+				t.Errorf("parseTripIdForFuzzy(%q) date = %q; expected %q", tc.input, date, tc.date)
+			}
+			if timeSecs != tc.timeSecs {
+				t.Errorf("parseTripIdForFuzzy(%q) timeSecs = %d; expected %d", tc.input, timeSecs, tc.timeSecs)
+			}
+		}
+	}
+}
+
+
 func TestHandlers_RouteDetails(t *testing.T) {
 	mockGraphQLResponse := `{
 		"data": {

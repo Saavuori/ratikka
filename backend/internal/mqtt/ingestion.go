@@ -224,7 +224,7 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 
 func constructGTFSTripID(route, oday, dir, start string) string {
 	// Strip HSL: prefix from route if present
-	r := route
+	r := strings.TrimSpace(route)
 	if len(r) > 4 && r[:4] == "HSL:" {
 		r = r[4:]
 	}

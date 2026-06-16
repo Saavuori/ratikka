@@ -11,6 +11,7 @@ interface StopPopupProps {
   onClose: () => void;
   onSelectTripId: (tripId: string, lineDesi: string) => void;
   onStopDeparturesLoaded?: (tripIds: string[]) => void;
+  onStopRoutesLoaded?: (routes: string[]) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
 }
@@ -22,6 +23,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   onClose,
   onSelectTripId,
   onStopDeparturesLoaded,
+  onStopRoutesLoaded,
   isCollapsed,
   onToggleCollapse,
 }) => {
@@ -40,6 +42,9 @@ export const StopPopup: React.FC<StopPopupProps> = ({
         if (onStopDeparturesLoaded) {
           const tripIds = data.departures.map((d) => d.tripId).filter(Boolean);
           onStopDeparturesLoaded(tripIds);
+        }
+        if (onStopRoutesLoaded) {
+          onStopRoutesLoaded(data.routes || []);
         }
       })
       .catch((err) => {

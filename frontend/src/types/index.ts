@@ -51,6 +51,7 @@ export interface RouteDetailsResponse {
   shortName: string;
   color: string;
   geometries: string[];
+  stops: string[];
 }
 
 export interface StopInfo {

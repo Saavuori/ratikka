@@ -12,7 +12,7 @@ interface MapProps {
   onSelectStop: (stopId: string, name: string, code: string) => void;
   onSelectBikeStation: (station: { id: string; name: string } | null) => void;
   lineFilters: string[];
-  routeGeometries: Record<string, { geometries: string[]; color?: string }>;
+  routeGeometries: Record<string, { geometries: string[]; color?: string; stops?: string[] }>;
   mapTheme: 'light' | 'dark';
   showRouteNetwork: boolean;
   is3D: boolean;
@@ -62,7 +62,7 @@ export const Map: React.FC<MapProps> = ({
   // References to keep state fresh in map event handlers and tick loop without closure issues
   const latestTramsRef = useRef<Record<string, VehiclePosition>>(trams);
   const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing, onMapBearingChange });
-  const routeGeometriesRef = useRef<Record<string, { geometries: string[]; color?: string }>>(routeGeometries);
+  const routeGeometriesRef = useRef<Record<string, { geometries: string[]; color?: string; stops?: string[] }>>(routeGeometries);
   const selectedTramIdRef = useRef<string | null>(selectedTramId);
   const showRouteNetworkRef = useRef<boolean>(showRouteNetwork);
   const is3DRef = useRef<boolean>(is3D);
@@ -490,6 +490,106 @@ export const Map: React.FC<MapProps> = ({
       }, 'trams-labels');
     }
 
+    // 11. Add HSL Transit Stops Source and Layers if missing (e.g. in dark mode CartoDB basemap)
+    if (!map.getSource('stops')) {
+      map.addSource('stops', {
+        type: 'vector',
+        tiles: [
+          'https://api.digitransit.fi/map/v3/hsl/fi/stops/{z}/{x}/{y}.pbf',
+        ],
+        minzoom: 13,
+        maxzoom: 16,
+      });
+    }
+
+    if (!map.getLayer('stops_case')) {
+      map.addLayer({
+        id: 'stops_case',
+        type: 'circle',
+        source: 'stops',
+        'source-layer': 'stops',
+        minzoom: 13,
+        filter: ['!=', ['get', 'mode'], 'RAIL'],
+        paint: {
+          'circle-color': '#ffffff',
+          'circle-radius': [
+            'interpolate',
+            ['exponential', 1.15],
+            ['zoom'],
+            12, 1.5,
+            22, 26
+          ]
+        }
+      }, 'trams-circles');
+    }
+
+    if (!map.getLayer('stops_bus')) {
+      map.addLayer({
+        id: 'stops_bus',
+        type: 'circle',
+        source: 'stops',
+        'source-layer': 'stops',
+        minzoom: 13,
+        filter: [
+          'all',
+          ['!', ['get', 'isTrunkStop']],
+          ['==', ['get', 'mode'], 'BUS']
+        ],
+        paint: {
+          'circle-color': '#007ac9',
+          'circle-radius': [
+            'interpolate',
+            ['exponential', 1.15],
+            ['zoom'],
+            12, 1,
+            22, 24
+          ]
+        }
+      }, 'trams-circles');
+    }
+
+    if (!map.getLayer('stops_trunk')) {
+      map.addLayer({
+        id: 'stops_trunk',
+        type: 'circle',
+        source: 'stops',
+        'source-layer': 'stops',
+        minzoom: 13,
+        filter: ['all', ['get', 'isTrunkStop'], ['==', ['get', 'mode'], 'BUS']],
+        paint: {
+          'circle-color': '#CA4300',
+          'circle-radius': [
+            'interpolate',
+            ['exponential', 1.15],
+            ['zoom'],
+            12, 1,
+            22, 24
+          ]
+        }
+      }, 'trams-circles');
+    }
+
+    if (!map.getLayer('stops_tram')) {
+      map.addLayer({
+        id: 'stops_tram',
+        type: 'circle',
+        source: 'stops',
+        'source-layer': 'stops',
+        minzoom: 13,
+        filter: ['==', ['get', 'mode'], 'TRAM'],
+        paint: {
+          'circle-color': '#00985f',
+          'circle-radius': [
+            'interpolate',
+            ['exponential', 1.15],
+            ['zoom'],
+            12, 1,
+            22, 24
+          ]
+        }
+      }, 'trams-circles');
+    }
+
 
 
     // 12. Add Citybike Source
@@ -598,33 +698,122 @@ export const Map: React.FC<MapProps> = ({
     });
 
     // Apply stops route filters to built-in vector stops
-    if (map.getLayer('stops_tram')) {
-      if (lineFilters.length === 0) {
-        map.setFilter('stops_tram', ['==', ['get', 'mode'], 'TRAM']);
-      } else {
-        map.setFilter('stops_tram', [
-          'all',
-          ['==', ['get', 'mode'], 'TRAM'],
-          ['any', ...lineFilters.map((line) => ['in', line, ['coalesce', ['get', 'routes'], '']])]
-        ] as any);
+    if (map.getLayer('stops_tram') || map.getLayer('stops_case')) {
+      const activeRoutes = [...lineFilters];
+      const selectedTram = selectedTramIdRef.current ? latestTramsRef.current[selectedTramIdRef.current] : null;
+      if (selectedTram && !activeRoutes.includes(selectedTram.desi)) {
+        activeRoutes.push(selectedTram.desi);
       }
-    }
+      const allowedStopIdsSet = new Set<string>();
+      activeRoutes.forEach((line) => {
+        const routeData = routeGeometriesRef.current[line];
+        if (routeData && routeData.stops) {
+          routeData.stops.forEach((id) => {
+            allowedStopIdsSet.add(id);
+            allowedStopIdsSet.add(id.replace(/^HSL:/, ''));
+          });
+        }
+      });
+      const allowedStopIds = Array.from(allowedStopIdsSet);
 
-    if (map.getLayer('stops_case')) {
-      if (lineFilters.length === 0) {
-        map.setFilter('stops_case', ['!=', ['get', 'mode'], 'RAIL']);
-      } else {
-        map.setFilter('stops_case', [
-          'all',
-          ['!=', ['get', 'mode'], 'RAIL'],
-          ['any', ...lineFilters.map((line) => ['in', line, ['coalesce', ['get', 'routes'], '']])]
-        ] as any);
+      if (map.getLayer('stops_tram')) {
+        if (activeRoutes.length === 0) {
+          map.setFilter('stops_tram', ['==', ['get', 'mode'], 'TRAM']);
+        } else if (allowedStopIds.length === 0) {
+          map.setFilter('stops_tram', ['all', ['==', ['get', 'mode'], 'TRAM'], ['==', 1, 0]]);
+        } else {
+          map.setFilter('stops_tram', [
+            'all',
+            ['==', ['get', 'mode'], 'TRAM'],
+            ['in', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ''], ['literal', allowedStopIds]]
+          ] as any);
+        }
+      }
+
+      if (map.getLayer('stops_case')) {
+        if (activeRoutes.length === 0) {
+          map.setFilter('stops_case', ['!=', ['get', 'mode'], 'RAIL']);
+        } else if (allowedStopIds.length === 0) {
+          map.setFilter('stops_case', ['all', ['!=', ['get', 'mode'], 'RAIL'], ['==', 1, 0]]);
+        } else {
+          map.setFilter('stops_case', [
+            'all',
+            ['!=', ['get', 'mode'], 'RAIL'],
+            ['in', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ''], ['literal', allowedStopIds]]
+          ] as any);
+        }
       }
     }
 
     // Apply active route visibility and 3D mode setting
     updateRouteVisibility(map, showRouteNetworkRef.current);
     update3DMode(map, is3DRef.current, mapThemeRef.current);
+
+    // Register all layer-specific interactions here so they persist style/theme changes
+    map.on('click', 'trams-circles', (e) => {
+      if (!e.features || e.features.length === 0) return;
+      const feat = e.features[0];
+      const vehId = feat.properties?.veh;
+      const matchingTram = latestTramsRef.current[vehId];
+      if (matchingTram) {
+        callbacksRef.current.onSelectTram(matchingTram);
+      }
+    });
+
+    const handleStopClick = (e: any) => {
+      if (!e.features || e.features.length === 0) return;
+      const feat = e.features[0];
+      // Support both Digitransit tile properties (gtfsId, name, code)
+      // and JORE tile properties (stopId, nameFi, shortId)
+      const rawId = feat.properties?.gtfsId || feat.properties?.stopId || feat.properties?.id || feat.id;
+      const name = feat.properties?.name || feat.properties?.nameFi || 'Unknown Stop';
+      const code = feat.properties?.code || feat.properties?.shortId || '';
+      
+      if (rawId) {
+        let stopId = rawId.toString();
+        if (!stopId.startsWith('HSL:')) {
+          stopId = 'HSL:' + stopId;
+        }
+        callbacksRef.current.onSelectStop(stopId, name, code);
+      }
+    };
+
+    map.on('click', 'stops_case', handleStopClick);
+    map.on('click', 'stops_tram', handleStopClick);
+    map.on('click', 'stops_bus', handleStopClick);
+    map.on('click', 'stops_trunk', handleStopClick);
+
+    const handleBikeClick = (e: any) => {
+      if (!e.features || e.features.length === 0) return;
+      const feat = e.features[0];
+      const stationId = feat.properties?.id || feat.properties?.stationId;
+      const name = feat.properties?.name || 'Bike Station';
+      if (stationId) {
+        callbacksRef.current.onSelectBikeStation({ id: stationId, name });
+      }
+    };
+
+    map.on('click', 'citybike_icon', handleBikeClick);
+    map.on('click', 'citybike_stops', handleBikeClick);
+
+    // Mouse Hover Effects
+    const setCursorPointer = () => (map.getCanvas().style.cursor = 'pointer');
+    const resetCursor = () => (map.getCanvas().style.cursor = '');
+
+    map.on('mouseenter', 'trams-circles', setCursorPointer);
+    map.on('mouseleave', 'trams-circles', resetCursor);
+    map.on('mouseenter', 'stops_case', setCursorPointer);
+    map.on('mouseleave', 'stops_case', resetCursor);
+    map.on('mouseenter', 'stops_tram', setCursorPointer);
+    map.on('mouseleave', 'stops_tram', resetCursor);
+    map.on('mouseenter', 'stops_bus', setCursorPointer);
+    map.on('mouseleave', 'stops_bus', resetCursor);
+    map.on('mouseenter', 'stops_trunk', setCursorPointer);
+    map.on('mouseleave', 'stops_trunk', resetCursor);
+    map.on('mouseenter', 'citybike_icon', setCursorPointer);
+    map.on('mouseleave', 'citybike_icon', resetCursor);
+    map.on('mouseenter', 'citybike_stops', setCursorPointer);
+    map.on('mouseleave', 'citybike_stops', resetCursor);
   };
 
   // Initial Map Setup
@@ -661,46 +850,6 @@ export const Map: React.FC<MapProps> = ({
     map.on('style.load', () => {
       setupCustomMapElements(map);
     });
-
-    // Map Click Interactions
-    map.on('click', 'trams-circles', (e) => {
-      if (!e.features || e.features.length === 0) return;
-      const feat = e.features[0];
-      const vehId = feat.properties?.veh;
-      const matchingTram = latestTramsRef.current[vehId];
-      if (matchingTram) {
-        callbacksRef.current.onSelectTram(matchingTram);
-      }
-    });
-
-    map.on('click', 'stops_tram', (e) => {
-      if (!e.features || e.features.length === 0) return;
-      const feat = e.features[0];
-      const rawId = feat.properties?.gtfsId || feat.properties?.id || feat.id;
-      const name = feat.properties?.name || 'Unknown Stop';
-      const code = feat.properties?.code || '';
-      
-      if (rawId) {
-        let stopId = rawId.toString();
-        if (!stopId.startsWith('HSL:')) {
-          stopId = 'HSL:' + stopId;
-        }
-        callbacksRef.current.onSelectStop(stopId, name, code);
-      }
-    });
-
-    const handleBikeClick = (e: any) => {
-      if (!e.features || e.features.length === 0) return;
-      const feat = e.features[0];
-      const stationId = feat.properties?.id || feat.properties?.stationId;
-      const name = feat.properties?.name || 'Bike Station';
-      if (stationId) {
-        callbacksRef.current.onSelectBikeStation({ id: stationId, name });
-      }
-    };
-
-    map.on('click', 'citybike_icon', handleBikeClick);
-    map.on('click', 'citybike_stops', handleBikeClick);
 
     // Disable follow mode on drag
     map.on('dragstart', () => {
@@ -746,19 +895,6 @@ export const Map: React.FC<MapProps> = ({
       }
     });
 
-    // Mouse Hover Effects
-    const setCursorPointer = () => (map.getCanvas().style.cursor = 'pointer');
-    const resetCursor = () => (map.getCanvas().style.cursor = '');
-
-    map.on('mouseenter', 'trams-circles', setCursorPointer);
-    map.on('mouseleave', 'trams-circles', resetCursor);
-    map.on('mouseenter', 'stops_tram', setCursorPointer);
-    map.on('mouseleave', 'stops_tram', resetCursor);
-    map.on('mouseenter', 'citybike_icon', setCursorPointer);
-    map.on('mouseleave', 'citybike_icon', resetCursor);
-    map.on('mouseenter', 'citybike_stops', setCursorPointer);
-    map.on('mouseleave', 'citybike_stops', resetCursor);
-
     // Start interpolation tick loop
     startAnimationLoop();
 
@@ -791,8 +927,11 @@ export const Map: React.FC<MapProps> = ({
     const map = mapRef.current;
     if (!map) return;
 
+    console.log('[Map] Selection ring filter update — selectedTramId:', selectedTramId);
     if (map.getStyle() && map.getLayer('trams-selected-layer')) {
       map.setFilter('trams-selected-layer', ['==', ['get', 'veh'], selectedTramId || '']);
+    } else {
+      console.warn('[Map] trams-selected-layer not found');
     }
   }, [selectedTramId]);
 
@@ -802,6 +941,7 @@ export const Map: React.FC<MapProps> = ({
     if (!map || !selectedTramId) return;
 
     const selectedTram = latestTramsRef.current[selectedTramId];
+    console.log('[Map] Center on tram — selectedTramId:', selectedTramId, 'found:', !!selectedTram, 'latestTramsRef keys sample:', Object.keys(latestTramsRef.current).slice(0, 5));
     if (selectedTram) {
       const easeOptions: maplibregl.EaseToOptions = {
         center: [selectedTram.lng, selectedTram.lat],
@@ -847,30 +987,74 @@ export const Map: React.FC<MapProps> = ({
     const map = mapRef.current;
     if (!map || !map.getStyle()) return;
 
+    // Build the list of active lines we want to show stops for
+    const activeRoutes = [...lineFilters];
+    const selectedTram = selectedTramId ? trams[selectedTramId] : null;
+    if (selectedTram && !activeRoutes.includes(selectedTram.desi)) {
+      activeRoutes.push(selectedTram.desi);
+    }
+
+    const allowedStopIdsSet = new Set<string>();
+    activeRoutes.forEach((line) => {
+      const routeData = routeGeometries[line];
+      if (routeData && routeData.stops) {
+        routeData.stops.forEach((id) => {
+          allowedStopIdsSet.add(id);
+          allowedStopIdsSet.add(id.replace(/^HSL:/, ''));
+        });
+      }
+    });
+    const allowedStopIds = Array.from(allowedStopIdsSet);
+
+    // 1. Tram Stops
     if (map.getLayer('stops_tram')) {
-      if (lineFilters.length === 0) {
+      if (activeRoutes.length === 0) {
         map.setFilter('stops_tram', ['==', ['get', 'mode'], 'TRAM']);
+      } else if (allowedStopIds.length === 0) {
+        map.setFilter('stops_tram', ['all', ['==', ['get', 'mode'], 'TRAM'], ['==', 1, 0]]);
       } else {
         map.setFilter('stops_tram', [
           'all',
           ['==', ['get', 'mode'], 'TRAM'],
-          ['any', ...lineFilters.map((line) => ['in', line, ['coalesce', ['get', 'routes'], '']])]
+          ['in', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ''], ['literal', allowedStopIds]]
         ] as any);
       }
     }
 
+    // 2. Stops Case Outline
     if (map.getLayer('stops_case')) {
-      if (lineFilters.length === 0) {
+      if (activeRoutes.length === 0) {
         map.setFilter('stops_case', ['!=', ['get', 'mode'], 'RAIL']);
+      } else if (allowedStopIds.length === 0) {
+        map.setFilter('stops_case', ['all', ['!=', ['get', 'mode'], 'RAIL'], ['==', 1, 0]]);
       } else {
         map.setFilter('stops_case', [
           'all',
           ['!=', ['get', 'mode'], 'RAIL'],
-          ['any', ...lineFilters.map((line) => ['in', line, ['coalesce', ['get', 'routes'], '']])]
+          ['in', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ''], ['literal', allowedStopIds]]
         ] as any);
       }
     }
-  }, [lineFilters]);
+
+    // 3. Bus and Trunk Stop POIs
+    const busStopLayers = ['stops_bus', 'stops_trunk'];
+    busStopLayers.forEach((layerId) => {
+      if (map.getLayer(layerId)) {
+        if (activeRoutes.length === 0) {
+          map.setLayoutProperty(layerId, 'visibility', 'none');
+        } else if (allowedStopIds.length === 0) {
+          map.setLayoutProperty(layerId, 'visibility', 'none');
+        } else {
+          map.setLayoutProperty(layerId, 'visibility', 'visible');
+          map.setFilter(layerId, [
+            'in',
+            ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ''],
+            ['literal', allowedStopIds]
+          ] as any);
+        }
+      }
+    });
+  }, [lineFilters, selectedTramId, trams, routeGeometries]);
 
   return (
     <div className="map-wrapper">

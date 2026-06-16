@@ -801,7 +801,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 12px 0 16px 0;
+  margin: 8px 0 12px 0;
 }
 
 .route-chip {
@@ -817,7 +817,7 @@ body {
 .departure-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   max-height: calc(100vh - 280px);
   overflow-y: auto;
 }
@@ -826,7 +826,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px;
+  padding: 6px 8px;
   border-radius: 10px;
   background: transparent;
   cursor: pointer;
@@ -869,6 +869,7 @@ body {
 }
 
 .departure-dest {
+  margin: 0;
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--text-primary);

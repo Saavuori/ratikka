@@ -10,6 +10,7 @@ import { StopPopup } from './components/StopPopup';
 import { BikePopup } from './components/BikePopup';
 import { VersionBadge } from './components/VersionBadge';
 import { fetchRouteDetails } from './lib/api';
+import { areTripsEquivalent } from './lib/trip';
 import type { VehiclePosition } from './types';
 
 function App() {
@@ -149,16 +150,21 @@ function App() {
     };
   }, [isFilterCollapsed, isDetailCollapsed]);
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
-  const [stopTripIds, setStopTripIds] = useState<string[] | null>(null);
+  const [selectedStopRoutes, setSelectedStopRoutes] = useState<string[]>([]);
   const [mapBearing, setMapBearing] = useState<number>(0);
-  const [routeGeometries, setRouteGeometries] = useState<Record<string, { geometries: string[]; color?: string }>>({});
+  const [routeGeometries, setRouteGeometries] = useState<Record<string, { geometries: string[]; color?: string; stops?: string[] }>>({});
 
-  // Fetch route geometries when selectedLines filter or selectedTram changes
+  // Fetch route geometries when selectedLines filter, selectedTram, or selectedStopRoutes changes
   useEffect(() => {
     const linesToHighlight = [...selectedLines];
     if (selectedTram && !linesToHighlight.includes(selectedTram.desi)) {
       linesToHighlight.push(selectedTram.desi);
     }
+    selectedStopRoutes.forEach((line) => {
+      if (!linesToHighlight.includes(line)) {
+        linesToHighlight.push(line);
+      }
+    });
 
     if (linesToHighlight.length === 0) {
       setRouteGeometries({});
@@ -184,40 +190,47 @@ function App() {
               [line]: {
                 geometries: data.geometries,
                 color: data.color,
+                stops: data.stops,
               },
             }));
           })
           .catch((err) => {
-            console.error(`Failed to fetch route geometry for ${line}:`, err);
+            console.error(`Failed to fetch route details for ${line}:`, err);
           });
       }
     });
-  }, [selectedLines, selectedTram]);
+  }, [selectedLines, selectedTram, selectedStopRoutes]);
 
   const handleSelectTram = (tram: VehiclePosition | null) => {
     setSelectedStop(null);
     setSelectedBikeStation(null);
-    setStopTripIds(null);
     setSelectedTram(tram);
   };
 
   const handleSelectStop = (stopId: string, name: string, code: string) => {
+    if (selectedStop?.id === stopId) {
+      setIsDetailCollapsed(false); // Auto-expand if collapsed
+      return;
+    }
     setSelectedTram(null);
     setSelectedBikeStation(null);
-    setStopTripIds(null); // Reset stop filter to show all trams while loading the new stop
+    setSelectedStopRoutes([]); // Reset selected stop routes!
     setSelectedStop({ id: stopId, name, code });
+    setIsDetailCollapsed(false); // Auto-expand detail panel to show schedule
   };
 
   const handleSelectBikeStation = (station: { id: string; name: string } | null) => {
     setSelectedTram(null);
     setSelectedStop(null);
-    setStopTripIds(null);
     setSelectedBikeStation(station);
+    if (station) {
+      setIsDetailCollapsed(false); // Auto-expand detail panel to show bike capacity
+    }
   };
 
   const handleCloseStop = () => {
     setSelectedStop(null);
-    setStopTripIds(null);
+    setSelectedStopRoutes([]);
   };
 
   const handleCloseBikeStation = () => {
@@ -236,8 +249,7 @@ function App() {
 
   const handleSelectTripFromStop = (tripId: string, lineDesi: string) => {
     // Find if the tram for this trip is currently online
-    const matchedTram = Object.values(trams).find((t) => t.tripId === tripId);
-    setStopTripIds(null);
+    const matchedTram = Object.values(trams).find((t) => areTripsEquivalent(t.tripId, tripId));
     if (matchedTram) {
       setSelectedStop(null);
       setSelectedTram(matchedTram);
@@ -263,8 +275,8 @@ function App() {
     }
   };
 
-  // Stop departure filter: only filter after trip IDs are loaded.
-  // While loading (selectedStop set but stopTripIds not yet arrived) keep all trams visible.
+  // Stop route filter: only filter after routes are loaded.
+  // While loading (selectedStop set but selectedStopRoutes not yet arrived) keep all trams visible.
   const displayedTrams = Object.fromEntries(
     Object.entries(trams).filter((entry) => {
       const tram = entry[1];
@@ -273,8 +285,8 @@ function App() {
       if (selectedLines.length > 0 && !selectedLines.includes(tram.desi)) {
         return false;
       }
-      // Only filter by stop trips when we actually have the list
-      if (stopTripIds !== null && !stopTripIds.includes(tram.tripId)) {
+      // Filter by stop routes if a stop is selected
+      if (selectedStop && selectedStopRoutes.length > 0 && !selectedStopRoutes.includes(tram.desi)) {
         return false;
       }
       return true;
@@ -288,7 +300,6 @@ function App() {
 
   const handleCloseTram = () => {
     setSelectedTram(null);
-    setStopTripIds(null);
   };
 
   return (
@@ -360,7 +371,7 @@ function App() {
           stopCode={selectedStop.code}
           onClose={handleCloseStop}
           onSelectTripId={(tripId, lineDesi) => handleSelectTripFromStop(tripId, lineDesi)}
-          onStopDeparturesLoaded={setStopTripIds}
+          onStopRoutesLoaded={setSelectedStopRoutes}
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
         />
