@@ -169,7 +169,7 @@ sequenceDiagram
 
 | Layer | Technology | Version / Notes |
 |---|---|---|
-| **Backend** | Go | 1.24+ |
+| **Backend** | Go | 1.26+ |
 | **MQTT Client** | `eclipse/paho.mqtt.golang` | HSL MQTT broker `mqtt.hsl.fi:8883` (TLS) |
 | **WebSocket** | `coder/websocket` | Modern, context-aware Go WebSocket lib |
 | **HTTP Router** | `net/http` (Go stdlib) | Go 1.22+ enhanced `ServeMux` routing |

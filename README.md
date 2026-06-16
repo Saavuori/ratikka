@@ -28,7 +28,7 @@ A premium, high-performance web application mapping **all active Helsinki trams,
 
 ## Technical Stack
 
-* **Backend**: Go (1.24+), utilizing native HTTP Mux routing (Go 1.22+), `coder/websocket` for streaming, and `eclipse/paho.mqtt.golang` to ingest live telemetry from HSL's public broker (`/hfp/v2/journey/ongoing/vp/tram/#` and `/hfp/v2/journey/ongoing/vp/bus/#`).
+* **Backend**: Go (1.26+), utilizing native HTTP Mux routing (Go 1.22+), `coder/websocket` for streaming, and `eclipse/paho.mqtt.golang` to ingest live telemetry from HSL's public broker (`/hfp/v2/journey/ongoing/vp/tram/#` and `/hfp/v2/journey/ongoing/vp/bus/#`).
 * **State Store**: Redis 7 (Alpine), acting as a low-overhead live coordinate cache, tracking unique operator-prefixed vehicle IDs (`{operator}-{vehicle}`).
 * **Frontend**: React 19, TypeScript, MapLibre GL JS 5.x, Lucide icons, and Vanilla CSS with custom theme variables.
 * **Map Tile Stream**: Digitransit Map API v3 (Vector style style.json + stop POI tiles).

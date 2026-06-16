@@ -1,6 +1,6 @@
 # Local Development & Testing Guide
 
-> Development machine: **Windows 11 (amd64)** — Go 1.25, Node 24, Docker 29  
+> Development machine: **Windows 11 (amd64)** — Go 1.26, Node 24, Docker 29  
 > Production target: **Oracle Linux 9 (arm64)** — deployed via Docker  
 > Last updated: 2026-06-15
 
