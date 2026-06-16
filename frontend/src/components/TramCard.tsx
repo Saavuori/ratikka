@@ -1,14 +1,16 @@
 import React from 'react';
 import type { VehiclePosition } from '../types';
-import { Navigation, Clock, X } from 'lucide-react';
+import { Navigation, Clock, X, Target } from 'lucide-react';
 
 interface TramCardProps {
   tram: VehiclePosition;
   routeName?: string;
   onClose: () => void;
+  isFollowing: boolean;
+  onToggleFollow: () => void;
 }
 
-export const TramCard: React.FC<TramCardProps> = ({ tram, routeName, onClose }) => {
+export const TramCard: React.FC<TramCardProps> = ({ tram, routeName, onClose, isFollowing, onToggleFollow }) => {
   const speedKmh = Math.round(tram.spd * 3.6);
 
   const getDelayColor = (seconds: number): string => {
@@ -50,9 +52,43 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, routeName, onClose }) 
         )}
       </div>
 
+      <div className="tram-card-divider" />
+
+      {/* Follow toggle button */}
+      <button 
+        className={`tram-card-follow-btn ${isFollowing ? 'active' : ''}`} 
+        onClick={onToggleFollow}
+        title={isFollowing ? "Stop following tram" : "Follow tram from behind"}
+        style={{
+          background: isFollowing ? 'rgba(0, 184, 148, 0.15)' : 'transparent',
+          border: isFollowing ? '1px solid rgba(0, 184, 148, 0.3)' : '1px solid transparent',
+          borderRadius: '50%',
+          width: '24px',
+          height: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: isFollowing ? '#20bf6b' : '#94a3b8',
+          cursor: 'pointer',
+          padding: 0,
+          transition: 'all 0.2s ease',
+        }}
+        onMouseEnter={(e) => {
+          if (!isFollowing) e.currentTarget.style.color = '#e2e8f0';
+        }}
+        onMouseLeave={(e) => {
+          if (!isFollowing) e.currentTarget.style.color = '#94a3b8';
+        }}
+      >
+        <Target size={13} className={isFollowing ? 'animate-pulse' : ''} />
+      </button>
+
+      <div className="tram-card-divider" />
+
       <button className="tram-card-close" onClick={onClose} aria-label="Close">
         <X size={14} />
       </button>
     </div>
   );
 };
+

@@ -52,6 +52,13 @@ function App() {
     name: string;
   } | null>(null);
 
+  const [isFollowing, setIsFollowing] = useState<boolean>(false);
+
+  // Reset following mode when selected tram changes
+  useEffect(() => {
+    setIsFollowing(false);
+  }, [selectedTram?.veh]);
+
   // Route name reported back from TramPopup for the TramCard
   const [tramRouteName, setTramRouteName] = useState<string | undefined>(undefined);
 
@@ -237,6 +244,8 @@ function App() {
         mapTheme={mapTheme}
         showRouteNetwork={showRouteNetwork}
         is3D={is3D}
+        isFollowing={isFollowing}
+        onDisableFollowing={() => setIsFollowing(false)}
       />
 
       {/* Sidebar Filters Panel */}
@@ -262,6 +271,8 @@ function App() {
           tram={liveTram}
           routeName={tramRouteName}
           onClose={handleCloseTram}
+          isFollowing={isFollowing}
+          onToggleFollow={() => setIsFollowing(!isFollowing)}
         />
       )}
 

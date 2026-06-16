@@ -16,6 +16,8 @@ interface MapProps {
   mapTheme: 'light' | 'dark';
   showRouteNetwork: boolean;
   is3D: boolean;
+  isFollowing: boolean;
+  onDisableFollowing: () => void;
 }
 
 interface RenderPosition {
@@ -35,6 +37,8 @@ export const Map: React.FC<MapProps> = ({
   mapTheme,
   showRouteNetwork,
   is3D,
+  isFollowing,
+  onDisableFollowing,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -55,20 +59,21 @@ export const Map: React.FC<MapProps> = ({
 
   // References to keep state fresh in map event handlers and tick loop without closure issues
   const latestTramsRef = useRef<Record<string, VehiclePosition>>(trams);
-  const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation });
+  const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing });
   const routeGeometriesRef = useRef<Record<string, { geometries: string[]; color?: string }>>(routeGeometries);
   const selectedTramIdRef = useRef<string | null>(selectedTramId);
   const showRouteNetworkRef = useRef<boolean>(showRouteNetwork);
   const is3DRef = useRef<boolean>(is3D);
   const mapThemeRef = useRef<'light' | 'dark'>(mapTheme);
+  const isFollowingRef = useRef<boolean>(isFollowing);
 
   useEffect(() => {
     latestTramsRef.current = trams;
   }, [trams]);
 
   useEffect(() => {
-    callbacksRef.current = { onSelectTram, onSelectStop, onSelectBikeStation };
-  }, [onSelectTram, onSelectStop, onSelectBikeStation]);
+    callbacksRef.current = { onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing };
+  }, [onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing]);
 
   useEffect(() => {
     routeGeometriesRef.current = routeGeometries;
@@ -89,6 +94,10 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     mapThemeRef.current = mapTheme;
   }, [mapTheme]);
+
+  useEffect(() => {
+    isFollowingRef.current = isFollowing;
+  }, [isFollowing]);
 
   // Helper to toggle visibility of HSL background route layers
   const updateRouteVisibility = (map: maplibregl.Map, show: boolean) => {
@@ -261,6 +270,19 @@ export const Map: React.FC<MapProps> = ({
           type: 'FeatureCollection',
           features,
         });
+      }
+
+      // Smooth camera tracking
+      if (isFollowingRef.current && selectedTramIdRef.current) {
+        const activeFeature = features.find((f) => f.properties.veh === selectedTramIdRef.current);
+        if (activeFeature) {
+          const [lng, lat] = activeFeature.geometry.coordinates;
+          const hdg = activeFeature.properties.hdg;
+          map.jumpTo({
+            center: [lng, lat],
+            bearing: hdg,
+          });
+        }
       }
 
       animationFrameRef.current = requestAnimationFrame(tick);
@@ -649,6 +671,11 @@ export const Map: React.FC<MapProps> = ({
 
     map.on('click', 'citybike_icon', handleBikeClick);
     map.on('click', 'citybike_stops', handleBikeClick);
+
+    // Disable follow mode on drag
+    map.on('dragstart', () => {
+      callbacksRef.current.onDisableFollowing();
+    });
 
     // Mouse Hover Effects
     const setCursorPointer = () => (map.getCanvas().style.cursor = 'pointer');
