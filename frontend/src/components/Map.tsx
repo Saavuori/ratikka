@@ -190,12 +190,21 @@ export const Map: React.FC<MapProps> = ({
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: `https://cdn.digitransit.fi/map/v3/styles/hsl-map/style.json?digitransit-subscription-key=${apiKey}`,
+      style: `${window.location.origin}/style.json`,
       center: [24.9414, 60.1699], // Helsinki center
       zoom: 14,
       maxZoom: 18,
       minZoom: 10,
       attributionControl: false,
+      transformRequest: (url: string) => {
+        if (url.includes('digitransit.fi')) {
+          const separator = url.includes('?') ? '&' : '?';
+          return {
+            url: `${url}${separator}digitransit-subscription-key=${apiKey}`,
+          };
+        }
+        return { url };
+      },
     });
 
     mapRef.current = map;
