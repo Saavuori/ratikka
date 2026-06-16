@@ -107,15 +107,17 @@ body {
 /* FilterPanel Specific */
 .filter-panel {
   top: 80px;
-  left: 16px;
+  left: 0;
   width: 115px;
   max-height: calc(100vh - 96px);
   padding: 10px;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 0 12px 12px 0;
+  border-left: none;
 }
 
 .filter-panel.collapsed {
-  transform: translateX(-100%) translateX(-16px);
+  transform: translateX(-100%);
 }
 
 .panel-stats {
@@ -222,15 +224,17 @@ body {
 /* DetailPopup Specific (Shared between Tram and Stop popups) */
 .detail-popup {
   top: 80px;
-  right: 16px;
+  right: 0;
   width: 320px;
   max-height: calc(100vh - 96px);
   padding: 20px;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 12px 0 0 12px;
+  border-right: none;
 }
 
 .detail-popup.collapsed {
-  transform: translateX(100%) translateX(16px);
+  transform: translateX(100%);
 }
 
 /* Detail Popup Collapse Toggle Tab */
