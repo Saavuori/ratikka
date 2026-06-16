@@ -85,10 +85,9 @@ function App() {
     }
   }, [selectedTram?.tripId, selectedStop?.id, selectedBikeStation?.id]);
 
-  // Line & Stop filtering states
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
-  // null = no stop filter active; string[] = only show these tripIds
   const [stopTripIds, setStopTripIds] = useState<string[] | null>(null);
+  const [mapBearing, setMapBearing] = useState<number>(0);
   const [routeGeometries, setRouteGeometries] = useState<Record<string, { geometries: string[]; color?: string }>>({});
 
   // Fetch route geometries when selectedLines filter or selectedTram changes
@@ -242,6 +241,7 @@ function App() {
         is3D={is3D}
         isFollowing={isFollowing}
         onDisableFollowing={() => setIsFollowing(false)}
+        onMapBearingChange={setMapBearing}
       />
 
       {/* Sidebar Filters Panel */}
@@ -265,6 +265,7 @@ function App() {
       {liveTram && liveTram.veh !== 0 && (
         <TramCard
           tram={liveTram}
+          mapBearing={mapBearing}
           onClose={handleCloseTram}
           isFollowing={isFollowing}
           onToggleFollow={() => setIsFollowing(!isFollowing)}

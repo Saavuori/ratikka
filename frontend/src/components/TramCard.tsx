@@ -4,12 +4,13 @@ import { Navigation, Clock, X, Target } from 'lucide-react';
 
 interface TramCardProps {
   tram: VehiclePosition;
+  mapBearing: number;
   onClose: () => void;
   isFollowing: boolean;
   onToggleFollow: () => void;
 }
 
-export const TramCard: React.FC<TramCardProps> = ({ tram, onClose, isFollowing, onToggleFollow }) => {
+export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, isFollowing, onToggleFollow }) => {
   const speedKmh = Math.round(tram.spd * 3.6);
 
   const getDelayColor = (seconds: number): string => {
@@ -33,7 +34,7 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, onClose, isFollowing, 
       {/* Metrics row */}
       <div className="tram-card-metrics">
         <div className="tram-card-metric">
-          <Navigation size={13} style={{ color: '#94a3b8', transform: `rotate(${tram.hdg - 45}deg)`, transition: 'transform 0.4s ease' }} />
+          <Navigation size={13} style={{ color: '#94a3b8', transform: `rotate(${tram.hdg - mapBearing - 45}deg)`, transition: 'transform 0.2s ease' }} />
           <span className="tram-card-metric-val">{speedKmh} <span className="tram-card-metric-unit">km/h</span></span>
         </div>
         <div className="tram-card-divider" />

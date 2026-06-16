@@ -18,6 +18,7 @@ interface MapProps {
   is3D: boolean;
   isFollowing: boolean;
   onDisableFollowing: () => void;
+  onMapBearingChange?: (bearing: number) => void;
 }
 
 interface RenderPosition {
@@ -39,6 +40,7 @@ export const Map: React.FC<MapProps> = ({
   is3D,
   isFollowing,
   onDisableFollowing,
+  onMapBearingChange,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -59,7 +61,7 @@ export const Map: React.FC<MapProps> = ({
 
   // References to keep state fresh in map event handlers and tick loop without closure issues
   const latestTramsRef = useRef<Record<string, VehiclePosition>>(trams);
-  const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing });
+  const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing, onMapBearingChange });
   const routeGeometriesRef = useRef<Record<string, { geometries: string[]; color?: string }>>(routeGeometries);
   const selectedTramIdRef = useRef<string | null>(selectedTramId);
   const showRouteNetworkRef = useRef<boolean>(showRouteNetwork);
@@ -73,8 +75,8 @@ export const Map: React.FC<MapProps> = ({
   }, [trams]);
 
   useEffect(() => {
-    callbacksRef.current = { onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing };
-  }, [onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing]);
+    callbacksRef.current = { onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing, onMapBearingChange };
+  }, [onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing, onMapBearingChange]);
 
   useEffect(() => {
     routeGeometriesRef.current = routeGeometries;
@@ -278,8 +280,10 @@ export const Map: React.FC<MapProps> = ({
         const activeFeature = features.find((f) => f.properties.veh === selectedTramIdRef.current);
         if (activeFeature && !isInteractingRef.current) {
           const [lng, lat] = activeFeature.geometry.coordinates;
+          const hdg = activeFeature.properties.hdg;
           map.jumpTo({
             center: [lng, lat],
+            bearing: hdg,
           });
         }
       }
@@ -705,6 +709,16 @@ export const Map: React.FC<MapProps> = ({
     window.addEventListener('mouseup', handleInteractionEnd);
     window.addEventListener('touchend', handleInteractionEnd);
 
+    // Report initial bearing and listen to map rotate events
+    if (onMapBearingChange) {
+      onMapBearingChange(map.getBearing());
+    }
+    map.on('rotate', () => {
+      if (callbacksRef.current.onMapBearingChange) {
+        callbacksRef.current.onMapBearingChange(map.getBearing());
+      }
+    });
+
     // Mouse Hover Effects
     const setCursorPointer = () => (map.getCanvas().style.cursor = 'pointer');
     const resetCursor = () => (map.getCanvas().style.cursor = '');
@@ -755,20 +769,27 @@ export const Map: React.FC<MapProps> = ({
     }
   }, [selectedTramId]);
 
-  // Center map on selected tram
+  // Center, orient and tilt map on selected tram
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !selectedTramId) return;
 
     const selectedTram = latestTramsRef.current[selectedTramId];
     if (selectedTram) {
-      map.easeTo({
+      const easeOptions: maplibregl.EaseToOptions = {
         center: [selectedTram.lng, selectedTram.lat],
         duration: 500,
-        zoom: Math.max(map.getZoom(), 14.5),
-      });
+        zoom: Math.max(map.getZoom(), 16),
+      };
+
+      if (isFollowing) {
+        easeOptions.bearing = selectedTram.hdg;
+        easeOptions.pitch = 55;
+      }
+
+      map.easeTo(easeOptions);
     }
-  }, [selectedTramId]);
+  }, [selectedTramId, isFollowing]);
 
   // Update route geometries on map
   useEffect(() => {
