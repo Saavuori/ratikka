@@ -438,7 +438,7 @@ body {
 /* Grid & List Containers */
 .line-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 4px;
   margin-top: 8px;
 }
@@ -449,7 +449,7 @@ body {
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  padding: 6px 2px;
+  padding: 6px 1px;
   border-radius: 6px;
   background: var(--bg-button);
   border: 1px solid var(--border-button);
