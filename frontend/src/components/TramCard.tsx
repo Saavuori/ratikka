@@ -1,6 +1,7 @@
-import React from 'react';
-import type { VehiclePosition } from '../types';
+import React, { useState, useEffect } from 'react';
+import type { VehiclePosition, TripDetailsResponse } from '../types';
 import { Navigation, Clock, X, Target } from 'lucide-react';
+import { fetchTripDetails } from '../lib/api';
 
 interface TramCardProps {
   tram: VehiclePosition;
@@ -12,6 +13,28 @@ interface TramCardProps {
 
 export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, isFollowing, onToggleFollow }) => {
   const speedKmh = Math.round(tram.spd * 3.6);
+  const [tripDetails, setTripDetails] = useState<TripDetailsResponse | null>(null);
+  const [lastStopId, setLastStopId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tram.stop) {
+      setLastStopId(tram.stop);
+    }
+  }, [tram.stop]);
+
+  useEffect(() => {
+    if (!tram.tripId) {
+      setTripDetails(null);
+      return;
+    }
+    fetchTripDetails(tram.tripId)
+      .then((data) => {
+        setTripDetails(data);
+      })
+      .catch((err) => {
+        console.error('Failed to load schedule for top card:', err);
+      });
+  }, [tram.tripId]);
 
   const getDelayColor = (seconds: number): string => {
     if (seconds > 60) return '#f87171';
@@ -25,6 +48,44 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
     if (mins === 0) return 'On time';
     return seconds < 0 ? `${mins} min early` : `${mins} min late`;
   };
+
+  const getStopIndices = () => {
+    if (!tripDetails) return { currentStopIndex: -1, nextStopIndex: -1, lastKnownIndex: -1 };
+
+    const isStopped = tram.drst === 1;
+    const stopIdToMatch = tram.stop || lastStopId;
+    let lastKnownIndex = tripDetails.stops.findIndex(s => s.gtfsId === stopIdToMatch);
+
+    if (lastKnownIndex === -1) {
+      const now = new Date();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      const nextIndex = tripDetails.stops.findIndex(stop => {
+        const [h, m] = stop.realtimeArrival.split(':').map(Number);
+        const stopMinutes = h * 60 + m;
+        return stopMinutes >= currentMinutes;
+      });
+
+      if (nextIndex !== -1) {
+        lastKnownIndex = nextIndex > 0 ? nextIndex - 1 : 0;
+      } else {
+        lastKnownIndex = tripDetails.stops.length - 1;
+      }
+    }
+
+    if (isStopped) {
+      const currentStopIndex = lastKnownIndex;
+      const nextStopIndex = lastKnownIndex + 1 < tripDetails.stops.length ? lastKnownIndex + 1 : -1;
+      return { currentStopIndex, nextStopIndex, lastKnownIndex };
+    } else {
+      const nextStopIndex = lastKnownIndex + 1 < tripDetails.stops.length ? lastKnownIndex + 1 : lastKnownIndex;
+      return { currentStopIndex: -1, nextStopIndex, lastKnownIndex };
+    }
+  };
+
+  const { currentStopIndex, nextStopIndex } = getStopIndices();
+  const isStopped = tram.drst === 1;
+  const currentStop = isStopped && currentStopIndex !== -1 ? tripDetails?.stops[currentStopIndex] : null;
+  const nextStop = nextStopIndex !== -1 ? tripDetails?.stops[nextStopIndex] : null;
 
   return (
     <div className="tram-card-overlay">
@@ -44,6 +105,18 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
             {formatDelay(tram.dl)}
           </span>
         </div>
+        {tripDetails && (currentStop || nextStop) && (
+          <>
+            <div className="tram-card-divider" />
+            <div className="tram-card-metric" style={{ fontSize: '0.75rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {isStopped && currentStop ? (
+                <span style={{ color: '#fbbf24', fontWeight: 600 }}>At {currentStop.name}</span>
+              ) : nextStop ? (
+                <span style={{ color: '#e2e8f0', fontWeight: 500 }}>Next: {nextStop.name} <span style={{ color: '#34d399', fontSize: '0.7rem', fontWeight: 600 }}>{nextStop.realtimeArrival}</span></span>
+              ) : null}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="tram-card-divider" />

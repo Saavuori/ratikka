@@ -26,6 +26,12 @@ function App() {
   const [is3D, setIs3D] = useState<boolean>(() => {
     return localStorage.getItem('is3D') === 'true';
   });
+  const [showTrams, setShowTrams] = useState<boolean>(() => {
+    return localStorage.getItem('showTrams') !== 'false';
+  });
+  const [showBuses, setShowBuses] = useState<boolean>(() => {
+    return localStorage.getItem('showBuses') !== 'false';
+  });
 
   useEffect(() => {
     localStorage.setItem('mapTheme', mapTheme);
@@ -39,6 +45,14 @@ function App() {
   useEffect(() => {
     localStorage.setItem('is3D', String(is3D));
   }, [is3D]);
+
+  useEffect(() => {
+    localStorage.setItem('showTrams', String(showTrams));
+  }, [showTrams]);
+
+  useEffect(() => {
+    localStorage.setItem('showBuses', String(showBuses));
+  }, [showBuses]);
 
   // UI Selection States
   const [selectedTram, setSelectedTram] = useState<VehiclePosition | null>(null);
@@ -61,8 +75,8 @@ function App() {
 
 
 
-  // Detail panel collapse state: defaults to false (open when item is selected)
-  const [isDetailCollapsed, setIsDetailCollapsed] = useState<boolean>(false);
+  // Detail panel collapse state: defaults to true (hidden/collapsed when item is selected)
+  const [isDetailCollapsed, setIsDetailCollapsed] = useState<boolean>(true);
 
   // Sidebar collapse state: defaults to collapsed on mobile, open on desktop
   const [isFilterCollapsed, setIsFilterCollapsed] = useState<boolean>(
@@ -75,15 +89,6 @@ function App() {
       setIsFilterCollapsed(true);
     }
   }, [selectedTram, selectedStop, selectedBikeStation]);
-
-
-
-  // Auto-expand detail panel when a new tram, stop, or bike station is selected
-  useEffect(() => {
-    if (selectedTram || selectedStop || selectedBikeStation) {
-      setIsDetailCollapsed(false);
-    }
-  }, [selectedTram?.tripId, selectedStop?.id, selectedBikeStation?.id]);
   // Slide (swipe) gesture detection for left and right panels on touch devices
   useEffect(() => {
     let touchStartX = 0;
@@ -239,7 +244,7 @@ function App() {
     } else {
       // Tram not online yet — build a stub so we can still show the schedule
       const dummyTram: VehiclePosition = {
-        veh: 0,
+        veh: '0',
         desi: lineDesi || '?',
         lat: 0,
         lng: 0,
@@ -251,6 +256,7 @@ function App() {
         stop: null,
         ts: Date.now() / 1000,
         tripId: tripId,
+        mode: 'tram',
       };
       setSelectedStop(null);
       setSelectedTram(dummyTram);
@@ -262,6 +268,8 @@ function App() {
   const displayedTrams = Object.fromEntries(
     Object.entries(trams).filter((entry) => {
       const tram = entry[1];
+      if (tram.mode === 'tram' && !showTrams) return false;
+      if (tram.mode === 'bus' && !showBuses) return false;
       if (selectedLines.length > 0 && !selectedLines.includes(tram.desi)) {
         return false;
       }
@@ -275,7 +283,7 @@ function App() {
 
   // The live tram being tracked (prefer live data over stale selectedTram snapshot)
   const liveTram = selectedTram
-    ? (selectedTram.veh ? trams[selectedTram.veh] || selectedTram : selectedTram)
+    ? (selectedTram.veh && selectedTram.veh !== '0' ? trams[selectedTram.veh] || selectedTram : selectedTram)
     : null;
 
   const handleCloseTram = () => {
@@ -288,7 +296,7 @@ function App() {
       {/* Fullscreen Map Canvas */}
       <Map
         trams={displayedTrams}
-        selectedTramId={selectedTram?.veh ? `${selectedTram.veh}` : selectedTram?.tripId || null}
+        selectedTramId={selectedTram?.veh && selectedTram.veh !== '0' ? selectedTram.veh : selectedTram?.tripId || null}
         onSelectTram={handleSelectTram}
         onSelectStop={handleSelectStop}
         onSelectBikeStation={handleSelectBikeStation}
@@ -317,10 +325,14 @@ function App() {
         setShowRouteNetwork={setShowRouteNetwork}
         is3D={is3D}
         setIs3D={setIs3D}
+        showTrams={showTrams}
+        setShowTrams={setShowTrams}
+        showBuses={showBuses}
+        setShowBuses={setShowBuses}
       />
 
       {/* Floating top-center tram telemetry card */}
-      {liveTram && liveTram.veh !== 0 && (
+      {liveTram && liveTram.veh !== '0' && (
         <TramCard
           tram={liveTram}
           mapBearing={mapBearing}

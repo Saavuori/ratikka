@@ -263,6 +263,7 @@ export const Map: React.FC<MapProps> = ({
             desi: tramInfo?.desi || '',
             hdg: hdg,
             stopped: tramInfo?.drst === 1 || tramInfo?.spd === 0,
+            mode: tramInfo?.mode || 'tram',
           },
         };
       });
@@ -341,6 +342,20 @@ export const Map: React.FC<MapProps> = ({
       };
     }
 
+    // 1b. Create Bus Arrow Symbol Image for Heading
+    if (!map.hasImage('bus-arrow')) {
+      const arrowSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30" fill="none">
+          <polygon points="15,2 27,27 15,20 3,27" fill="#007ac9" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+      `;
+      const arrowImg = new Image(30, 30);
+      arrowImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arrowSvg);
+      arrowImg.onload = () => {
+        if (!map.hasImage('bus-arrow')) map.addImage('bus-arrow', arrowImg);
+      };
+    }
+
     // 2. Create Selected Tram Highlight Image
     if (!map.hasImage('tram-selected')) {
       const selectedSvg = `
@@ -386,7 +401,12 @@ export const Map: React.FC<MapProps> = ({
         type: 'symbol',
         source: 'trams',
         layout: {
-          'icon-image': 'tram-arrow',
+          'icon-image': [
+            'case',
+            ['==', ['get', 'mode'], 'bus'],
+            'bus-arrow',
+            'tram-arrow'
+          ],
           'icon-rotate': ['get', 'hdg'],
           'icon-rotation-alignment': 'map',
           'icon-allow-overlap': true,

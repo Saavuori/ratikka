@@ -108,7 +108,7 @@ body {
 .filter-panel {
   top: 80px;
   left: 0;
-  width: 115px;
+  width: 135px;
   max-height: calc(100vh - 96px);
   padding: 10px;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -472,7 +472,7 @@ body {
 }
 
 .line-btn-label {
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 800;
 }
 

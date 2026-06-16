@@ -70,9 +70,9 @@ func TestIngestionWorker_HandleMessage(t *testing.T) {
 		t.Fatalf("expected 1 position in cache, got %d", len(positions))
 	}
 
-	cachedBytes, exists := positions["229"]
+	cachedBytes, exists := positions["22-229"]
 	if !exists {
-		t.Fatal("expected vehicle 229 to be cached")
+		t.Fatal("expected vehicle 22-229 to be cached")
 	}
 
 	var thinned VehiclePosition
@@ -81,8 +81,8 @@ func TestIngestionWorker_HandleMessage(t *testing.T) {
 	}
 
 	// Verify thinned fields match
-	if thinned.Veh != 229 {
-		t.Errorf("expected Veh 229, got %d", thinned.Veh)
+	if thinned.Veh != "22-229" {
+		t.Errorf("expected Veh \"22-229\", got %q", thinned.Veh)
 	}
 	if thinned.Desi != "9" {
 		t.Errorf("expected Desi 9, got %q", thinned.Desi)
@@ -116,6 +116,9 @@ func TestIngestionWorker_HandleMessage(t *testing.T) {
 	}
 	if thinned.TripId != "HSL:1009_20260615_Mo_1_0915" {
 		t.Errorf("expected TripId HSL:1009_20260615_Mo_1_0915, got %q", thinned.TripId)
+	}
+	if thinned.Mode != "tram" {
+		t.Errorf("expected Mode tram, got %q", thinned.Mode)
 	}
 }
 
@@ -208,9 +211,9 @@ func TestIngestionWorker_HandleMessage_StopNormalization(t *testing.T) {
 				t.Fatalf("failed to get positions: %v", err)
 			}
 
-			cachedBytes, exists := positions["229"]
+			cachedBytes, exists := positions["unknown-229"]
 			if !exists {
-				t.Fatal("expected vehicle 229 in cache")
+				t.Fatal("expected vehicle unknown-229 in cache")
 			}
 
 			var thinned VehiclePosition

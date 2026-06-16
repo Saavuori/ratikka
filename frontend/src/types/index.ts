@@ -1,5 +1,5 @@
 export interface VehiclePosition {
-  veh: number;
+  veh: string;
   desi: string;
   lat: number;
   lng: number;
@@ -11,6 +11,7 @@ export interface VehiclePosition {
   stop: string | null;
   ts: number;
   tripId: string;
+  mode: string;
 }
 
 export interface PositionsMessage {

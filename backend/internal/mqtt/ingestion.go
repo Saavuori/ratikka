@@ -53,7 +53,7 @@ type HFPPayload struct {
 
 // VehiclePosition is the thinned down position payload sent to clients and stored in cache
 type VehiclePosition struct {
-	Veh    int     `json:"veh"`
+	Veh    string  `json:"veh"`
 	Desi   string  `json:"desi"`
 	Lat    float64 `json:"lat"`
 	Lng    float64 `json:"lng"`
@@ -65,6 +65,7 @@ type VehiclePosition struct {
 	Stop   *string `json:"stop"`
 	Ts     int64   `json:"ts"`
 	TripId string  `json:"tripId"`
+	Mode   string  `json:"mode"`
 }
 
 type IngestionWorker struct {
@@ -77,7 +78,7 @@ func NewIngestionWorker(broker string, cache cache.Cache) *IngestionWorker {
 	return &IngestionWorker{
 		broker: broker,
 		cache:  cache,
-	}
+		}
 }
 
 func (w *IngestionWorker) Start(ctx context.Context) error {
@@ -95,12 +96,15 @@ func (w *IngestionWorker) Start(ctx context.Context) error {
 	// Callback when connection is established (or re-established)
 	opts.OnConnect = func(client mqtt.Client) {
 		log.Println("MQTT connected to broker:", w.broker)
-		topic := "/hfp/v2/journey/ongoing/vp/tram/#"
-		token := client.Subscribe(topic, 0, w.handleMessage)
+		topics := map[string]byte{
+			"/hfp/v2/journey/ongoing/vp/tram/#": 0,
+			"/hfp/v2/journey/ongoing/vp/bus/#":  0,
+		}
+		token := client.SubscribeMultiple(topics, w.handleMessage)
 		if token.Wait() && token.Error() != nil {
-			log.Printf("Failed to subscribe to topic %s: %v\n", topic, token.Error())
+			log.Printf("Failed to subscribe to topics: %v\n", token.Error())
 		} else {
-			log.Printf("Successfully subscribed to topic: %s\n", topic)
+			log.Println("Successfully subscribed to topics")
 		}
 	}
 
@@ -170,8 +174,25 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 	}
 	MessagesReceivedCounter.WithLabelValues(routeLabel).Inc()
 
+	// Determine mode from topic: /hfp/v2/journey/ongoing/vp/<mode>/...
+	parts := strings.Split(msg.Topic(), "/")
+	mode := "tram"
+	if len(parts) > 6 {
+		mode = parts[6]
+	}
+
+	operator := "unknown"
+	if len(parts) > 7 {
+		operator = parts[7]
+	}
+	vehicleID := fmt.Sprintf("%s-%d", operator, vp.Veh)
+
+	if mode != "tram" {
+		log.Printf("MQTT ingestion: received message for mode=%s, topic=%s\n", mode, msg.Topic())
+	}
+
 	thinned := VehiclePosition{
-		Veh:    vp.Veh,
+		Veh:    vehicleID,
 		Desi:   vp.Desi,
 		Lat:    vp.Lat,
 		Lng:    vp.Long, // Translate "long" in HFP to "lng" in internal api
@@ -183,11 +204,12 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 		Stop:   stopStr,
 		Ts:     vp.Tsi,
 		TripId: tripId,
+		Mode:   mode,
 	}
 
 	thinnedJSON, err := json.Marshal(thinned)
 	if err != nil {
-		log.Printf("Error marshaling thinned position for vehicle %d: %v\n", vp.Veh, err)
+		log.Printf("Error marshaling thinned position for vehicle %s: %v\n", vehicleID, err)
 		return
 	}
 
@@ -195,9 +217,8 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	vehicleID := fmt.Sprintf("%d", thinned.Veh)
 	if err := w.cache.SetPosition(ctx, vehicleID, thinnedJSON); err != nil {
-		log.Printf("Error caching vehicle %d position: %v\n", thinned.Veh, err)
+		log.Printf("Error caching vehicle %s position: %v\n", vehicleID, err)
 	}
 }
 

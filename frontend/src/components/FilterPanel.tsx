@@ -1,6 +1,6 @@
 import React from 'react';
 import type { VehiclePosition } from '../types';
-import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Route } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Route, Train, Bus } from 'lucide-react';
 
 interface FilterPanelProps {
   trams: Record<string, VehiclePosition>;
@@ -16,6 +16,10 @@ interface FilterPanelProps {
   setShowRouteNetwork: (show: boolean) => void;
   is3D: boolean;
   setIs3D: (is3D: boolean) => void;
+  showTrams: boolean;
+  setShowTrams: (show: boolean) => void;
+  showBuses: boolean;
+  setShowBuses: (show: boolean) => void;
 }
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
@@ -32,9 +36,21 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   setShowRouteNetwork,
   is3D,
   setIs3D,
+  showTrams,
+  setShowTrams,
+  showBuses,
+  setShowBuses,
 }) => {
   const activeLines = Array.from(
-    new Set(Object.values(trams).map((t) => t.desi))
+    new Set(
+      Object.values(trams)
+        .filter((t) => {
+          if (t.mode === 'tram' && !showTrams) return false;
+          if (t.mode === 'bus' && !showBuses) return false;
+          return true;
+        })
+        .map((t) => t.desi)
+    )
   ).sort((a, b) => {
     const numA = parseInt(a);
     const numB = parseInt(b);
@@ -168,6 +184,30 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
               <Route size={12} />
             </span>
             <span>Routes</span>
+          </button>
+
+          {/* Trams Toggle */}
+          <button
+            className={`settings-btn ${showTrams ? 'active' : ''}`}
+            onClick={() => setShowTrams(!showTrams)}
+            title="Toggle Trams"
+          >
+            <span className="settings-btn-icon">
+              <Train size={12} />
+            </span>
+            <span>Trams</span>
+          </button>
+
+          {/* Buses Toggle */}
+          <button
+            className={`settings-btn ${showBuses ? 'active' : ''}`}
+            onClick={() => setShowBuses(!showBuses)}
+            title="Toggle Buses"
+          >
+            <span className="settings-btn-icon">
+              <Bus size={12} />
+            </span>
+            <span>Buses</span>
           </button>
         </div>
       </div>
