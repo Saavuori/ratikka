@@ -164,8 +164,10 @@ body {
 
 .legend-list {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
 }
 
 .stats-active-vehicles-compact {
@@ -508,23 +510,26 @@ body {
 .legend-list {
   display: flex;
   flex-direction: row;
-  flex-wrap: wrap;
-  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 0.65rem;
+  gap: 3px;
+  font-size: 0.58rem;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .legend-color {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   border: 1px solid #ffffff;
+  flex-shrink: 0;
 }
 
 /* Map Settings Section */

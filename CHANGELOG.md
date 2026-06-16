@@ -2,7 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.28.0] - 2026-06-16
+## [v0.29.1] - 2026-06-16
+
+### Fixed
+- **Legend Layout Overflow**: Repositioned and resized the Legend items (`Moving`, `Stopped`, `Next Stop`) in the left sidebar filter panel to fit horizontally on a single line. Scaled down indicator dots and text sizes to prevent vertical wrapping and overlap with the settings section.
+
+---
+
+## [v0.29.0] - 2026-06-16
 
 ### Added
 - **Selected-Vehicle Diagnostics & Telemetry Dashboard**: Introduced a premium, multi-tab layout (`Telemetry`, `Schedule`, and `Diagnostics`) inside the selected vehicle sidebar details panel ([TramPopup.tsx](file:///c:/Antigravity/ratikka/frontend/src/components/TramPopup.tsx)).
