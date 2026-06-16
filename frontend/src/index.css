@@ -1432,7 +1432,7 @@ body {
 .tram-card-metric-val {
   font-size: 0.8rem;
   font-weight: 700;
-  color: #f1f5f9;
+  color: var(--text-primary);
   white-space: nowrap;
 }
 

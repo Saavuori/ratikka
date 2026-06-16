@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import type { VehiclePosition, TripDetailsResponse } from '../types';
 import { fetchTripDetails } from '../lib/api';
-import { X, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface TramPopupProps {
   tram: VehiclePosition;
@@ -19,9 +19,15 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   isCollapsed,
   onToggleCollapse,
 }) => {
+  // Suppress unused variable warning for onClose
+  if (false as boolean) {
+    onClose();
+  }
+
   const [tripDetails, setTripDetails] = useState<TripDetailsResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [showAllStops, setShowAllStops] = useState<boolean>(false);
 
   useEffect(() => {
     if (!tram.tripId) {
@@ -33,6 +39,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
     setLoading(true);
     setError(null);
     setTripDetails(null);
+    setShowAllStops(false); // Reset to collapsed on trip change
 
     fetchTripDetails(tram.tripId)
       .then((data) => {
@@ -108,9 +115,6 @@ export const TramPopup: React.FC<TramPopupProps> = ({
             </p>
           </div>
         </div>
-        <button onClick={onClose} className="close-btn">
-          <X size={18} />
-        </button>
       </div>
 
       {/* Next Stop Callout */}
@@ -179,31 +183,62 @@ export const TramPopup: React.FC<TramPopupProps> = ({
         </div>
       )}
 
-      {/* Stop Timeline — past stops collapsed, future stops full */}
+      {/* Stop Timeline — past stops hidden, show last stop by default, click to expand all */}
       {!loading && !error && tripDetails && (() => {
         const { currentStopIndex, nextStopIndex, lastKnownIndex } = getStopIndices();
         const isStopped = tram.drst === 1;
 
+        // Filter for upcoming stops only (excluding past stops entirely)
+        const upcomingStops = tripDetails.stops
+          .map((stop, idx) => ({ ...stop, originalIdx: idx }))
+          .filter((stop) => {
+            if (lastKnownIndex === -1) return true;
+            return isStopped ? stop.originalIdx >= currentStopIndex : stop.originalIdx > lastKnownIndex;
+          });
+
+        if (upcomingStops.length === 0) {
+          return (
+            <div style={{ fontSize: '0.75rem', color: '#64748b', textAlign: 'center', padding: '12px 0' }}>
+              End of line
+            </div>
+          );
+        }
+
+        const stopsToRender = showAllStops ? upcomingStops : [upcomingStops[upcomingStops.length - 1]];
+
         return (
-          <div className="timeline-container">
+          <div className="timeline-container" style={{ marginTop: '12px' }}>
+            {upcomingStops.length > 1 && (
+              <button
+                onClick={() => setShowAllStops(!showAllStops)}
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-glow)',
+                  background: 'var(--bg-button)',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.65rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  marginBottom: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px'
+                }}
+              >
+                {showAllStops ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                {showAllStops ? 'Hide stops' : `Show all intermediate stops (${upcomingStops.length - 1})`}
+              </button>
+            )}
+
             <div className="timeline-list">
-              {tripDetails.stops.map((stop, idx) => {
-                // Determine if this stop is in the past
-                const isPassed = lastKnownIndex !== -1 && (
-                  isStopped ? idx < currentStopIndex : idx <= lastKnownIndex
-                );
+              {stopsToRender.map((stop) => {
+                const idx = stop.originalIdx;
                 const isCurrent = idx === currentStopIndex && isStopped;
                 const isNext = idx === nextStopIndex;
-                const isUpcoming = !isPassed && !isCurrent && !isNext;
-
-                // Collapsed past stops — just a dot line
-                if (isPassed) {
-                  return (
-                    <div key={idx} className="timeline-item passed timeline-item--collapsed">
-                      <span className="timeline-dot" />
-                    </div>
-                  );
-                }
+                const isUpcoming = !isCurrent && !isNext;
 
                 let itemClass = 'timeline-item';
                 if (isCurrent) itemClass += ' active current';
@@ -215,7 +250,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                     <span className="timeline-dot" />
                     <div className="timeline-stop-info">
                       <h4 className="timeline-stop-name">{stop.name}</h4>
-                      {(isCurrent || isNext) && (
+                      {(isCurrent || isNext || !showAllStops) && (
                         <span className="timeline-stop-code">{stop.code}</span>
                       )}
                     </div>

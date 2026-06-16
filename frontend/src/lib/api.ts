@@ -1,4 +1,4 @@
-import type { TripDetailsResponse, StopDetailsResponse, VersionResponse, RouteDetailsResponse } from '../types';
+import type { TripDetailsResponse, StopDetailsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -33,3 +33,12 @@ export async function fetchRouteDetails(shortName: string): Promise<RouteDetails
   }
   return res.json();
 }
+
+export async function fetchBikeStationDetails(stationId: string): Promise<BikeStationDetailsResponse> {
+  const res = await fetch(`${API_BASE}/bike-station/${encodeURIComponent(stationId)}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch bike station details: ${res.statusText}`);
+  }
+  return res.json();
+}
+

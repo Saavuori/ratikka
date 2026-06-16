@@ -81,3 +81,13 @@ export interface VersionResponse {
   build_date: string;
   git_sha: string;
 }
+
+export interface BikeStationDetailsResponse {
+  stationId: string;
+  name: string;
+  allowPickup: boolean;
+  allowDropoff: boolean;
+  bikesAvailable: number;
+  spacesAvailable: number;
+}
+

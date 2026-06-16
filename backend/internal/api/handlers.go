@@ -485,3 +485,118 @@ func (h *Handlers) RouteDetails(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
+
+type BikeStationDetailsResponse struct {
+	StationId       string `json:"stationId"`
+	Name            string `json:"name"`
+	AllowPickup     bool   `json:"allowPickup"`
+	AllowDropoff    bool   `json:"allowDropoff"`
+	BikesAvailable  int    `json:"bikesAvailable"`
+	SpacesAvailable int    `json:"spacesAvailable"`
+}
+
+type rawBikeStationResponse struct {
+	VehicleRentalStation *struct {
+		StationId         string `json:"stationId"`
+		Name              string `json:"name"`
+		AllowPickup       bool   `json:"allowPickup"`
+		AllowDropoff      bool   `json:"allowDropoff"`
+		AvailableVehicles *struct {
+			ByType []struct {
+				Count       int `json:"count"`
+				VehicleType struct {
+					FormFactor string `json:"formFactor"`
+				} `json:"vehicleType"`
+			} `json:"byType"`
+		} `json:"availableVehicles"`
+		AvailableSpaces *struct {
+			ByType []struct {
+				Count       int `json:"count"`
+				VehicleType struct {
+					FormFactor string `json:"formFactor"`
+				} `json:"vehicleType"`
+			} `json:"byType"`
+		} `json:"availableSpaces"`
+	} `json:"vehicleRentalStation"`
+}
+
+func (h *Handlers) BikeStationDetails(w http.ResponseWriter, r *http.Request) {
+	stationId := r.PathValue("stationId")
+	if stationId == "" {
+		http.Error(w, "missing stationId", http.StatusBadRequest)
+		return
+	}
+
+	queryStr := `
+		query GetBikeStationDetails($stationId: String!) {
+			vehicleRentalStation(id: $stationId) {
+				stationId
+				name
+				allowPickup
+				allowDropoff
+				availableVehicles {
+					byType {
+						count
+						vehicleType {
+							formFactor
+						}
+					}
+				}
+				availableSpaces {
+					byType {
+						count
+						vehicleType {
+							formFactor
+						}
+					}
+				}
+			}
+		}
+	`
+
+	variables := map[string]interface{}{"stationId": stationId}
+	var raw rawBikeStationResponse
+
+	if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
+		log.Printf("GraphQL query error for bike station %s: %v\n", stationId, err)
+		http.Error(w, "upstream api error", http.StatusBadGateway)
+		return
+	}
+
+	if raw.VehicleRentalStation == nil {
+		http.Error(w, "bike station not found", http.StatusNotFound)
+		return
+	}
+
+	s := raw.VehicleRentalStation
+	bikes := 0
+	if s.AvailableVehicles != nil {
+		for _, bt := range s.AvailableVehicles.ByType {
+			if strings.ToUpper(bt.VehicleType.FormFactor) == "BICYCLE" {
+				bikes += bt.Count
+			}
+		}
+	}
+
+	spaces := 0
+	if s.AvailableSpaces != nil {
+		for _, bt := range s.AvailableSpaces.ByType {
+			if strings.ToUpper(bt.VehicleType.FormFactor) == "BICYCLE" {
+				spaces += bt.Count
+			}
+		}
+	}
+
+	resp := BikeStationDetailsResponse{
+		StationId:       s.StationId,
+		Name:            s.Name,
+		AllowPickup:     s.AllowPickup,
+		AllowDropoff:    s.AllowDropoff,
+		BikesAvailable:  bikes,
+		SpacesAvailable: spaces,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+

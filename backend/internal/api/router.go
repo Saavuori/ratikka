@@ -17,6 +17,7 @@ func NewRouter(h *Handlers, hub *ws.Hub) *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/trip/{tripId}", h.TripDetails)
 	mux.HandleFunc("GET /api/v1/stop/{stopId}", h.StopDetails)
 	mux.HandleFunc("GET /api/v1/route/{shortName}", h.RouteDetails)
+	mux.HandleFunc("GET /api/v1/bike-station/{stationId}", h.BikeStationDetails)
 
 	// Metrics Endpoint
 	mux.Handle("GET /metrics", promhttp.Handler())

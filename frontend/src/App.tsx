@@ -7,6 +7,7 @@ import { FilterPanel } from './components/FilterPanel';
 import { TramPopup } from './components/TramPopup';
 import { TramCard } from './components/TramCard';
 import { StopPopup } from './components/StopPopup';
+import { BikePopup } from './components/BikePopup';
 import { VersionBadge } from './components/VersionBadge';
 import { fetchRouteDetails } from './lib/api';
 import type { VehiclePosition } from './types';
@@ -46,6 +47,10 @@ function App() {
     name: string;
     code: string;
   } | null>(null);
+  const [selectedBikeStation, setSelectedBikeStation] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   // Route name reported back from TramPopup for the TramCard
   const [tramRouteName, setTramRouteName] = useState<string | undefined>(undefined);
@@ -58,24 +63,24 @@ function App() {
     typeof window !== 'undefined' ? window.innerWidth <= 768 : false
   );
 
-  // Auto-collapse sidebar when a tram or stop is selected on mobile
+  // Auto-collapse sidebar when a tram, stop, or bike station is selected on mobile
   useEffect(() => {
-    if ((selectedTram || selectedStop) && window.innerWidth <= 768) {
+    if ((selectedTram || selectedStop || selectedBikeStation) && window.innerWidth <= 768) {
       setIsFilterCollapsed(true);
     }
-  }, [selectedTram, selectedStop]);
+  }, [selectedTram, selectedStop, selectedBikeStation]);
 
   // Clear route name when tram changes
   useEffect(() => {
     setTramRouteName(undefined);
   }, [selectedTram?.tripId]);
 
-  // Auto-expand detail panel when a new tram or stop is selected
+  // Auto-expand detail panel when a new tram, stop, or bike station is selected
   useEffect(() => {
-    if (selectedTram || selectedStop) {
+    if (selectedTram || selectedStop || selectedBikeStation) {
       setIsDetailCollapsed(false);
     }
-  }, [selectedTram?.tripId, selectedStop?.id]);
+  }, [selectedTram?.tripId, selectedStop?.id, selectedBikeStation?.id]);
 
   // Line & Stop filtering states
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
@@ -126,19 +131,32 @@ function App() {
 
   const handleSelectTram = (tram: VehiclePosition | null) => {
     setSelectedStop(null);
+    setSelectedBikeStation(null);
     setStopTripIds(null);
     setSelectedTram(tram);
   };
 
   const handleSelectStop = (stopId: string, name: string, code: string) => {
     setSelectedTram(null);
+    setSelectedBikeStation(null);
     setStopTripIds(null); // Reset stop filter to show all trams while loading the new stop
     setSelectedStop({ id: stopId, name, code });
+  };
+
+  const handleSelectBikeStation = (station: { id: string; name: string } | null) => {
+    setSelectedTram(null);
+    setSelectedStop(null);
+    setStopTripIds(null);
+    setSelectedBikeStation(station);
   };
 
   const handleCloseStop = () => {
     setSelectedStop(null);
     setStopTripIds(null);
+  };
+
+  const handleCloseBikeStation = () => {
+    setSelectedBikeStation(null);
   };
 
   const handleToggleLine = (line: string) => {
@@ -213,6 +231,7 @@ function App() {
         selectedTramId={selectedTram?.veh ? `${selectedTram.veh}` : selectedTram?.tripId || null}
         onSelectTram={handleSelectTram}
         onSelectStop={handleSelectStop}
+        onSelectBikeStation={handleSelectBikeStation}
         lineFilters={selectedLines}
         routeGeometries={routeGeometries}
         mapTheme={mapTheme}
@@ -266,6 +285,17 @@ function App() {
           onClose={handleCloseStop}
           onSelectTripId={(tripId, lineDesi) => handleSelectTripFromStop(tripId, lineDesi)}
           onStopDeparturesLoaded={setStopTripIds}
+          isCollapsed={isDetailCollapsed}
+          onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
+        />
+      )}
+
+      {/* Selected Bike Station Capacity Panel */}
+      {selectedBikeStation && (
+        <BikePopup
+          stationId={selectedBikeStation.id}
+          stationName={selectedBikeStation.name}
+          onClose={handleCloseBikeStation}
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
         />

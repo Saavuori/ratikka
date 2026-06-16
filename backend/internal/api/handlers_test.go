@@ -397,3 +397,86 @@ func TestHandlers_RouteDetails(t *testing.T) {
 		t.Errorf("unexpected geometries: %v", resp.Geometries)
 	}
 }
+
+func TestHandlers_BikeStationDetails(t *testing.T) {
+	mockGraphQLResponse := `{
+		"data": {
+			"vehicleRentalStation": {
+				"stationId": "smoove:625",
+				"name": "Suomenlahdentie",
+				"allowPickup": true,
+				"allowDropoff": true,
+				"availableVehicles": {
+					"byType": [
+						{
+							"count": 21,
+							"vehicleType": {
+								"formFactor": "BICYCLE"
+							}
+						}
+					]
+				},
+				"availableSpaces": {
+					"byType": [
+						{
+							"count": 5,
+							"vehicleType": {
+								"formFactor": "BICYCLE"
+							}
+						}
+					]
+				}
+			}
+		}
+	}`
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(mockGraphQLResponse))
+	}))
+	defer ts.Close()
+
+	oldEndpoint := DigitransitURLEndpoint
+	DigitransitURLEndpoint = ts.URL
+	defer func() { DigitransitURLEndpoint = oldEndpoint }()
+
+	memCache := cache.NewMemoryCache()
+	mqtt := &mockMqttWorker{connected: true}
+	gql := NewGraphQLClient("test-api-key")
+	handlers := NewHandlers(memCache, gql, mqtt)
+
+	req := httptest.NewRequest("GET", "/api/v1/bike-station/smoove:625", nil)
+	req.SetPathValue("stationId", "smoove:625")
+
+	rr := httptest.NewRecorder()
+	handlers.BikeStationDetails(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+
+	var resp BikeStationDetailsResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.StationId != "smoove:625" {
+		t.Errorf("expected stationId smoove:625, got %s", resp.StationId)
+	}
+	if resp.Name != "Suomenlahdentie" {
+		t.Errorf("expected name Suomenlahdentie, got %s", resp.Name)
+	}
+	if !resp.AllowPickup {
+		t.Error("expected AllowPickup true")
+	}
+	if !resp.AllowDropoff {
+		t.Error("expected AllowDropoff true")
+	}
+	if resp.BikesAvailable != 21 {
+		t.Errorf("expected BikesAvailable 21, got %d", resp.BikesAvailable)
+	}
+	if resp.SpacesAvailable != 5 {
+		t.Errorf("expected SpacesAvailable 5, got %d", resp.SpacesAvailable)
+	}
+}
+

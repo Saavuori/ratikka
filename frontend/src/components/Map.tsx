@@ -10,6 +10,7 @@ interface MapProps {
   selectedTramId: string | null;
   onSelectTram: (tram: VehiclePosition | null) => void;
   onSelectStop: (stopId: string, name: string, code: string) => void;
+  onSelectBikeStation: (station: { id: string; name: string } | null) => void;
   lineFilters: string[];
   routeGeometries: Record<string, { geometries: string[]; color?: string }>;
   mapTheme: 'light' | 'dark';
@@ -28,6 +29,7 @@ export const Map: React.FC<MapProps> = ({
   selectedTramId,
   onSelectTram,
   onSelectStop,
+  onSelectBikeStation,
   lineFilters,
   routeGeometries,
   mapTheme,
@@ -53,7 +55,7 @@ export const Map: React.FC<MapProps> = ({
 
   // References to keep state fresh in map event handlers and tick loop without closure issues
   const latestTramsRef = useRef<Record<string, VehiclePosition>>(trams);
-  const callbacksRef = useRef({ onSelectTram, onSelectStop });
+  const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation });
   const routeGeometriesRef = useRef<Record<string, { geometries: string[]; color?: string }>>(routeGeometries);
   const selectedTramIdRef = useRef<string | null>(selectedTramId);
   const showRouteNetworkRef = useRef<boolean>(showRouteNetwork);
@@ -65,8 +67,8 @@ export const Map: React.FC<MapProps> = ({
   }, [trams]);
 
   useEffect(() => {
-    callbacksRef.current = { onSelectTram, onSelectStop };
-  }, [onSelectTram, onSelectStop]);
+    callbacksRef.current = { onSelectTram, onSelectStop, onSelectBikeStation };
+  }, [onSelectTram, onSelectStop, onSelectBikeStation]);
 
   useEffect(() => {
     routeGeometriesRef.current = routeGeometries;
@@ -468,6 +470,100 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
+    // 12. Add Citybike Source
+    if (!map.getSource('citybike')) {
+      map.addSource('citybike', {
+        type: 'vector',
+        tiles: [
+          `https://api.digitransit.fi/map/v3/hsl/fi/rentalStations/{z}/{x}/{y}.pbf?digitransit-subscription-key=${apiKey}`,
+        ],
+        minzoom: 13,
+        maxzoom: 16,
+      });
+    }
+
+    // 13. Add Citybike stops case
+    if (!map.getLayer('citybike_stops_case')) {
+      map.addLayer({
+        id: 'citybike_stops_case',
+        type: 'circle',
+        source: 'citybike',
+        'source-layer': 'rentalStations',
+        minzoom: 13,
+        maxzoom: 14,
+        paint: {
+          'circle-color': '#ffffff',
+          'circle-radius': [
+            'interpolate',
+            ['exponential', 1.15],
+            ['zoom'],
+            12, 1.5,
+            22, 26
+          ]
+        }
+      });
+    }
+
+    // 14. Add Citybike stops circle
+    if (!map.getLayer('citybike_stops')) {
+      map.addLayer({
+        id: 'citybike_stops',
+        type: 'circle',
+        source: 'citybike',
+        'source-layer': 'rentalStations',
+        minzoom: 13,
+        maxzoom: 14,
+        paint: {
+          'circle-color': '#fcbc19',
+          'circle-radius': [
+            'interpolate',
+            ['exponential', 1.15],
+            ['zoom'],
+            12, 1,
+            22, 24
+          ]
+        }
+      });
+    }
+
+    // 15. Create Citybike Icon Image if missing
+    if (!map.hasImage('icon-citybike-station')) {
+      const bikeSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30" fill="none">
+          <circle cx="15" cy="15" r="12" fill="#fcbc19" stroke="#ffffff" stroke-width="2"/>
+          <path d="M19.5 17.5a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm-9 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM10.5 17.5h5m-2.5 0v-4.5h4.5m-4.5 2L15 11h2.5" stroke="#1e293b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      `;
+      const bikeImg = new Image(30, 30);
+      bikeImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(bikeSvg);
+      bikeImg.onload = () => {
+        if (!map.hasImage('icon-citybike-station')) map.addImage('icon-citybike-station', bikeImg);
+      };
+    }
+
+    // 16. Add Citybike Icon layer
+    if (!map.getLayer('citybike_icon')) {
+      map.addLayer({
+        id: 'citybike_icon',
+        type: 'symbol',
+        source: 'citybike',
+        'source-layer': 'rentalStations',
+        minzoom: 14,
+        layout: {
+          'icon-image': 'icon-citybike-station',
+          'icon-offset': [0, -6],
+          'icon-allow-overlap': true,
+          'icon-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            13, 0.8,
+            20, 1.2
+          ]
+        }
+      });
+    }
+
     // Draw route geometries now that style and layer are loaded
     drawRouteGeometries(map, routeGeometriesRef.current);
 
@@ -507,8 +603,6 @@ export const Map: React.FC<MapProps> = ({
 
     mapRef.current = map;
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
-
     map.on('style.load', () => {
       setupCustomMapElements(map);
     });
@@ -535,6 +629,19 @@ export const Map: React.FC<MapProps> = ({
       }
     });
 
+    const handleBikeClick = (e: any) => {
+      if (!e.features || e.features.length === 0) return;
+      const feat = e.features[0];
+      const stationId = feat.properties?.id || feat.properties?.stationId;
+      const name = feat.properties?.name || 'Bike Station';
+      if (stationId) {
+        callbacksRef.current.onSelectBikeStation({ id: stationId, name });
+      }
+    };
+
+    map.on('click', 'citybike_icon', handleBikeClick);
+    map.on('click', 'citybike_stops', handleBikeClick);
+
     // Mouse Hover Effects
     const setCursorPointer = () => (map.getCanvas().style.cursor = 'pointer');
     const resetCursor = () => (map.getCanvas().style.cursor = '');
@@ -543,6 +650,10 @@ export const Map: React.FC<MapProps> = ({
     map.on('mouseleave', 'trams-circles', resetCursor);
     map.on('mouseenter', 'stops-points', setCursorPointer);
     map.on('mouseleave', 'stops-points', resetCursor);
+    map.on('mouseenter', 'citybike_icon', setCursorPointer);
+    map.on('mouseleave', 'citybike_icon', resetCursor);
+    map.on('mouseenter', 'citybike_stops', setCursorPointer);
+    map.on('mouseleave', 'citybike_stops', resetCursor);
 
     // Start interpolation tick loop
     startAnimationLoop();
