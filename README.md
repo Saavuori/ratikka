@@ -10,7 +10,7 @@ A premium, high-performance web application mapping **all active Helsinki trams,
 
 ## 📸 Screenshots & UI
 
-![HSL - LIVE Dashboard](docs/screenshots/desktop_layout.png)
+![HSL - LIVE Dashboard](docs/screenshots/hsl_live_dashboard.png)
 
 ---
 
