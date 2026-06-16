@@ -139,7 +139,23 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
                 <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Next: </span>
                 <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{nextStop.name}</span>
                 {' '}
-                <span style={{ color: '#10b981', fontSize: '0.65rem', fontWeight: 700 }}>{nextStop.realtimeArrival}</span>
+                <span style={{ color: '#10b981', fontSize: '0.65rem', fontWeight: 700 }}>
+                  {(() => {
+                    const now = new Date();
+                    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                    const [h, m] = nextStop.realtimeArrival.split(':').map(Number);
+                    let stopMinutes = h * 60 + m;
+                    const currentHour = now.getHours();
+                    let localMinutes = currentMinutes;
+                    if (currentHour < 5 && h >= 24) {
+                      localMinutes += 24 * 60;
+                    } else if (currentHour >= 20 && h < 5) {
+                      stopMinutes += 24 * 60;
+                    }
+                    const etaMins = stopMinutes - localMinutes;
+                    return etaMins <= 0 ? 'now' : `${etaMins} min`;
+                  })()}
+                </span>
               </span>
             ) : null}
           </div>
