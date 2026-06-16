@@ -91,7 +91,7 @@ Three specialized subagent passes run after each phase's implementation:
 docker run --rm -p 6379:6379 redis:7-alpine
 go run ./cmd/ratikka
 
-# Verify MQTT is ingesting (wait 5s for first trams)
+# Verify MQTT is ingesting (wait 5s for first vehicles)
 curl http://localhost:8080/api/v1/health
 # → {"status":"healthy","mqtt_connected":true,"redis_connected":true,"active_vehicles":>0}
 
@@ -104,7 +104,7 @@ npx wscat -c ws://localhost:8080/api/v1/stream
 - [ ] `go test ./...` passes with 0 failures
 - [ ] `go test -race ./...` passes (no data races)
 - [ ] Health endpoint reports all subsystems connected
-- [ ] WebSocket streams real tram data within 5 seconds of startup
+- [ ] WebSocket streams real vehicle data within 5 seconds of startup
 - [ ] Backend handles Redis down gracefully (logs error, doesn't crash)
 - [ ] Backend reconnects to MQTT after disconnect
 
@@ -141,18 +141,19 @@ cd frontend && npm run dev
 
 # Open http://localhost:5173
 # ✓ Map loads with HSL tiles
-# ✓ Tram markers appear within 5 seconds
+# ✓ Tram and bus markers appear within 5 seconds
 # ✓ Markers move smoothly (not jumping)
 # ✓ Markers rotate with heading
-# ✓ Stopped trams visually distinct from moving ones
+# ✓ Stopped vehicles visually distinct from moving ones
 # ✓ Line numbers visible on markers
+# ✓ Distinct vehicle marker shapes (circular for trams, square for buses)
 ```
 
 #### Quality Gate Criteria
 - [ ] `npm run build` succeeds with 0 errors and 0 TypeScript errors
 - [ ] `npm test` passes
 - [ ] Map loads and displays HSL vector tiles
-- [ ] Trams appear and animate smoothly
+- [ ] Vehicles (trams and buses) appear and animate smoothly with correct distinct shapes
 - [ ] WebSocket auto-reconnects after backend restart
 - [ ] No console errors in browser dev tools
 - [ ] Go `embed` serves built frontend at `http://localhost:8080`
@@ -181,9 +182,9 @@ cd frontend && npm run dev
 #### Manual Smoke Test
 ```
 # With full stack running:
-# ✓ Click a tram → popup shows line, headsign, next stops with ETAs
-# ✓ Route polyline drawn on map for selected tram
-# ✓ Click a stop → popup shows upcoming tram arrivals
+# ✓ Click a vehicle (tram/bus) → popup shows line, headsign, next stops with ETAs (utilizing fuzzy fallback if needed)
+# ✓ Route polyline drawn on map for selected vehicle
+# ✓ Click a stop → popup shows upcoming vehicle arrivals and highlights route network paths served by the stop
 # ✓ Stop markers visible at zoom level 14+
 # ✓ Popup closes when clicking elsewhere
 # ✓ Network error shows user-friendly message (not raw error)
@@ -191,14 +192,14 @@ cd frontend && npm run dev
 
 #### Quality Gate Criteria
 - [ ] GraphQL proxy correctly adds API key header
-- [ ] Trip details display real-time ETAs
+- [ ] Trip details display real-time ETAs with fuzzy resolution fallback working for unmatched GTFS IDs
 - [ ] Stop timetable shows correct upcoming arrivals
-- [ ] Route polyline renders on map
+- [ ] Route network highlighting and route polyline render correctly on map
 - [ ] Error states handled gracefully (API down, invalid IDs)
 - [ ] No API key visible in browser network tab for proxied requests
 
 #### 🤖 Subagent Reviews After Phase 3 (Security-Critical)
-1. **QA**: Test with invalid/missing trip IDs, non-tram routes, stops with no departures
+1. **QA**: Test with invalid/missing trip IDs, non-existent routes, stops with no departures, and fuzzy matching scenarios
 2. **Security**: **Full security audit** — GraphQL injection, API key exposure, SSRF via proxy, input validation, CORS, rate limiting
 3. **Code Review**: HTTP client timeout configuration, response size limits, error propagation
 
@@ -218,24 +219,25 @@ cd frontend && npm run dev
 
 #### Manual Smoke Test
 ```
-# ✓ Filter panel shows all active tram lines
-# ✓ Toggling a line hides/shows its trams on map
-# ✓ Selecting a stop filters to only relevant trams
-# ✓ Clear filter restores all trams
+# ✓ Filter panel shows all active tram and bus lines in a 3-column layout
+# ✓ Toggling a line hides/shows its vehicles on map
+# ✓ Checkboxes for showTrams / showBuses correctly toggle entire categories of vehicles
+# ✓ Selecting a stop filters to only relevant vehicles and highlights their route networks
+# ✓ Clear filter restores all vehicles
 # ✓ UI works on mobile viewport (responsive)
 # ✓ Version badge shows correct version
 # ✓ App recovers gracefully from network errors
 ```
 
 #### Quality Gate Criteria
-- [ ] All filter combinations work correctly
+- [ ] All filter combinations work correctly (lines, stops, vehicle types)
 - [ ] Responsive layout on mobile widths (375px+)
-- [ ] Performance: <16ms frame time with 50+ trams on map
+- [ ] Performance: <16ms frame time with 100+ vehicles on map
 - [ ] Accessibility: keyboard navigation, ARIA labels on interactive elements
 - [ ] No memory leaks (stable heap over 10 min runtime)
 
 #### 🤖 Subagent Reviews After Phase 4
-1. **QA**: Test filter edge cases (0 results, all selected, rapid toggling), performance with many trams
+1. **QA**: Test filter edge cases (0 results, all selected, rapid toggling), performance with many vehicles
 2. **Code Review**: React memoization, MapLibre layer performance, CSS organization
 
 ---
@@ -299,8 +301,8 @@ graph LR
     subgraph e2e["End-to-End Acceptance"]
         T1["Start docker compose"]
         T2["Wait for health: ok"]
-        T3["Verify trams on map"]
-        T4["Click tram → details"]
+        T3["Verify vehicles on map"]
+        T4["Click vehicle → details"]
         T5["Click stop → timetable"]
         T6["Apply line filter"]
         T7["Apply stop filter"]

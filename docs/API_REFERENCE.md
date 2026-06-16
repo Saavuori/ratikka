@@ -15,6 +15,8 @@
   - [WebSocket — Live Position Stream](#websocket--live-position-stream)
   - [REST — Trip Details](#rest--trip-details)
   - [REST — Stop Details](#rest--stop-details)
+  - [REST — Route Details](#rest--route-details)
+  - [REST — Bike Station Details](#rest--bike-station-details)
   - [REST — Health Check](#rest--health-check)
   - [REST — Version Info](#rest--version-info)
 
@@ -34,10 +36,12 @@ High-frequency vehicle position data streamed from HSL's public MQTT broker.
 | **QoS** | 0 (at most once) |
 | **Frequency** | ~1 message/second per vehicle |
 
-#### Topic Pattern
+#### Topic Patterns
 
+We subscribe to both tram and bus topics:
 ```
 /hfp/v2/journey/ongoing/vp/tram/#
+/hfp/v2/journey/ongoing/vp/bus/#
 ```
 
 Topic hierarchy (each segment is filterable with `+` wildcard):
@@ -46,7 +50,7 @@ Topic hierarchy (each segment is filterable with `+` wildcard):
 /hfp/v2/journey/ongoing/vp/{transport_mode}/{operator_id}/{vehicle_number}/{route_id}/{direction_id}/{headsign}/{start_time}/{next_stop}/{geohash_level}/{geohash}/#
 ```
 
-For trams, `{transport_mode}` = `tram`.
+For this application, `{transport_mode}` = `tram` or `bus`.
 
 #### HFP Payload (JSON)
 
@@ -304,10 +308,10 @@ All endpoints are served by the Go backend at `http://localhost:8080` and proxie
 ```json
 {
   "type": "positions",
-  "timestamp": "2026-06-15T09:30:15Z",
+  "timestamp": "2026-06-16T09:30:15Z",
   "vehicles": {
-    "229": {
-      "veh": 229,
+    "22-229": {
+      "veh": "22-229",
       "desi": "9",
       "lat": 60.16985,
       "lng": 24.93848,
@@ -317,11 +321,27 @@ All endpoints are served by the Go backend at `http://localhost:8080` and proxie
       "drst": 0,
       "route": "HSL:1009",
       "stop": "HSL:1203420",
-      "ts": 1781461815
+      "ts": 1781461815,
+      "tripId": "HSL:1009_20260616_Mo_1_0915",
+      "mode": "tram"
     },
-    "412": { ... }
+    "18-1245": {
+      "veh": "18-1245",
+      "desi": "500",
+      "lat": 60.19851,
+      "lng": 24.95678,
+      "hdg": 85,
+      "spd": 11.2,
+      "dl": 45,
+      "drst": 0,
+      "route": "HSL:1500",
+      "stop": null,
+      "ts": 1781461816,
+      "tripId": "HSL:1500_20260616_Mo_2_0920",
+      "mode": "bus"
+    }
   },
-  "count": 48
+  "count": 2
 }
 ```
 
@@ -331,7 +351,7 @@ The `vehicles` map is keyed by vehicle ID. The frontend replaces its entire stat
 
 ### REST — Trip Details
 
-Get route and ETA info for a specific tram trip.
+Get route and ETA info for a specific vehicle trip (supporting both trams and buses).
 
 | Property | Value |
 |---|---|
@@ -339,11 +359,14 @@ Get route and ETA info for a specific tram trip.
 | **Path** | `/api/v1/trip/{tripId}` |
 | **Auth** | None (backend adds Digitransit key) |
 
+> [!NOTE]  
+> If the specific `tripId` is not found, the backend automatically performs a fuzzy fallback lookup using the Digitransit GraphQL `fuzzyTrip(...)` query, matching on route name, direction, operating date, and start time. This helps handle schedule drift and date-mismatch issues.
+
 **Path Parameters:**
 
 | Param | Example | Description |
 |---|---|---|
-| `tripId` | `HSL:1009_20260615_Su_1_0915` | GTFS trip ID |
+| `tripId` | `HSL:1009_20260616_Mo_1_0915` | GTFS trip ID |
 
 **Response** `200 OK`:
 
@@ -408,6 +431,72 @@ Get upcoming tram arrivals at a specific stop.
       "tripId": "HSL:1009_20260615_Su_2_0910"
     }
   ]
+}
+```
+
+---
+
+### REST — Route Details
+
+Get route geometry polylines and stop list for a specific route line designation.
+
+| Property | Value |
+|---|---|
+| **Method** | `GET` |
+| **Path** | `/api/v1/route/{shortName}` |
+| **Auth** | None (backend adds Digitransit key) |
+
+**Path Parameters:**
+
+| Param | Example | Description |
+|---|---|---|
+| `shortName` | `9` | Short route designator |
+
+**Response** `200 OK`:
+
+```json
+{
+  "shortName": "9",
+  "color": "#007AC9",
+  "geometries": [
+    "encoded_polyline_points_direction_1",
+    "encoded_polyline_points_direction_2"
+  ],
+  "stops": [
+    "HSL:1203420",
+    "HSL:1203421"
+  ]
+}
+```
+
+---
+
+### REST — Bike Station Details
+
+Get live capacity and rental status for a specific city bike station.
+
+| Property | Value |
+|---|---|
+| **Method** | `GET` |
+| **Path** | `/api/v1/bike-station/{stationId}` |
+| **Auth** | None (backend adds Digitransit key) |
+
+**Path Parameters:**
+
+| Param | Example | Description |
+|---|---|---|
+| `stationId` | `HSL:1203420` | Bike station ID |
+
+**Response** `200 OK`:
+
+```json
+{
+  "stationId": "1203420",
+  "name": "Välimerenkatu",
+  "allowPickup": true,
+  "allowDropoff": true,
+  "bikesAvailable": 12,
+  "spacesAvailable": 8
 }
 ```
 

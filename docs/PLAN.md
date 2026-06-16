@@ -1,17 +1,17 @@
-# Ratikka — Real-Time Helsinki Tram Tracker
+# HSL - LIVE — Real-Time Helsinki Tram & Bus Tracker
 
 ## Implementation Plan
 
 > Based on the blueprint in [ratikka.md](file:///g:/My%20Drive/ObsidianVault/Sampsa/ratikka.md).  
 > API details: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)  
 > Local dev setup: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md)  
-> Last updated: 2026-06-15
+> Last updated: 2026-06-16
 
 ---
 
 ## 1. Project Overview
 
-A containerized web application that shows **all Helsinki trams on a live map** in real time. Users can click trams or stops to see schedules, ETAs, and route details. The architecture is a Go backend that ingests MQTT telemetry, caches state in Redis, and pushes updates via WebSocket to a React + MapLibre GL JS frontend. Deployed behind its own Caddy reverse proxy (swappable to nginx).
+A containerized web application that shows **all Helsinki trams and buses on a live map** in real time. Users can click vehicles or stops to see schedules, ETAs, and route details. The architecture is a Go backend that ingests MQTT telemetry from HSL's public broker, caches state in Redis, and pushes updates via WebSocket to a React + MapLibre GL JS frontend. Deployed behind its own Caddy reverse proxy (swappable to nginx).
 
 ### Target System
 
@@ -25,25 +25,30 @@ Oracle Linux 9 (UEK) — aarch64 (ARM64)
 ## 2. Feature Checklist
 
 ### Core Map Features
-- [ ] **F1 — Live tram positions on map**: All Helsinki trams as animated markers on MapLibre GL JS vector map (HSL Map API v3)
-- [ ] **F2 — Movement indicators**: Each marker shows status (stopped/moving), speed, heading/direction via icon rotation and visual styling
-- [ ] **F3 — Smooth animation**: Linear interpolation (lerp) over 1-second delay window for smooth marker movement
-- [ ] **F4 — Line/route labels**: Tram line number (`desi`) displayed on/beside each marker
+- [x] **F1 — Live tram & bus positions on map**: All active Helsinki trams and buses as animated markers on MapLibre GL JS vector map (HSL Map API v3)
+- [x] **F2 — Movement indicators**: Each marker shows status (stopped/moving), speed, heading/direction via icon rotation and visual styling
+- [x] **F3 — Smooth animation**: Linear interpolation (lerp) over 1-second delay window for smooth marker movement
+- [x] **F4 — Line/route labels**: Line designation number (`desi`) displayed on/beside each marker
+- [x] **F14 — Distinct vehicle shapes**: Circular markers for trams (`#00985f`) and square markers for buses (`#007ac9` standard, `#CA4300` trunk line) for quick visual scanning
 
 ### Interactive Features
-- [ ] **F5 — Click tram → route detail**: Shows full route polyline on map + ETAs for upcoming stops (via Routing API v2)
-- [ ] **F6 — Click stop → stop detail**: Shows only trams that serve this stop + ETAs for next arrivals
-- [ ] **F7 — Stop layer from HSL POI tiles**: Interactive stop markers from Digitransit POI vector tile endpoint
+- [x] **F5 — Click vehicle → route detail**: Shows full route polyline on map + ETAs for upcoming stops (via Routing API v2)
+- [x] **F6 — Click stop → stop detail**: Shows only vehicles that serve this stop + ETAs for next arrivals
+- [x] **F7 — Stop layer from HSL POI tiles**: Interactive stop markers from Digitransit POI vector tile endpoint
+- [x] **F15 — Highlight stop routes**: Clicking a stop highlights all routes serving it, loading route geometries and stops dynamically
+- [x] **F18 — Inline stop telemetry**: Displays the current or next stop details directly inside the top vehicle telemetry card
 
 ### Filtering
-- [ ] **F8 — Tram line list/filter**: Sidebar panel lists all active tram lines; toggling shows/hides trams
-- [ ] **F9 — Stop-based filter**: Selecting a stop filters the map to show only trams stopping there
+- [x] **F8 — Line list/filter**: Wide 190px sidebar panel lists active lines in a 3-column layout; toggling shows/hides vehicles
+- [x] **F9 — Stop-based filter**: Selecting a stop filters the map to show only vehicles stopping there
+- [x] **F16 — Mode filters**: Checkboxes in the sidebar to toggle visibility of the entire tram or bus layer independently
 
-### Infrastructure
-- [ ] **F10 — Containerized deployment**: `docker-compose.yml` with Go backend, Redis, Caddy, and built-in frontend
-- [ ] **F11 — Standalone Caddy proxy**: Own Caddy instance (swappable to nginx or other), not dependent on external proxy
-- [ ] **F12 — CI/CD versioning**: GitHub Actions with conventional-commit auto-tagging
-- [ ] **F13 — ARM64 production**: Docker images built for `linux/arm64` targeting Oracle Linux 9
+### Infrastructure & Core API
+- [x] **F10 — Containerized deployment**: `docker-compose.yml` with Go backend, Redis, Caddy, and built-in frontend
+- [x] **F11 — Standalone Caddy proxy**: Own Caddy instance (swappable to nginx or other), not dependent on external proxy
+- [x] **F12 — CI/CD versioning**: GitHub Actions with conventional-commit auto-tagging
+- [x] **F13 — ARM64 production**: Docker images built for `linux/arm64` targeting Oracle Linux 9
+- [x] **F17 — Fuzzy trip lookup fallback**: Backend falls back to `fuzzyTrip` GraphQL queries when specific GTFS trip IDs aren't found in OTP (mitigating date mismatch/schedule drift issues)
 
 ---
 
@@ -52,7 +57,7 @@ Oracle Linux 9 (UEK) — aarch64 (ARM64)
 ```mermaid
 graph TB
     subgraph ext["Digitransit Platform"]
-        MQTT["MQTT Broker<br/>mqtt.hsl.fi:8883<br/><i>HFP v2 Tram Positions</i>"]
+        MQTT["MQTT Broker<br/>mqtt.hsl.fi:8883<br/><i>HFP v2 Tram & Bus Positions</i>"]
         GQL["Routing API v2<br/>api.digitransit.fi<br/><i>GraphQL</i>"]
         TILES["Map API v3<br/>cdn.digitransit.fi<br/><i>Vector Tiles + POI</i>"]
     end
@@ -62,20 +67,20 @@ graph TB
             MQTTC["MQTT Ingestion<br/>Worker"]
             CACHE["Redis Client"]
             WSHUB["WebSocket Hub<br/><i>1s broadcast</i>"]
-            API["REST API<br/><i>GraphQL Proxy</i>"]
+            API["REST API<br/><i>GraphQL Proxy & Fallbacks</i>"]
         end
         REDIS[("Redis 7<br/><i>In-memory cache</i>")]
         CADDY["Caddy 2<br/><i>Reverse Proxy + Static</i>"]
     end
 
     subgraph browser["Client Browser"]
-        MAP["MapLibre GL JS<br/><i>HSL Vector Map</i>"]
+        MAP["MapLibre GL JS<br/><i>HSL Vector Map & Shapes</i>"]
         WS["WebSocket Client"]
-        UI["React 19 UI<br/><i>Filters + Popups</i>"]
+        UI["React 19 UI<br/><i>Filters + Popups + Highlights</i>"]
     end
 
-    MQTT -- "TLS / subscribe<br/>/hfp/v2/.../tram/#" --> MQTTC
-    MQTTC -- "HSET positions" --> REDIS
+    MQTT -- "TLS / subscribe<br/>/hfp/v2/.../tram/#<br/>/hfp/v2/.../bus/#" --> MQTTC
+    MQTTC -- "HSET positions<br/>key: {operator}-{veh}" --> REDIS
     REDIS -- "HGETALL" --> WSHUB
     WSHUB -- "JSON snapshot" --> CADDY
     API -- "POST GraphQL<br/>+ API key" --> GQL
@@ -105,11 +110,11 @@ sequenceDiagram
     participant WS as WebSocket Hub
     participant BROWSER as Browser
 
-    Note over MQTT,BROWSER: Track A — Live Positions (every ~1s per tram)
+    Note over MQTT,BROWSER: Track A — Live Positions (every ~1s per vehicle)
     
     MQTT->>GO: HFP JSON payload (per vehicle)
-    GO->>GO: Parse & thin (veh, desi, lat, lng, hdg, spd, dl, drst)
-    GO->>REDIS: HSET ratikka:positions {veh} {json}
+    GO->>GO: Parse, thin & determine mode (tram/bus)<br/>Key = {operator}-{veh}
+    GO->>REDIS: HSET ratikka:positions {operator-veh} {json}
     
     loop Every 1000ms
         WS->>REDIS: HGETALL ratikka:positions
@@ -131,8 +136,13 @@ sequenceDiagram
     
     BROWSER->>CADDY: GET /api/v1/trip/{tripId}
     CADDY->>GO: Proxy request
-    GO->>DT: POST GraphQL + API key header
-    DT-->>GO: Trip details (stops, ETAs, geometry)
+    GO->>DT: POST GraphQL + API key header (GetTripDetails)
+    alt Trip found
+        DT-->>GO: Trip details (stops, ETAs, geometry)
+    else Trip not found
+        GO->>DT: Fallback: POST GraphQL (GetFuzzyTripDetails)
+        DT-->>GO: Fuzzy trip details
+    end
     GO-->>CADDY: Parsed JSON response
     CADDY-->>BROWSER: Trip details
     BROWSER->>BROWSER: Draw route polyline + stop ETAs

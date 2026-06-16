@@ -1,6 +1,6 @@
 # Monitoring & Telemetry Architecture
 
-This document details the monitoring stack, metrics collection mechanism, and telemetry pipeline configured for the Ratikka application and its host server.
+This document details the monitoring stack, metrics collection mechanism, and telemetry pipeline configured for the HSL - LIVE application and its host server.
 
 ---
 
@@ -46,8 +46,8 @@ graph TD
 Telemetry is divided into three distinct scopes:
 
 ### Go Application Metrics
-These metrics reflect the internal business logic and ingestion health of the Ratikka Go server:
-* `ratikka_active_websocket_clients` (Gauge): The count of active browsers currently streaming live tram coordinates. Used to track app usage.
+These metrics reflect the internal business logic and ingestion health of the HSL - LIVE Go server:
+* `ratikka_active_websocket_clients` (Gauge): The count of active browsers currently streaming live vehicle coordinates. Used to track app usage.
 * `ratikka_mqtt_messages_received_total` (Counter Vec, labeled by `route`): The total count of raw position updates received from the HSL MQTT broker. Used to track ingestion load.
 * `ratikka_mqtt_parse_errors_total` (Counter): The number of MQTT payloads that failed JSON unmarshaling, indicating upstream data structure drift.
 

@@ -135,6 +135,9 @@ curl http://localhost:8080/api/v1/version
 # Stop details
 curl http://localhost:8080/api/v1/stop/HSL:1203420
 
+# Route details
+curl http://localhost:8080/api/v1/route/9
+
 # WebSocket stream (wscat or browser dev tools)
 npx wscat -c ws://localhost:8080/api/v1/stream
 ```
@@ -151,8 +154,10 @@ The HSL MQTT broker is **public** — it works identically from Windows as it do
 # Install mqtt.js CLI globally
 npm install -g mqtt
 
-# Subscribe to tram positions (Ctrl+C to stop)
+# Subscribe to tram or bus positions (Ctrl+C to stop)
 mqtt subscribe -h mqtt.hsl.fi -p 8883 -l mqtts -v -t "/hfp/v2/journey/ongoing/vp/tram/#"
+# or for buses:
+mqtt subscribe -h mqtt.hsl.fi -p 8883 -l mqtts -v -t "/hfp/v2/journey/ongoing/vp/bus/#"
 ```
 
 You should see JSON payloads streaming in within seconds. If this works, the Go backend will too.

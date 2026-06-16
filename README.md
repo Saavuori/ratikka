@@ -1,8 +1,8 @@
-# 🚋 Ratikka — Live Helsinki Tram Tracker & Dashboard
+# 🚋 HSL - LIVE — Live Helsinki Tram & Bus Tracker
 
 [![Live Application](https://img.shields.io/badge/Live-ratikka.duckdns.org-00b894?style=for-the-badge&logo=react)](https://ratikka.duckdns.org/)
 
-A premium, high-performance web application mapping **all active Helsinki trams and City Bike stations** in real-time. Built with stunning glassmorphism aesthetics, fluid 60fps telemetry interpolation, and immersive interactive modes.
+A premium, high-performance web application mapping **all active Helsinki trams, buses, and City Bike stations** in real-time. Built with stunning glassmorphism aesthetics, fluid 60fps telemetry interpolation, and immersive interactive modes.
 
 👉 **Experience the live dashboard at [ratikka.duckdns.org](https://ratikka.duckdns.org/)**
 
@@ -10,29 +10,29 @@ A premium, high-performance web application mapping **all active Helsinki trams 
 
 ## 📸 Screenshots & UI
 
-| Desktop Dashboard (Light Theme) | Glassmorphic Light Map | Compact Mobile View |
-| :---: | :---: | :---: |
-| ![Desktop Layout](docs/screenshots/desktop_layout_light.png) | ![Light Theme Map](docs/screenshots/light_theme_map.png) | ![Mobile Layout](docs/screenshots/mobile_layout.png) |
+![HSL - LIVE Dashboard](docs/screenshots/desktop_layout.png)
 
 ---
 
 ## ✨ Key Features
 
-* **Real-time 60fps Tram Interpolation**: Live MQTT vehicle coordinate updates are mathematically interpolated (lerp) for buttery-smooth vehicle movement.
-* **Immersive Chase Mode (Follow Tram)**: Lock onto any tram to automatically track it from behind. The camera auto-centers and auto-rotates (bearing) matching the tram's live heading.
-* **Interactive 3D Buildings & Map Customization**: Toggle between HSL Vector Light Map and CartoDB Dark Matter styles with customizable building extrusions (3D buildings) and public transit route networks.
+* **Real-time 60fps Vehicle Interpolation**: Live MQTT vehicle coordinate updates for both **trams and buses** are mathematically interpolated (lerp) for buttery-smooth vehicle movement.
+* **Distinct Vehicle Marker Shapes**: Quick visual recognition with circular markers for trams (`#00985f`) and square markers for buses (`#007ac9` for standard, `#CA4300` for trunk lines).
+* **Immersive Chase Mode (Follow Vehicle)**: Lock onto any tram or bus to automatically track it. The camera auto-centers and auto-rotates (bearing) matching the vehicle's live heading.
+* **Interactive Route Network & Highlights**: Toggle route networks on the map. Click a stop to see all routes serving it highlighted, or click a vehicle to highlight its specific path.
 * **Live City Bike Station Capacity**: Click HSL City Bike POI stops to fetch live availability counts (bikes available vs. empty spaces) directly from Digitransit.
-* **Glassmorphic UI Panels**: Premium responsive control cards that adjust seamlessly across mobile and desktop.
+* **Flexible Filtering**: A widened 190px left filter panel featuring a 3-column line button grid layout to easily filter specific routes (supporting 4-character lines) and checkboxes to toggle tram or bus layers independently.
+* **Glassmorphic UI Panels**: Premium responsive control cards that adjust seamlessly across mobile and desktop, including inline stop telemetry on the top info card.
 
 ---
 
 ## Technical Stack
 
-* **Backend**: Go (1.24+), utilizing native HTTP Mux routing (Go 1.22+), `coder/websocket` for streaming, and `eclipse/paho.mqtt.golang`.
-* **State Store**: Redis 7 (Alpine), acting as a low-overhead live coordinate cache.
+* **Backend**: Go (1.24+), utilizing native HTTP Mux routing (Go 1.22+), `coder/websocket` for streaming, and `eclipse/paho.mqtt.golang` to ingest live telemetry from HSL's public broker (`/hfp/v2/journey/ongoing/vp/tram/#` and `/hfp/v2/journey/ongoing/vp/bus/#`).
+* **State Store**: Redis 7 (Alpine), acting as a low-overhead live coordinate cache, tracking unique operator-prefixed vehicle IDs (`{operator}-{vehicle}`).
 * **Frontend**: React 19, TypeScript, MapLibre GL JS 5.x, Lucide icons, and Vanilla CSS with custom theme variables.
 * **Map Tile Stream**: Digitransit Map API v3 (Vector style style.json + stop POI tiles).
-* **Routing API**: Digitransit Routing API v2 (GraphQL proxies protecting API keys).
+* **Routing API**: Digitransit Routing API v2 (GraphQL proxies protecting API keys, including a fuzzy trip lookup fallback).
 * **Reverse Proxy**: Caddy 2 (Alpine) with auto-compression.
 * **CI/CD**: GitHub Actions building multi-arch tags (`linux/amd64`, `linux/arm64`) to GitHub Packages.
 

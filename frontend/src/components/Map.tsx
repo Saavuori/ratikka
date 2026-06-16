@@ -509,7 +509,7 @@ export const Map: React.FC<MapProps> = ({
         source: 'stops',
         'source-layer': 'stops',
         minzoom: 13,
-        filter: ['!=', ['get', 'mode'], 'RAIL'],
+        filter: ['match', ['get', 'mode'], 'RAIL', false, true],
         paint: {
           'circle-color': '#ffffff',
           'circle-radius': [
@@ -533,7 +533,7 @@ export const Map: React.FC<MapProps> = ({
         filter: [
           'all',
           ['!', ['get', 'isTrunkStop']],
-          ['==', ['get', 'mode'], 'BUS']
+          ['match', ['get', 'mode'], 'BUS', true, false]
         ],
         paint: {
           'circle-color': '#007ac9',
@@ -555,7 +555,7 @@ export const Map: React.FC<MapProps> = ({
         source: 'stops',
         'source-layer': 'stops',
         minzoom: 13,
-        filter: ['all', ['get', 'isTrunkStop'], ['==', ['get', 'mode'], 'BUS']],
+        filter: ['all', ['get', 'isTrunkStop'], ['match', ['get', 'mode'], 'BUS', true, false]],
         paint: {
           'circle-color': '#CA4300',
           'circle-radius': [
@@ -576,7 +576,7 @@ export const Map: React.FC<MapProps> = ({
         source: 'stops',
         'source-layer': 'stops',
         minzoom: 13,
-        filter: ['==', ['get', 'mode'], 'TRAM'],
+        filter: ['match', ['get', 'mode'], 'TRAM', true, false],
         paint: {
           'circle-color': '#00985f',
           'circle-radius': [
@@ -718,28 +718,28 @@ export const Map: React.FC<MapProps> = ({
 
       if (map.getLayer('stops_tram')) {
         if (activeRoutes.length === 0) {
-          map.setFilter('stops_tram', ['==', ['get', 'mode'], 'TRAM']);
+          map.setFilter('stops_tram', ['match', ['get', 'mode'], 'TRAM', true, false]);
         } else if (allowedStopIds.length === 0) {
-          map.setFilter('stops_tram', ['all', ['==', ['get', 'mode'], 'TRAM'], ['==', 1, 0]]);
+          map.setFilter('stops_tram', ['match', ['get', 'mode'], 'TRAM', false, false]);
         } else {
           map.setFilter('stops_tram', [
             'all',
-            ['==', ['get', 'mode'], 'TRAM'],
-            ['in', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ''], ['literal', allowedStopIds]]
+            ['match', ['get', 'mode'], 'TRAM', true, false],
+            ['match', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']], allowedStopIds, true, false]
           ] as any);
         }
       }
 
       if (map.getLayer('stops_case')) {
         if (activeRoutes.length === 0) {
-          map.setFilter('stops_case', ['!=', ['get', 'mode'], 'RAIL']);
+          map.setFilter('stops_case', ['match', ['get', 'mode'], 'RAIL', false, true]);
         } else if (allowedStopIds.length === 0) {
-          map.setFilter('stops_case', ['all', ['!=', ['get', 'mode'], 'RAIL'], ['==', 1, 0]]);
+          map.setFilter('stops_case', ['match', ['get', 'mode'], 'RAIL', false, false]);
         } else {
           map.setFilter('stops_case', [
             'all',
-            ['!=', ['get', 'mode'], 'RAIL'],
-            ['in', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ''], ['literal', allowedStopIds]]
+            ['match', ['get', 'mode'], 'RAIL', false, true],
+            ['match', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']], allowedStopIds, true, false]
           ] as any);
         }
       }
@@ -1009,14 +1009,14 @@ export const Map: React.FC<MapProps> = ({
     // 1. Tram Stops
     if (map.getLayer('stops_tram')) {
       if (activeRoutes.length === 0) {
-        map.setFilter('stops_tram', ['==', ['get', 'mode'], 'TRAM']);
+        map.setFilter('stops_tram', ['match', ['get', 'mode'], 'TRAM', true, false]);
       } else if (allowedStopIds.length === 0) {
-        map.setFilter('stops_tram', ['all', ['==', ['get', 'mode'], 'TRAM'], ['==', 1, 0]]);
+        map.setFilter('stops_tram', ['match', ['get', 'mode'], 'TRAM', false, false]);
       } else {
         map.setFilter('stops_tram', [
           'all',
-          ['==', ['get', 'mode'], 'TRAM'],
-          ['in', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ''], ['literal', allowedStopIds]]
+          ['match', ['get', 'mode'], 'TRAM', true, false],
+          ['match', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']], allowedStopIds, true, false]
         ] as any);
       }
     }
@@ -1024,14 +1024,14 @@ export const Map: React.FC<MapProps> = ({
     // 2. Stops Case Outline
     if (map.getLayer('stops_case')) {
       if (activeRoutes.length === 0) {
-        map.setFilter('stops_case', ['!=', ['get', 'mode'], 'RAIL']);
+        map.setFilter('stops_case', ['match', ['get', 'mode'], 'RAIL', false, true]);
       } else if (allowedStopIds.length === 0) {
-        map.setFilter('stops_case', ['all', ['!=', ['get', 'mode'], 'RAIL'], ['==', 1, 0]]);
+        map.setFilter('stops_case', ['match', ['get', 'mode'], 'RAIL', false, false]);
       } else {
         map.setFilter('stops_case', [
           'all',
-          ['!=', ['get', 'mode'], 'RAIL'],
-          ['in', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ''], ['literal', allowedStopIds]]
+          ['match', ['get', 'mode'], 'RAIL', false, true],
+          ['match', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']], allowedStopIds, true, false]
         ] as any);
       }
     }
@@ -1047,9 +1047,11 @@ export const Map: React.FC<MapProps> = ({
         } else {
           map.setLayoutProperty(layerId, 'visibility', 'visible');
           map.setFilter(layerId, [
-            'in',
-            ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ''],
-            ['literal', allowedStopIds]
+            'match',
+            ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']],
+            allowedStopIds,
+            true,
+            false
           ] as any);
         }
       }
