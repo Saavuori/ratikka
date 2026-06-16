@@ -490,6 +490,59 @@ body {
   border: 1px solid #ffffff;
 }
 
+/* Map Settings Section */
+.settings-section {
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 8px;
+}
+
+.settings-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  background: rgba(30, 41, 59, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  color: #cbd5e1;
+  font-size: 0.65rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: inherit;
+  box-sizing: border-box;
+  justify-content: flex-start;
+}
+
+.settings-btn:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(30, 41, 59, 0.5);
+  transform: translateY(-1px);
+  color: #fff;
+}
+
+.settings-btn.active {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: var(--accent-green);
+  color: #34d399;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.1);
+}
+
+.settings-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+
 /* Close & Action Buttons */
 .close-btn {
   background: none;
@@ -1062,6 +1115,32 @@ body {
     width: 8px !important;
     height: 8px !important;
     border-width: 1px !important;
+  }
+
+  /* Mobile settings overrides */
+  .settings-section {
+    padding-top: 8px !important;
+    margin-top: 8px !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+  }
+
+  .settings-section .legend-title {
+    display: none !important;
+  }
+
+  .settings-grid {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    justify-content: center !important;
+  }
+
+  .settings-btn {
+    width: auto !important;
+    min-width: 68px !important;
+    padding: 4px 10px !important;
+    font-size: 0.65rem !important;
+    justify-content: center !important;
   }
 
   /* Make MapLibre navigation controls (zoom, compass) compact on mobile */

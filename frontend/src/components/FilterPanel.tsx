@@ -1,6 +1,6 @@
 import React from 'react';
 import type { VehiclePosition } from '../types';
-import { Filter, Eye, ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal } from 'lucide-react';
+import { Filter, Eye, ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Route } from 'lucide-react';
 
 interface FilterPanelProps {
   trams: Record<string, VehiclePosition>;
@@ -10,6 +10,12 @@ interface FilterPanelProps {
   connectionStatus: string;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  mapTheme: 'light' | 'dark';
+  setMapTheme: (theme: 'light' | 'dark') => void;
+  showRouteNetwork: boolean;
+  setShowRouteNetwork: (show: boolean) => void;
+  is3D: boolean;
+  setIs3D: (is3D: boolean) => void;
 }
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
@@ -20,6 +26,12 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   connectionStatus,
   isCollapsed,
   onToggleCollapse,
+  mapTheme,
+  setMapTheme,
+  showRouteNetwork,
+  setShowRouteNetwork,
+  is3D,
+  setIs3D,
 }) => {
   const activeLines = Array.from(
     new Set(Object.values(trams).map((t) => t.desi))
@@ -119,6 +131,48 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             <span className="legend-color" style={{ backgroundColor: '#20bf6b' }} />
             <span>Stop</span>
           </div>
+        </div>
+      </div>
+
+      {/* Map Settings */}
+      <div className="settings-section">
+        <div className="legend-title">Settings</div>
+        <div className="settings-grid">
+          {/* Theme Toggle */}
+          <button
+            className={`settings-btn ${mapTheme === 'dark' ? 'active' : ''}`}
+            onClick={() => setMapTheme(mapTheme === 'light' ? 'dark' : 'light')}
+            title="Toggle light/dark theme"
+          >
+            <span className="settings-btn-icon">
+              {mapTheme === 'light' ? <Sun size={12} /> : <Moon size={12} />}
+            </span>
+            <span>{mapTheme === 'light' ? 'Light' : 'Dark'}</span>
+          </button>
+
+          {/* 3D Map Toggle */}
+          <button
+            className={`settings-btn ${is3D ? 'active' : ''}`}
+            onClick={() => setIs3D(!is3D)}
+            title="Toggle 3D map mode"
+          >
+            <span className="settings-btn-icon">
+              <Box size={12} />
+            </span>
+            <span>3D Map</span>
+          </button>
+
+          {/* Route Network Toggle */}
+          <button
+            className={`settings-btn ${showRouteNetwork ? 'active' : ''}`}
+            onClick={() => setShowRouteNetwork(!showRouteNetwork)}
+            title="Toggle background route network"
+          >
+            <span className="settings-btn-icon">
+              <Route size={12} />
+            </span>
+            <span>Routes</span>
+          </button>
         </div>
       </div>
     </div>

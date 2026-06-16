@@ -12,6 +12,9 @@ interface MapProps {
   onSelectStop: (stopId: string, name: string, code: string) => void;
   lineFilters: string[];
   routeGeometries: Record<string, { geometries: string[]; color?: string }>;
+  mapTheme: 'light' | 'dark';
+  showRouteNetwork: boolean;
+  is3D: boolean;
 }
 
 interface RenderPosition {
@@ -27,6 +30,9 @@ export const Map: React.FC<MapProps> = ({
   onSelectStop,
   lineFilters,
   routeGeometries,
+  mapTheme,
+  showRouteNetwork,
+  is3D,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -49,6 +55,10 @@ export const Map: React.FC<MapProps> = ({
   const latestTramsRef = useRef<Record<string, VehiclePosition>>(trams);
   const callbacksRef = useRef({ onSelectTram, onSelectStop });
   const routeGeometriesRef = useRef<Record<string, { geometries: string[]; color?: string }>>(routeGeometries);
+  const selectedTramIdRef = useRef<string | null>(selectedTramId);
+  const showRouteNetworkRef = useRef<boolean>(showRouteNetwork);
+  const is3DRef = useRef<boolean>(is3D);
+  const mapThemeRef = useRef<'light' | 'dark'>(mapTheme);
 
   useEffect(() => {
     latestTramsRef.current = trams;
@@ -61,6 +71,109 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     routeGeometriesRef.current = routeGeometries;
   }, [routeGeometries]);
+
+  useEffect(() => {
+    selectedTramIdRef.current = selectedTramId;
+  }, [selectedTramId]);
+
+  useEffect(() => {
+    showRouteNetworkRef.current = showRouteNetwork;
+  }, [showRouteNetwork]);
+
+  useEffect(() => {
+    is3DRef.current = is3D;
+  }, [is3D]);
+
+  useEffect(() => {
+    mapThemeRef.current = mapTheme;
+  }, [mapTheme]);
+
+  // Helper to toggle visibility of HSL background route layers
+  const updateRouteVisibility = (map: maplibregl.Map, show: boolean) => {
+    const routeLayers = [
+      'route_bus_case',
+      'route_bus',
+      'route_bus_inner',
+      'route_tram_case',
+      'route_tram',
+      'route_tram_inner',
+      'route_trunk_case',
+      'route_trunk',
+      'route_trunk_inner',
+      'route_lrail_case',
+      'route_lrail',
+      'route_lrail_inner',
+      'route_ferry',
+      'route_subway_case',
+      'route_subway',
+      'route_subway_underground',
+      'route_rail_case',
+      'route_rail',
+    ];
+    routeLayers.forEach((layerId) => {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, 'visibility', show ? 'visible' : 'none');
+      }
+    });
+  };
+
+  // Helper to toggle 3D tilt and buildings extrusion
+  const update3DMode = (map: maplibregl.Map, active: boolean, theme: 'light' | 'dark') => {
+    // 1. Set pitch
+    map.easeTo({
+      pitch: active ? 45 : 0,
+      duration: 800,
+    });
+
+    // 2. Toggle light-mode built-in 3D buildings
+    if (map.getLayer('building_3d')) {
+      map.setLayoutProperty('building_3d', 'visibility', active ? 'visible' : 'none');
+    }
+    if (map.getLayer('building')) {
+      map.setLayoutProperty('building', 'visibility', active ? 'none' : 'visible');
+    }
+    if (map.getLayer('building_shadow')) {
+      map.setLayoutProperty('building_shadow', 'visibility', active ? 'none' : 'visible');
+    }
+
+    // 3. Toggle dark-mode programmatic 3D buildings
+    const custom3DId = 'custom-3d-buildings';
+    if (active) {
+      if (theme === 'dark') {
+        if (!map.getLayer(custom3DId)) {
+          if (map.getSource('carto')) {
+            map.addLayer({
+              id: custom3DId,
+              source: 'carto',
+              'source-layer': 'building',
+              type: 'fill-extrusion',
+              paint: {
+                'fill-extrusion-color': '#2a2d30',
+                'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 15],
+                'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0],
+                'fill-extrusion-opacity': 0.85,
+              },
+            });
+          }
+        } else {
+          map.setLayoutProperty(custom3DId, 'visibility', 'visible');
+        }
+      } else {
+        // In light mode, hide custom dark mode buildings
+        if (map.getLayer(custom3DId)) {
+          map.setLayoutProperty(custom3DId, 'visibility', 'none');
+        }
+      }
+    } else {
+      // If inactive, hide both light-mode and custom 3D buildings
+      if (map.getLayer('building_3d')) {
+        map.setLayoutProperty('building_3d', 'visibility', 'none');
+      }
+      if (map.getLayer(custom3DId)) {
+        map.setLayoutProperty(custom3DId, 'visibility', 'none');
+      }
+    }
+  };
 
   // Helper to draw route geometries on the map
   const drawRouteGeometries = (map: maplibregl.Map, geometries: Record<string, { geometries: string[]; color?: string }>) => {
@@ -183,14 +296,199 @@ export const Map: React.FC<MapProps> = ({
     lastUpdateRef.current = now;
   }, [trams, lineFilters]);
 
+  // Setup programmatically created sources, layers, and images
+  const setupCustomMapElements = (map: maplibregl.Map) => {
+    if (!apiKey) return;
+
+    // 1. Create Arrow Symbol Image for Heading
+    if (!map.hasImage('tram-arrow')) {
+      const arrowSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30" fill="none">
+          <polygon points="15,2 27,27 15,20 3,27" fill="#00b894" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+      `;
+      const arrowImg = new Image(30, 30);
+      arrowImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arrowSvg);
+      arrowImg.onload = () => {
+        if (!map.hasImage('tram-arrow')) map.addImage('tram-arrow', arrowImg);
+      };
+    }
+
+    // 2. Create Selected Tram Highlight Image
+    if (!map.hasImage('tram-selected')) {
+      const selectedSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44" fill="none">
+          <circle cx="22" cy="22" r="18" stroke="#fdcb6e" stroke-width="4" fill="none"/>
+        </svg>
+      `;
+      const selectedImg = new Image(44, 44);
+      selectedImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(selectedSvg);
+      selectedImg.onload = () => {
+        if (!map.hasImage('tram-selected')) map.addImage('tram-selected', selectedImg);
+      };
+    }
+
+    // 3. Add Live Trams Source (GeoJSON)
+    if (!map.getSource('trams')) {
+      map.addSource('trams', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [],
+        },
+      });
+    }
+
+    // 4. Add Live Stops Source (Vector tiles)
+    if (!map.getSource('stops-poi')) {
+      map.addSource('stops-poi', {
+        type: 'vector',
+        tiles: [
+          `https://cdn.digitransit.fi/map/v3/hsl/fi/stops/{z}/{x}/{y}.pbf?digitransit-subscription-key=${apiKey}`,
+        ],
+        minzoom: 13,
+        maxzoom: 16,
+      });
+    }
+
+    // 5. Add Route Lines Source
+    if (!map.getSource('route-lines')) {
+      map.addSource('route-lines', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [],
+        },
+      });
+    }
+
+    // 6. Add Tram Arrow Direction Layer
+    if (!map.getLayer('trams-arrows')) {
+      map.addLayer({
+        id: 'trams-arrows',
+        type: 'symbol',
+        source: 'trams',
+        layout: {
+          'icon-image': 'tram-arrow',
+          'icon-rotate': ['get', 'hdg'],
+          'icon-rotation-alignment': 'map',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      });
+    }
+
+    // 7. Add Tram Text Circle Layer (Line labels)
+    if (!map.getLayer('trams-circles')) {
+      map.addLayer({
+        id: 'trams-circles',
+        type: 'circle',
+        source: 'trams',
+        paint: {
+          'circle-radius': 11,
+          'circle-color': [
+            'case',
+            ['get', 'stopped'],
+            '#e17055', // stopped/door open -> coral red
+            '#0984e3', // moving -> blue
+          ],
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2.5,
+        },
+      });
+    }
+
+    // 8. Add Route Lines Layer (Rendered before trams-circles so it is underneath)
+    if (!map.getLayer('route-lines-layer')) {
+      map.addLayer({
+        id: 'route-lines-layer',
+        type: 'line',
+        source: 'route-lines',
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round',
+        },
+        paint: {
+          'line-color': ['coalesce', ['get', 'color'], '#10b981'],
+          'line-width': 4.5,
+          'line-opacity': 0.75,
+        },
+      }, 'trams-circles');
+    }
+
+    // 9. Add Tram Text Label Layer
+    if (!map.getLayer('trams-labels')) {
+      map.addLayer({
+        id: 'trams-labels',
+        type: 'symbol',
+        source: 'trams',
+        layout: {
+          'text-field': '{desi}',
+          'text-font': ['Gotham Rounded Medium'],
+          'text-size': 10,
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#ffffff',
+        },
+      });
+    }
+
+    // 10. Add Selection Highlight Ring (circle style, rendered under labels, on top of circles)
+    if (!map.getLayer('trams-selected-layer')) {
+      map.addLayer({
+        id: 'trams-selected-layer',
+        type: 'circle',
+        source: 'trams',
+        paint: {
+          'circle-radius': 16,
+          'circle-color': 'rgba(253, 203, 110, 0.15)',
+          'circle-stroke-color': '#fdcb6e',
+          'circle-stroke-width': 3,
+        },
+        filter: ['==', ['get', 'veh'], selectedTramIdRef.current || ''],
+      }, 'trams-labels');
+    }
+
+    // 11. Add Stops Layer
+    if (!map.getLayer('stops-points')) {
+      map.addLayer({
+        id: 'stops-points',
+        type: 'circle',
+        source: 'stops-poi',
+        'source-layer': 'stops',
+        paint: {
+          'circle-radius': 5.5,
+          'circle-color': '#20bf6b', // green Stop marker
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 1.5,
+        },
+        filter: ['==', ['get', 'type'], 'TRAM'], // Only show tram stops
+      });
+    }
+
+    // Draw route geometries now that style and layer are loaded
+    drawRouteGeometries(map, routeGeometriesRef.current);
+
+    // Apply active route visibility and 3D mode setting
+    updateRouteVisibility(map, showRouteNetworkRef.current);
+    update3DMode(map, is3DRef.current, mapThemeRef.current);
+  };
+
   // Initial Map Setup
   useEffect(() => {
     if (apiKey === null) return;
     if (!mapContainerRef.current) return;
 
+    const initialTheme = mapThemeRef.current;
+    const initialStyleUrl = initialTheme === 'light'
+      ? `${window.location.origin}/style.json`
+      : 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: `${window.location.origin}/style.json`,
+      style: initialStyleUrl,
       center: [24.9414, 60.1699], // Helsinki center
       zoom: 14,
       maxZoom: 18,
@@ -211,196 +509,59 @@ export const Map: React.FC<MapProps> = ({
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
 
-    map.on('load', () => {
-      // 1. Create Arrow Symbol Image for Heading
-      const arrowSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30" fill="none">
-          <polygon points="15,2 27,27 15,20 3,27" fill="#00b894" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
-        </svg>
-      `;
-      const arrowImg = new Image(30, 30);
-      arrowImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arrowSvg);
-      arrowImg.onload = () => {
-        if (map.addImage) map.addImage('tram-arrow', arrowImg);
-      };
-
-      // 2. Create Selected Tram Highlight Image
-      const selectedSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44" fill="none">
-          <circle cx="22" cy="22" r="18" stroke="#fdcb6e" stroke-width="4" fill="none"/>
-        </svg>
-      `;
-      const selectedImg = new Image(44, 44);
-      selectedImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(selectedSvg);
-      selectedImg.onload = () => {
-        if (map.addImage) map.addImage('tram-selected', selectedImg);
-      };
-
-      // 3. Add Live Trams Source (GeoJSON)
-      map.addSource('trams', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: [],
-        },
-      });
-
-      // 4. Add Live Stops Source (Vector tiles)
-      map.addSource('stops-poi', {
-        type: 'vector',
-        tiles: [
-          `https://cdn.digitransit.fi/map/v3/hsl/fi/stops/{z}/{x}/{y}.pbf?digitransit-subscription-key=${apiKey}`,
-        ],
-        minzoom: 13,
-        maxzoom: 16,
-      });
-
-      // 5. Add Route Lines Source
-      map.addSource('route-lines', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: [],
-        },
-      });
-
-      // 6. Add Tram Arrow Direction Layer
-      map.addLayer({
-        id: 'trams-arrows',
-        type: 'symbol',
-        source: 'trams',
-        layout: {
-          'icon-image': 'tram-arrow',
-          'icon-rotate': ['get', 'hdg'],
-          'icon-rotation-alignment': 'map',
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
-        },
-      });
-
-      // 7. Add Tram Text Circle Layer (Line labels)
-      map.addLayer({
-        id: 'trams-circles',
-        type: 'circle',
-        source: 'trams',
-        paint: {
-          'circle-radius': 11,
-          'circle-color': [
-            'case',
-            ['get', 'stopped'],
-            '#e17055', // stopped/door open -> coral red
-            '#0984e3', // moving -> blue
-          ],
-          'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 2.5,
-        },
-      });
-
-      // 8. Add Route Lines Layer (Rendered before trams-circles so it is underneath)
-      map.addLayer({
-        id: 'route-lines-layer',
-        type: 'line',
-        source: 'route-lines',
-        layout: {
-          'line-join': 'round',
-          'line-cap': 'round',
-        },
-        paint: {
-          'line-color': ['coalesce', ['get', 'color'], '#10b981'],
-          'line-width': 4.5,
-          'line-opacity': 0.75,
-        },
-      }, 'trams-circles');
-
-      // 9. Add Tram Text Label Layer
-      map.addLayer({
-        id: 'trams-labels',
-        type: 'symbol',
-        source: 'trams',
-        layout: {
-          'text-field': '{desi}',
-          'text-font': ['Gotham Rounded Medium'],
-          'text-size': 10,
-          'text-allow-overlap': true,
-          'text-ignore-placement': true,
-        },
-        paint: {
-          'text-color': '#ffffff',
-        },
-      });
-
-      // 10. Add Selection Highlight Ring (circle style, rendered under labels, on top of circles)
-      map.addLayer({
-        id: 'trams-selected-layer',
-        type: 'circle',
-        source: 'trams',
-        paint: {
-          'circle-radius': 16,
-          'circle-color': 'rgba(253, 203, 110, 0.15)',
-          'circle-stroke-color': '#fdcb6e',
-          'circle-stroke-width': 3,
-        },
-        filter: ['==', ['get', 'veh'], selectedTramId || ''],
-      }, 'trams-labels');
-
-      // 11. Add Stops Layer
-      map.addLayer({
-        id: 'stops-points',
-        type: 'circle',
-        source: 'stops-poi',
-        'source-layer': 'stops',
-        paint: {
-          'circle-radius': 5.5,
-          'circle-color': '#20bf6b', // green Stop marker
-          'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 1.5,
-        },
-        filter: ['==', ['get', 'type'], 'TRAM'], // Only show tram stops
-      });
-
-      // Map Click Interactions
-      map.on('click', 'trams-circles', (e) => {
-        if (!e.features || e.features.length === 0) return;
-        const feat = e.features[0];
-        const vehId = feat.properties?.veh;
-        const matchingTram = latestTramsRef.current[vehId];
-        if (matchingTram) {
-          callbacksRef.current.onSelectTram(matchingTram);
-        }
-      });
-
-      map.on('click', 'stops-points', (e) => {
-        if (!e.features || e.features.length === 0) return;
-        const feat = e.features[0];
-        const stopId = feat.properties?.gtfsId || feat.properties?.id;
-        const name = feat.properties?.name || 'Unknown Stop';
-        const code = feat.properties?.code || '';
-        if (stopId) {
-          callbacksRef.current.onSelectStop(stopId, name, code);
-        }
-      });
-
-      // Mouse Hover Effects
-      const setCursorPointer = () => (map.getCanvas().style.cursor = 'pointer');
-      const resetCursor = () => (map.getCanvas().style.cursor = '');
-
-      map.on('mouseenter', 'trams-circles', setCursorPointer);
-      map.on('mouseleave', 'trams-circles', resetCursor);
-      map.on('mouseenter', 'stops-points', setCursorPointer);
-      map.on('mouseleave', 'stops-points', resetCursor);
-
-      // Draw route geometries now that style and layer are loaded
-      drawRouteGeometries(map, routeGeometriesRef.current);
-
-      // Start interpolation tick loop
-      startAnimationLoop();
+    map.on('style.load', () => {
+      setupCustomMapElements(map);
     });
+
+    // Map Click Interactions
+    map.on('click', 'trams-circles', (e) => {
+      if (!e.features || e.features.length === 0) return;
+      const feat = e.features[0];
+      const vehId = feat.properties?.veh;
+      const matchingTram = latestTramsRef.current[vehId];
+      if (matchingTram) {
+        callbacksRef.current.onSelectTram(matchingTram);
+      }
+    });
+
+    map.on('click', 'stops-points', (e) => {
+      if (!e.features || e.features.length === 0) return;
+      const feat = e.features[0];
+      const stopId = feat.properties?.gtfsId || feat.properties?.id;
+      const name = feat.properties?.name || 'Unknown Stop';
+      const code = feat.properties?.code || '';
+      if (stopId) {
+        callbacksRef.current.onSelectStop(stopId, name, code);
+      }
+    });
+
+    // Mouse Hover Effects
+    const setCursorPointer = () => (map.getCanvas().style.cursor = 'pointer');
+    const resetCursor = () => (map.getCanvas().style.cursor = '');
+
+    map.on('mouseenter', 'trams-circles', setCursorPointer);
+    map.on('mouseleave', 'trams-circles', resetCursor);
+    map.on('mouseenter', 'stops-points', setCursorPointer);
+    map.on('mouseleave', 'stops-points', resetCursor);
+
+    // Start interpolation tick loop
+    startAnimationLoop();
 
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
       map.remove();
     };
   }, [apiKey]);
+
+  // Handle map style (theme) changes dynamically
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const styleUrl = mapTheme === 'light'
+      ? `${window.location.origin}/style.json`
+      : 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+    map.setStyle(styleUrl);
+  }, [mapTheme]);
 
   // Update selection ring filter
   useEffect(() => {
@@ -430,11 +591,26 @@ export const Map: React.FC<MapProps> = ({
   // Update route geometries on map
   useEffect(() => {
     const map = mapRef.current;
-    if (map) {
+    if (map && map.getStyle() && map.getSource('route-lines')) {
       drawRouteGeometries(map, routeGeometries);
     }
   }, [routeGeometries]);
 
+  // Dynamic 3D Mode changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && map.getStyle()) {
+      update3DMode(map, is3D, mapTheme);
+    }
+  }, [is3D, mapTheme]);
+
+  // Dynamic Route visibility changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && map.getStyle()) {
+      updateRouteVisibility(map, showRouteNetwork);
+    }
+  }, [showRouteNetwork]);
 
   return (
     <div className="map-wrapper">

@@ -15,6 +15,29 @@ function App() {
   const { trams, handleUpdate } = useTramData();
   const { status: connectionStatus } = useWebSocket({ onMessage: (data) => handleUpdate(data.vehicles) });
 
+  // Map settings states with localStorage persistence
+  const [mapTheme, setMapTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('mapTheme') as 'light' | 'dark') || 'light';
+  });
+  const [showRouteNetwork, setShowRouteNetwork] = useState<boolean>(() => {
+    return localStorage.getItem('showRouteNetwork') === 'true';
+  });
+  const [is3D, setIs3D] = useState<boolean>(() => {
+    return localStorage.getItem('is3D') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('mapTheme', mapTheme);
+  }, [mapTheme]);
+
+  useEffect(() => {
+    localStorage.setItem('showRouteNetwork', String(showRouteNetwork));
+  }, [showRouteNetwork]);
+
+  useEffect(() => {
+    localStorage.setItem('is3D', String(is3D));
+  }, [is3D]);
+
   // UI Selection States
   const [selectedTram, setSelectedTram] = useState<VehiclePosition | null>(null);
   const [selectedStop, setSelectedStop] = useState<{
@@ -191,6 +214,9 @@ function App() {
         onSelectStop={handleSelectStop}
         lineFilters={selectedLines}
         routeGeometries={routeGeometries}
+        mapTheme={mapTheme}
+        showRouteNetwork={showRouteNetwork}
+        is3D={is3D}
       />
 
       {/* Sidebar Filters Panel */}
@@ -202,6 +228,12 @@ function App() {
         connectionStatus={connectionStatus}
         isCollapsed={isFilterCollapsed}
         onToggleCollapse={() => setIsFilterCollapsed(!isFilterCollapsed)}
+        mapTheme={mapTheme}
+        setMapTheme={setMapTheme}
+        showRouteNetwork={showRouteNetwork}
+        setShowRouteNetwork={setShowRouteNetwork}
+        is3D={is3D}
+        setIs3D={setIs3D}
       />
 
       {/* Floating top-center tram telemetry card */}
