@@ -140,8 +140,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             <span>Stopped</span>
           </div>
           <div className="legend-item">
-            <span className="legend-color" style={{ backgroundColor: '#20bf6b' }} />
-            <span>Stop</span>
+            <span className="legend-color" style={{ backgroundColor: '#ff4757' }} />
+            <span>Next Stop</span>
           </div>
         </div>
       </div>

@@ -312,62 +312,66 @@ export const Map: React.FC<MapProps> = ({
         }
       }
 
-      // 1. Next stop halo filter update
-      if (map.getLayer('next-stop-highlight')) {
-        const rawStopId = nextStopId || '';
-        const cleanStopId = rawStopId.replace(/^HSL:/, '');
-        if (rawStopId === '') {
-          map.setFilter('next-stop-highlight', ['==', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']], '']);
-        } else {
-          map.setFilter('next-stop-highlight', [
-            'match',
-            ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']],
-            [rawStopId, cleanStopId],
-            true,
-            false
-          ]);
-        }
-      }
-
-      // 2. Next stop route line rendering
+      // 1. Next stop and route line rendering
       let routeSegmentCoords: [number, number][] = [];
+      let nextStopCoords: [number, number] | null = null;
+
       if (selectedVehiclePos && nextStopId && selectedTripDetailsRef.current) {
         const tripStops = selectedTripDetailsRef.current.stops;
         const cleanStopId = nextStopId.replace(/^HSL:/, '');
         const matchedStop = tripStops.find(s => s.gtfsId === nextStopId || s.gtfsId?.replace(/^HSL:/, '') === cleanStopId);
 
-        if (matchedStop && selectedTripDetailsRef.current.geometry) {
-          const stopCoords: [number, number] = [matchedStop.lon, matchedStop.lat];
-          const polylineCoords = decodePolyline(selectedTripDetailsRef.current.geometry);
+        if (matchedStop) {
+          nextStopCoords = [matchedStop.lon, matchedStop.lat];
+          if (selectedTripDetailsRef.current.geometry) {
+            const polylineCoords = decodePolyline(selectedTripDetailsRef.current.geometry);
 
-          if (polylineCoords.length > 0) {
-            const getClosestPointIndex = (coords: [number, number][], target: [number, number]): number => {
-              let minD = Infinity;
-              let index = 0;
-              for (let i = 0; i < coords.length; i++) {
-                const d = Math.pow(coords[i][0] - target[0], 2) + Math.pow(coords[i][1] - target[1], 2);
-                if (d < minD) {
-                  minD = d;
-                  index = i;
+            if (polylineCoords.length > 0) {
+              const getClosestPointIndex = (coords: [number, number][], target: [number, number]): number => {
+                let minD = Infinity;
+                let index = 0;
+                for (let i = 0; i < coords.length; i++) {
+                  const d = Math.pow(coords[i][0] - target[0], 2) + Math.pow(coords[i][1] - target[1], 2);
+                  if (d < minD) {
+                    minD = d;
+                    index = i;
+                  }
                 }
-              }
-              return index;
-            };
+                return index;
+              };
 
-            const idxTram = getClosestPointIndex(polylineCoords, selectedVehiclePos);
-            const idxStop = getClosestPointIndex(polylineCoords, stopCoords);
+              const idxTram = getClosestPointIndex(polylineCoords, selectedVehiclePos);
+              const idxStop = getClosestPointIndex(polylineCoords, nextStopCoords);
 
-            const startIdx = Math.min(idxTram, idxStop);
-            const endIdx = Math.max(idxTram, idxStop);
-            const slice = polylineCoords.slice(startIdx, endIdx + 1);
+              const startIdx = Math.min(idxTram, idxStop);
+              const endIdx = Math.max(idxTram, idxStop);
+              const slice = polylineCoords.slice(startIdx, endIdx + 1);
 
-            routeSegmentCoords = [selectedVehiclePos, ...slice, stopCoords];
-          } else {
-            routeSegmentCoords = [selectedVehiclePos, stopCoords];
+              routeSegmentCoords = [selectedVehiclePos, ...slice, nextStopCoords];
+            } else {
+              routeSegmentCoords = [selectedVehiclePos, nextStopCoords];
+            }
           }
         }
       }
 
+      // Update next stop highlight source
+      const nextStopSource = map.getSource('next-stop-highlight-source') as maplibregl.GeoJSONSource;
+      if (nextStopSource) {
+        nextStopSource.setData({
+          type: 'FeatureCollection',
+          features: nextStopCoords ? [{
+            type: 'Feature',
+            geometry: {
+              type: 'Point',
+              coordinates: nextStopCoords,
+            },
+            properties: {},
+          }] : [],
+        });
+      }
+
+      // Update route line source
       const routeSource = map.getSource('next-stop-route') as maplibregl.GeoJSONSource;
       if (routeSource) {
         routeSource.setData({
@@ -804,6 +808,17 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
+    // Source for selected vehicle next stop highlight
+    if (!map.getSource('next-stop-highlight-source')) {
+      map.addSource('next-stop-highlight-source', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [],
+        },
+      });
+    }
+
     // Selected stop highlight halo layer
     if (!map.getLayer('stops-selected-highlight')) {
       map.addLayer({
@@ -855,8 +870,7 @@ export const Map: React.FC<MapProps> = ({
       map.addLayer({
         id: 'next-stop-highlight',
         type: 'circle',
-        source: 'stops',
-        'source-layer': 'stops',
+        source: 'next-stop-highlight-source',
         paint: {
           'circle-radius': [
             'interpolate',
@@ -865,11 +879,10 @@ export const Map: React.FC<MapProps> = ({
             12, 12,
             22, 45
           ],
-          'circle-color': 'rgba(32, 191, 107, 0.25)', // glowing green halo
-          'circle-stroke-color': '#20bf6b',
-          'circle-stroke-width': 3,
-        },
-        filter: ['==', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']], '']
+          'circle-color': 'rgba(255, 71, 87, 0.25)', // glowing neon red halo
+          'circle-stroke-color': '#ff4757',
+          'circle-stroke-width': 3.5,
+        }
       }, 'trams-circles');
     }
 
@@ -884,9 +897,9 @@ export const Map: React.FC<MapProps> = ({
           'line-cap': 'round',
         },
         paint: {
-          'line-color': '#20bf6b', // glowing green
-          'line-width': 6.5,
-          'line-opacity': 0.85,
+          'line-color': '#ff4757', // glowing neon red
+          'line-width': 7.5,
+          'line-opacity': 0.9,
         },
       }, 'trams-circles');
     }
@@ -1195,6 +1208,11 @@ export const Map: React.FC<MapProps> = ({
     
     if (!tripId) {
       setSelectedTripDetails(null);
+      return;
+    }
+
+    // Don't refetch if we already have the details for this tripId
+    if (selectedTripDetailsRef.current && selectedTripDetailsRef.current.tripId === tripId) {
       return;
     }
 
