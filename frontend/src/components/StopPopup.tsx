@@ -70,10 +70,10 @@ export const StopPopup: React.FC<StopPopupProps> = ({
         aria-label={isCollapsed ? 'Show Timetable' : 'Hide Timetable'}
       >
         <span className="icon-desktop">
-          {isCollapsed ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+          {isCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
         </span>
         <span className="icon-mobile">
-          {isCollapsed ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          {isCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </span>
       </button>
       {/* Header */}

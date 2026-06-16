@@ -181,22 +181,22 @@ body {
 /* Sidebar Collapse Toggle Tab */
 .filter-toggle-tab {
   position: absolute;
-  right: -36px;
+  right: -20px;
   top: 16px;
-  width: 36px;
-  height: 40px;
+  width: 20px;
+  height: 32px;
   background: var(--bg-panel);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-glow);
   border-left: none;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 4px 4px 0;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: var(--text-primary);
-  box-shadow: 4px 4px 12px rgba(0, 0, 0, 0.3);
+  color: var(--text-secondary);
+  opacity: 0.6;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   padding: 0;
   z-index: 101;
@@ -206,6 +206,7 @@ body {
   color: #34d399;
   background: var(--bg-panel);
   border-color: var(--accent-green);
+  opacity: 1;
 }
 
 .filter-toggle-tab .icon-desktop {
@@ -235,22 +236,22 @@ body {
 /* Detail Popup Collapse Toggle Tab */
 .detail-toggle-tab {
   position: absolute;
-  left: -36px;
+  left: -20px;
   top: 16px;
-  width: 36px;
-  height: 40px;
+  width: 20px;
+  height: 32px;
   background: var(--bg-panel);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-glow);
   border-right: none;
-  border-radius: 8px 0 0 8px;
+  border-radius: 4px 0 0 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: var(--text-primary);
-  box-shadow: -4px 4px 12px rgba(0, 0, 0, 0.3);
+  color: var(--text-secondary);
+  opacity: 0.6;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   padding: 0;
   z-index: 101;
@@ -260,6 +261,7 @@ body {
   color: #34d399;
   background: var(--bg-panel);
   border-color: var(--accent-green);
+  opacity: 1;
 }
 
 .detail-toggle-tab .icon-desktop {

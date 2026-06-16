@@ -53,10 +53,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         aria-label={isCollapsed ? 'Show Filters' : 'Hide Filters'}
       >
         <span className="icon-desktop">
-          {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </span>
         <span className="icon-mobile">
-          {isCollapsed ? <SlidersHorizontal size={18} /> : <ChevronDown size={18} />}
+          {isCollapsed ? <SlidersHorizontal size={14} /> : <ChevronDown size={14} />}
         </span>
       </button>
 
