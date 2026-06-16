@@ -28,6 +28,13 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [showAllStops, setShowAllStops] = useState<boolean>(false);
+  const [lastStopId, setLastStopId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tram.stop) {
+      setLastStopId(tram.stop);
+    }
+  }, [tram.stop]);
 
   useEffect(() => {
     if (!tram.tripId) {
@@ -40,6 +47,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
     setError(null);
     setTripDetails(null);
     setShowAllStops(false); // Reset to collapsed on trip change
+    setLastStopId(tram.stop || null);
 
     fetchTripDetails(tram.tripId)
       .then((data) => {
@@ -69,10 +77,25 @@ export const TramPopup: React.FC<TramPopupProps> = ({
     if (!tripDetails) return { currentStopIndex: -1, nextStopIndex: -1, lastKnownIndex: -1 };
 
     const isStopped = tram.drst === 1;
-    const lastKnownIndex = tripDetails.stops.findIndex(s => s.gtfsId === tram.stop);
+    const stopIdToMatch = tram.stop || lastStopId;
+    let lastKnownIndex = tripDetails.stops.findIndex(s => s.gtfsId === stopIdToMatch);
 
     if (lastKnownIndex === -1) {
-      return { currentStopIndex: -1, nextStopIndex: -1, lastKnownIndex: -1 };
+      // Fallback: Estimate position based on arrival times
+      const now = new Date();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+      const nextIndex = tripDetails.stops.findIndex(stop => {
+        const [h, m] = stop.realtimeArrival.split(':').map(Number);
+        const stopMinutes = h * 60 + m;
+        return stopMinutes >= currentMinutes;
+      });
+
+      if (nextIndex !== -1) {
+        lastKnownIndex = nextIndex > 0 ? nextIndex - 1 : 0;
+      } else {
+        lastKnownIndex = tripDetails.stops.length - 1;
+      }
     }
 
     if (isStopped) {

@@ -59,8 +59,7 @@ function App() {
     setIsFollowing(false);
   }, [selectedTram?.veh]);
 
-  // Route name reported back from TramPopup for the TramCard
-  const [tramRouteName, setTramRouteName] = useState<string | undefined>(undefined);
+
 
   // Detail panel collapse state: defaults to false (open when item is selected)
   const [isDetailCollapsed, setIsDetailCollapsed] = useState<boolean>(false);
@@ -77,10 +76,7 @@ function App() {
     }
   }, [selectedTram, selectedStop, selectedBikeStation]);
 
-  // Clear route name when tram changes
-  useEffect(() => {
-    setTramRouteName(undefined);
-  }, [selectedTram?.tripId]);
+
 
   // Auto-expand detail panel when a new tram, stop, or bike station is selected
   useEffect(() => {
@@ -269,7 +265,6 @@ function App() {
       {liveTram && liveTram.veh !== 0 && (
         <TramCard
           tram={liveTram}
-          routeName={tramRouteName}
           onClose={handleCloseTram}
           isFollowing={isFollowing}
           onToggleFollow={() => setIsFollowing(!isFollowing)}
@@ -281,7 +276,6 @@ function App() {
         <TramPopup
           tram={liveTram!}
           onClose={handleCloseTram}
-          onRouteNameReady={setTramRouteName}
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
         />

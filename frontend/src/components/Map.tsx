@@ -66,6 +66,7 @@ export const Map: React.FC<MapProps> = ({
   const is3DRef = useRef<boolean>(is3D);
   const mapThemeRef = useRef<'light' | 'dark'>(mapTheme);
   const isFollowingRef = useRef<boolean>(isFollowing);
+  const isInteractingRef = useRef<boolean>(false);
 
   useEffect(() => {
     latestTramsRef.current = trams;
@@ -275,12 +276,10 @@ export const Map: React.FC<MapProps> = ({
       // Smooth camera tracking
       if (isFollowingRef.current && selectedTramIdRef.current) {
         const activeFeature = features.find((f) => f.properties.veh === selectedTramIdRef.current);
-        if (activeFeature) {
+        if (activeFeature && !isInteractingRef.current) {
           const [lng, lat] = activeFeature.geometry.coordinates;
-          const hdg = activeFeature.properties.hdg;
           map.jumpTo({
             center: [lng, lat],
-            bearing: hdg,
           });
         }
       }
@@ -677,6 +676,35 @@ export const Map: React.FC<MapProps> = ({
       callbacksRef.current.onDisableFollowing();
     });
 
+    // Handle zoom, rotate, and pitch start/end events via direct DOM events on the container.
+    // This immediately stops the 60fps centering loop from fighting with user interaction.
+    const mapContainer = mapContainerRef.current;
+    let wheelTimeout: any = null;
+
+    const handleWheel = () => {
+      isInteractingRef.current = true;
+      if (wheelTimeout) clearTimeout(wheelTimeout);
+      wheelTimeout = setTimeout(() => {
+        isInteractingRef.current = false;
+      }, 800); // Resume tracking 800ms after last scroll tick
+    };
+
+    const handleInteractionStart = () => {
+      isInteractingRef.current = true;
+    };
+
+    const handleInteractionEnd = () => {
+      isInteractingRef.current = false;
+    };
+
+    if (mapContainer) {
+      mapContainer.addEventListener('wheel', handleWheel, { passive: true });
+      mapContainer.addEventListener('mousedown', handleInteractionStart);
+      mapContainer.addEventListener('touchstart', handleInteractionStart, { passive: true });
+    }
+    window.addEventListener('mouseup', handleInteractionEnd);
+    window.addEventListener('touchend', handleInteractionEnd);
+
     // Mouse Hover Effects
     const setCursorPointer = () => (map.getCanvas().style.cursor = 'pointer');
     const resetCursor = () => (map.getCanvas().style.cursor = '');
@@ -695,6 +723,14 @@ export const Map: React.FC<MapProps> = ({
 
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      if (wheelTimeout) clearTimeout(wheelTimeout);
+      if (mapContainer) {
+        mapContainer.removeEventListener('wheel', handleWheel);
+        mapContainer.removeEventListener('mousedown', handleInteractionStart);
+        mapContainer.removeEventListener('touchstart', handleInteractionStart);
+      }
+      window.removeEventListener('mouseup', handleInteractionEnd);
+      window.removeEventListener('touchend', handleInteractionEnd);
       map.remove();
     };
   }, [apiKey]);
