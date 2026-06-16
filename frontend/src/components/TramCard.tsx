@@ -109,7 +109,7 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
         {/* Metrics row */}
         <div className="tram-card-metrics" style={{ gap: '8px' }}>
           <div className="tram-card-metric">
-            <Navigation size={12} style={{ color: '#94a3b8', transform: `rotate(${tram.hdg - mapBearing - 45}deg)`, transition: 'transform 0.2s ease' }} />
+            <Navigation size={15} strokeWidth={2.8} style={{ color: tram.mode === 'bus' ? '#0984e3' : '#00b894', transform: `rotate(${tram.hdg - mapBearing - 45}deg)`, transition: 'transform 0.2s ease' }} />
             <span className="tram-card-metric-val" style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
               {speedKmh} <span className="tram-card-metric-unit" style={{ fontSize: '0.6rem', marginRight: '2px' }}>km/h</span>
               {tram.acc !== undefined && (() => {

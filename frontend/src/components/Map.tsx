@@ -482,7 +482,8 @@ export const Map: React.FC<MapProps> = ({
     if (!map.hasImage('tram-arrow')) {
       const arrowSvg = `
         <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36" fill="none">
-          <path d="M18,1 L22.5,7.5 L13.5,7.5 Z" fill="#00b894" stroke="#ffffff" stroke-width="1" stroke-linejoin="round"/>
+          <path d="M18,0 L24.5,10.5 L11.5,10.5 Z" fill="#00b894" stroke="#1e293b" stroke-width="3.5" stroke-linejoin="round"/>
+          <path d="M18,0 L24.5,10.5 L11.5,10.5 Z" fill="#00b894" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
           <circle cx="18" cy="18" r="12.5" stroke="#00b894" stroke-width="2.5" fill="none"/>
           <circle cx="18" cy="18" r="12.5" stroke="#ffffff" stroke-width="0.8" fill="none"/>
         </svg>
@@ -498,7 +499,8 @@ export const Map: React.FC<MapProps> = ({
     if (!map.hasImage('bus-arrow')) {
       const arrowSvg = `
         <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36" fill="none">
-          <path d="M18,1 L24.5,7.5 L11.5,7.5 Z" fill="#0984e3" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
+          <path d="M18,0 L25.5,10.5 L10.5,10.5 Z" fill="#0984e3" stroke="#1e293b" stroke-width="3.5" stroke-linejoin="round"/>
+          <path d="M18,0 L25.5,10.5 L10.5,10.5 Z" fill="#0984e3" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
           <rect x="5.5" y="5.5" width="25" height="25" rx="5" stroke="#0984e3" stroke-width="2.5" fill="none"/>
           <rect x="5.5" y="5.5" width="25" height="25" rx="5" stroke="#ffffff" stroke-width="0.8" fill="none"/>
         </svg>
