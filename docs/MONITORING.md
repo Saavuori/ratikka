@@ -80,3 +80,25 @@ All collected metrics are pushed via HTTPS to your **Grafana Cloud Prometheus** 
 
 * **Security:** Credentials (`GRAFANA_CLOUD_PROMETHEUS_URL`, `GRAFANA_CLOUD_PROMETHEUS_USER`, and `GRAFANA_CLOUD_PROMETHEUS_TOKEN`) are injected into the Grafana Alloy environment variables via the local `.env` file. No authentication tokens or secret credentials are saved in configuration files or committed to Git.
 * **Transmission Protocol:** Metrics are sent using Prometheus `remote_write` protocol, which includes local buffering, retry logic, and connection compression.
+
+---
+
+## 4. Grafana APM Dashboard
+
+A comprehensive, production-grade Grafana dashboard configuration is provided at [dashboard.json](../monitoring/grafana/dashboard.json). 
+
+This dashboard is structured to facilitate full Application Performance Monitoring (APM):
+
+* **Overview & Real-Time KPIs**: Real-time stats for active WebSocket clients, current MQTT message ingestion rate, ingestion parser errors rate, and infrastructure load overview.
+* **HFP Ingestion & Streaming (Application APM)**: Historical lines/graphs showing websocket connection stability, MQTT ingestion volume breakdown per vehicle route (top 15), and parser error trends.
+* **Go Runtime & Process Performance**: APM metrics on backend memory allocation (Heap vs. System Reserved), running goroutines count (crucial to monitor websocket connection cleanup / goroutine leaks), actual CPU core utilization of the Go process, and GC pause duration percentiles.
+* **Host System Performance**: RHEL host CPU load by mode (user, system, iowait, idle), total host memory allocation (Used vs. Available), filesystem usage on the root mount, and network bandwidth (Rx/Tx).
+
+### How to Import the Dashboard
+1. Log in to your **Grafana Cloud** (or local Grafana) instance.
+2. Navigate to **Dashboards** -> **New** -> **Import**.
+3. Copy the contents of [dashboard.json](../monitoring/grafana/dashboard.json) and paste it into the "Import via panel json" text area, or click "Upload JSON file" and upload the file.
+4. Select your Prometheus datasource when prompted (the dashboard uses a datasource template variable named `${datasource_hsl}`).
+5. Click **Import**.
+
+
