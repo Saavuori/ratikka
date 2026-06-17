@@ -12,6 +12,7 @@ interface StopPopupProps {
   onSelectTripId: (tripId: string, lineDesi: string) => void;
   onStopDeparturesLoaded?: (tripIds: string[]) => void;
   onStopRoutesLoaded?: (routes: string[]) => void;
+  onStopCoordsLoaded?: (lat: number, lng: number) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
 }
@@ -24,6 +25,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   onSelectTripId,
   onStopDeparturesLoaded,
   onStopRoutesLoaded,
+  onStopCoordsLoaded,
   isCollapsed,
   onToggleCollapse,
 }) => {
@@ -45,6 +47,9 @@ export const StopPopup: React.FC<StopPopupProps> = ({
         }
         if (onStopRoutesLoaded) {
           onStopRoutesLoaded(data.routes || []);
+        }
+        if (onStopCoordsLoaded && data.stop) {
+          onStopCoordsLoaded(data.stop.lat, data.stop.lon);
         }
       })
       .catch((err) => {

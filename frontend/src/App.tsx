@@ -61,6 +61,10 @@ function App() {
     id: string;
     name: string;
     code: string;
+    lat?: number;
+    lng?: number;
+    mode?: string;
+    isTrunkStop?: boolean;
   } | null>(null);
   const [selectedBikeStation, setSelectedBikeStation] = useState<{
     id: string;
@@ -207,7 +211,15 @@ function App() {
     setSelectedTram(tram);
   };
 
-  const handleSelectStop = (stopId: string, name: string, code: string) => {
+  const handleSelectStop = (
+    stopId: string,
+    name: string,
+    code: string,
+    lat?: number,
+    lng?: number,
+    mode?: string,
+    isTrunkStop?: boolean
+  ) => {
     if (selectedStop?.id === stopId) {
       setIsDetailCollapsed(false); // Auto-expand if collapsed
       return;
@@ -215,7 +227,7 @@ function App() {
     setSelectedTram(null);
     setSelectedBikeStation(null);
     setSelectedStopRoutes([]); // Reset selected stop routes!
-    setSelectedStop({ id: stopId, name, code });
+    setSelectedStop({ id: stopId, name, code, lat, lng, mode, isTrunkStop });
     setIsDetailCollapsed(false); // Auto-expand detail panel to show schedule
   };
 
@@ -310,6 +322,9 @@ function App() {
         selectedTramId={selectedTram?.veh && selectedTram.veh !== '0' ? selectedTram.veh : selectedTram?.tripId || null}
         selectedStopId={selectedStop?.id || null}
         selectedBikeStationId={selectedBikeStation?.id || null}
+        selectedStopCoords={selectedStop?.lat && selectedStop?.lng ? [selectedStop.lng, selectedStop.lat] : null}
+        selectedStopMode={selectedStop?.mode || null}
+        selectedStopIsTrunk={selectedStop?.isTrunkStop || false}
         onSelectTram={handleSelectTram}
         onSelectStop={handleSelectStop}
         onSelectBikeStation={handleSelectBikeStation}
@@ -321,6 +336,8 @@ function App() {
         isFollowing={isFollowing}
         onDisableFollowing={() => setIsFollowing(false)}
         onMapBearingChange={setMapBearing}
+        showTrams={showTrams}
+        showBuses={showBuses}
       />
 
       {/* Sidebar Filters Panel */}
@@ -374,6 +391,11 @@ function App() {
           onClose={handleCloseStop}
           onSelectTripId={(tripId, lineDesi) => handleSelectTripFromStop(tripId, lineDesi)}
           onStopRoutesLoaded={setSelectedStopRoutes}
+          onStopCoordsLoaded={(lat, lng) => {
+            setSelectedStop((prev) =>
+              prev && prev.id === selectedStop.id ? { ...prev, lat, lng } : prev
+            );
+          }}
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
         />
