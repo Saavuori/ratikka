@@ -526,6 +526,83 @@ export const Map: React.FC<MapProps> = ({
       };
     }
 
+    // Create Sign Tram Image if missing
+    if (!map.hasImage('sign-tram')) {
+      const tramSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
+          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="16" cy="14" r="11" fill="#00985f" stroke="#ffffff" stroke-width="2"/>
+          <rect x="11.5" y="8" width="9" height="10" rx="1.5" fill="white"/>
+          <rect x="12.5" y="9.5" width="7" height="3" fill="#00985f"/>
+          <circle cx="13.5" cy="15.2" r="0.8" fill="#00985f"/>
+          <circle cx="18.5" cy="15.2" r="0.8" fill="#00985f"/>
+          <path d="M16,8 L16,5.5 M13.5,5.5 L18.5,5.5" stroke="white" stroke-width="0.8"/>
+        </svg>
+      `;
+      const tramImg = new Image(32, 42);
+      tramImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(tramSvg);
+      tramImg.onload = () => {
+        if (!map.hasImage('sign-tram')) map.addImage('sign-tram', tramImg);
+      };
+    }
+
+    // Create Sign Bus Image if missing
+    if (!map.hasImage('sign-bus')) {
+      const busSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
+          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="16" cy="14" r="11" fill="#007ac9" stroke="#ffffff" stroke-width="2"/>
+          <rect x="10.5" y="9" width="11" height="9" rx="1.5" fill="white"/>
+          <rect x="11.5" y="10.5" width="9" height="3" fill="#007ac9"/>
+          <circle cx="12.5" cy="15.7" r="0.8" fill="#007ac9"/>
+          <circle cx="19.5" cy="15.7" r="0.8" fill="#007ac9"/>
+        </svg>
+      `;
+      const busImg = new Image(32, 42);
+      busImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(busSvg);
+      busImg.onload = () => {
+        if (!map.hasImage('sign-bus')) map.addImage('sign-bus', busImg);
+      };
+    }
+
+    // Create Sign Bus Trunk Image if missing
+    if (!map.hasImage('sign-bus-trunk')) {
+      const busTrunkSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
+          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="16" cy="14" r="11" fill="#CA4300" stroke="#ffffff" stroke-width="2"/>
+          <rect x="10.5" y="9" width="11" height="9" rx="1.5" fill="white"/>
+          <rect x="11.5" y="10.5" width="9" height="3" fill="#CA4300"/>
+          <circle cx="12.5" cy="15.7" r="0.8" fill="#CA4300"/>
+          <circle cx="19.5" cy="15.7" r="0.8" fill="#CA4300"/>
+        </svg>
+      `;
+      const busTrunkImg = new Image(32, 42);
+      busTrunkImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(busTrunkSvg);
+      busTrunkImg.onload = () => {
+        if (!map.hasImage('sign-bus-trunk')) map.addImage('sign-bus-trunk', busTrunkImg);
+      };
+    }
+
+    // Create Sign Bike Image if missing
+    if (!map.hasImage('sign-bike')) {
+      const bikeSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
+          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="16" cy="14" r="11" fill="#fcbc19" stroke="#ffffff" stroke-width="2"/>
+          <circle cx="11.5" cy="15.5" r="2.2" stroke="#1e293b" stroke-width="1" fill="none"/>
+          <circle cx="20.5" cy="15.5" r="2.2" stroke="#1e293b" stroke-width="1" fill="none"/>
+          <path d="M11.5,15.5 L15,12.2 L19,15.5 L15,12.2 L14.5,9.5 L18,9.5" stroke="#1e293b" stroke-width="0.8" fill="none"/>
+          <path d="M15,12.2 L13.5,15.5 M19,15.5 L19.8,12.2 L18,12.2" stroke="#1e293b" stroke-width="0.8" fill="none"/>
+        </svg>
+      `;
+      const bikeImg = new Image(32, 42);
+      bikeImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(bikeSvg);
+      bikeImg.onload = () => {
+        if (!map.hasImage('sign-bike')) map.addImage('sign-bike', bikeImg);
+      };
+    }
+
     // 3. Add Live Trams Source (GeoJSON)
     if (!map.getSource('trams')) {
       map.addSource('trams', {
@@ -661,6 +738,7 @@ export const Map: React.FC<MapProps> = ({
         source: 'stops',
         'source-layer': 'stops',
         minzoom: 13,
+        maxzoom: 15.5,
         filter: ['match', ['get', 'mode'], 'RAIL', false, true],
         paint: {
           'circle-color': '#ffffff',
@@ -682,6 +760,7 @@ export const Map: React.FC<MapProps> = ({
         source: 'stops',
         'source-layer': 'stops',
         minzoom: 13,
+        maxzoom: 15.5,
         filter: [
           'all',
           ['!', ['get', 'isTrunkStop']],
@@ -707,6 +786,7 @@ export const Map: React.FC<MapProps> = ({
         source: 'stops',
         'source-layer': 'stops',
         minzoom: 13,
+        maxzoom: 15.5,
         filter: ['all', ['get', 'isTrunkStop'], ['match', ['get', 'mode'], 'BUS', true, false]],
         paint: {
           'circle-color': '#CA4300',
@@ -728,6 +808,7 @@ export const Map: React.FC<MapProps> = ({
         source: 'stops',
         'source-layer': 'stops',
         minzoom: 13,
+        maxzoom: 15.5,
         filter: ['match', ['get', 'mode'], 'TRAM', true, false],
         paint: {
           'circle-color': '#00985f',
@@ -742,7 +823,40 @@ export const Map: React.FC<MapProps> = ({
       }, 'trams-circles');
     }
 
-
+    // Stops Signs (Pole + Sign symbol layer, visible from zoom 15.5 onwards)
+    if (!map.getLayer('stops_signs')) {
+      map.addLayer({
+        id: 'stops_signs',
+        type: 'symbol',
+        source: 'stops',
+        'source-layer': 'stops',
+        minzoom: 15.5,
+        layout: {
+          'icon-image': [
+            'match',
+            ['get', 'mode'],
+            'TRAM', 'sign-tram',
+            'BUS', [
+              'case',
+              ['get', 'isTrunkStop'],
+              'sign-bus-trunk',
+              'sign-bus'
+            ],
+            'sign-bus'
+          ],
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'icon-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15, 0.8,
+            20, 1.2
+          ]
+        }
+      }, 'trams-circles');
+    }
 
     // 12. Add Citybike Source
     if (!map.getSource('citybike')) {
@@ -764,7 +878,7 @@ export const Map: React.FC<MapProps> = ({
         source: 'citybike',
         'source-layer': 'rentalStations',
         minzoom: 13,
-        maxzoom: 14,
+        maxzoom: 15.5,
         paint: {
           'circle-color': '#ffffff',
           'circle-radius': [
@@ -786,7 +900,7 @@ export const Map: React.FC<MapProps> = ({
         source: 'citybike',
         'source-layer': 'rentalStations',
         minzoom: 13,
-        maxzoom: 14,
+        maxzoom: 15.5,
         paint: {
           'circle-color': '#fcbc19',
           'circle-radius': [
@@ -822,18 +936,29 @@ export const Map: React.FC<MapProps> = ({
         type: 'symbol',
         source: 'citybike',
         'source-layer': 'rentalStations',
-        minzoom: 14,
+        minzoom: 15.5,
         layout: {
-          'icon-image': 'icon-citybike-station',
-          'icon-offset': [0, -6],
+          'icon-image': 'sign-bike',
+          'icon-anchor': 'bottom',
           'icon-allow-overlap': true,
           'icon-size': [
             'interpolate',
             ['linear'],
             ['zoom'],
-            13, 0.8,
+            15, 0.8,
             20, 1.2
-          ]
+          ],
+          'text-field': ['to-string', ['coalesce', ['get', 'bikesAvailable'], ['get', 'bikes'], '0']],
+          'text-font': ['Gotham Rounded Medium'],
+          'text-size': 9.5,
+          'text-offset': [1.1, -2.4],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#ffffff',
+          'text-halo-color': '#00985f',
+          'text-halo-width': 3.5,
         }
       });
     }
@@ -878,6 +1003,13 @@ export const Map: React.FC<MapProps> = ({
           'circle-color': 'rgba(253, 203, 110, 0.25)', // glowing gold halo
           'circle-stroke-color': '#fdcb6e',
           'circle-stroke-width': 3.5,
+          'circle-translate': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15, [0, 0],
+            16, [0, -28]
+          ] as any
         },
         filter: ['==', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']], '']
       }, 'trams-circles');
@@ -901,6 +1033,13 @@ export const Map: React.FC<MapProps> = ({
           'circle-color': 'rgba(253, 203, 110, 0.25)', // glowing gold halo
           'circle-stroke-color': '#fdcb6e',
           'circle-stroke-width': 3.5,
+          'circle-translate': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15, [0, 0],
+            16, [0, -28]
+          ] as any
         },
         filter: ['==', ['to-string', ['coalesce', ['get', 'stationId'], ['get', 'id'], '']], '']
       }, 'citybike_icon');
@@ -1041,6 +1180,7 @@ export const Map: React.FC<MapProps> = ({
     map.on('click', 'stops_tram', handleStopClick);
     map.on('click', 'stops_bus', handleStopClick);
     map.on('click', 'stops_trunk', handleStopClick);
+    map.on('click', 'stops_signs', handleStopClick);
 
     const handleBikeClick = (e: any) => {
       if (!e.features || e.features.length === 0) return;
@@ -1069,6 +1209,8 @@ export const Map: React.FC<MapProps> = ({
     map.on('mouseleave', 'stops_bus', resetCursor);
     map.on('mouseenter', 'stops_trunk', setCursorPointer);
     map.on('mouseleave', 'stops_trunk', resetCursor);
+    map.on('mouseenter', 'stops_signs', setCursorPointer);
+    map.on('mouseleave', 'stops_signs', resetCursor);
     map.on('mouseenter', 'citybike_icon', setCursorPointer);
     map.on('mouseleave', 'citybike_icon', resetCursor);
     map.on('mouseenter', 'citybike_stops', setCursorPointer);
@@ -1399,6 +1541,21 @@ export const Map: React.FC<MapProps> = ({
         }
       }
     });
+
+    // 4. Stops Signs Symbol Layer
+    if (map.getLayer('stops_signs')) {
+      if (activeRoutes.length === 0) {
+        map.setFilter('stops_signs', ['match', ['get', 'mode'], 'TRAM', true, false]);
+      } else if (allowedStopIds.length === 0) {
+        map.setFilter('stops_signs', ['match', ['get', 'mode'], 'TRAM', false, false]);
+      } else {
+        map.setFilter('stops_signs', [
+          'all',
+          ['match', ['get', 'mode'], ['TRAM', 'BUS'], true, false],
+          ['match', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], '']], allowedStopIds, true, false]
+        ] as any);
+      }
+    }
   }, [lineFilters, selectedTramId, trams, routeGeometries]);
 
   return (

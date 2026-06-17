@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.30.0] - 2026-06-17
+
+### Added
+- **Traffic Sign Pole Map Symbols**: Replaced standard circular dots for tram, standard bus, and trunk bus stops with custom sign-on-a-pole traffic sign symbols when zoomed in (zoom >= 15.5) on the map ([Map.tsx](file:///c:/Antigravity/ratikka/frontend/src/components/Map.tsx)).
+- **Dynamic City Bike Counts & Bubble Overlay**: Rendered city bike stations on a pole with a yellow bicycle sign, plus a dynamic green overlay bubble showing the live number of available bikes (`bikesAvailable`) at the top right of the station circle.
+- **Interpolated Selection Highlight Translation**: Implemented zoom-based `'circle-translate'` interpolation for stops and city bike selection halo highlights, dynamically shifting the halos upwards by 28px as the map zooms in to frame the sign boards.
+
+---
+
 ## [v0.29.2] - 2026-06-17
 
 ### Fixed
