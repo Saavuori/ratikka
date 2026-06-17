@@ -56,6 +56,7 @@ body {
   padding: 0;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background-color: #020617;
 }
@@ -71,6 +72,7 @@ body {
   position: relative;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background-color: #020617;
   user-select: none;
@@ -110,6 +112,7 @@ body {
   left: 0;
   width: 190px;
   height: calc(100vh - 160px);
+  height: calc(100dvh - 160px);
   padding: 10px;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 0 12px 12px 0;
@@ -229,6 +232,7 @@ body {
   right: 0;
   width: 320px;
   max-height: calc(100vh - 96px);
+  max-height: calc(100dvh - 96px);
   padding: 20px;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 12px 0 0 12px;
@@ -607,7 +611,7 @@ body {
 /* Version Badge */
 .version-badge {
   position: absolute;
-  bottom: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
   left: 8px;
   z-index: 10;
   display: flex;
@@ -690,6 +694,7 @@ body {
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 300px);
+  max-height: calc(100dvh - 300px);
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -824,6 +829,7 @@ body {
   flex-direction: column;
   gap: 1px;
   max-height: calc(100vh - 280px);
+  max-height: calc(100dvh - 280px);
   overflow-y: auto;
 }
 
@@ -1047,6 +1053,24 @@ body {
 .tram-card-close:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #f1f5f9;
+}
+
+/* MapLibre Controls safe area offset */
+.maplibregl-ctrl-bottom-right,
+.maplibregl-ctrl-bottom-left {
+  bottom: calc(8px + env(safe-area-inset-bottom)) !important;
+}
+
+/* Mobile responsive bottom navigation area safety adjustments */
+@media (max-width: 768px) {
+  .version-badge {
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    left: 12px;
+  }
+  .maplibregl-ctrl-bottom-right,
+  .maplibregl-ctrl-bottom-left {
+    bottom: calc(20px + env(safe-area-inset-bottom)) !important;
+  }
 }
 
 

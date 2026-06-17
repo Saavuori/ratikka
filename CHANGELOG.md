@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.29.2] - 2026-06-17
+
+### Fixed
+- **Mobile Viewport & Navigation Bar Overlaps**: Implemented dynamic viewport height rules (`100dvh` / `calc(100dvh - ...)`) across all main layout panels and lists. Configured safe-area bottom insets and mobile-specific offsets for MapLibre map control buttons and the version badge to prevent them from being obstructed by Android OS virtual navigation buttons or iOS Home indicators.
+
+---
+
 ## [v0.29.1] - 2026-06-16
 
 ### Fixed
