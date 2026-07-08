@@ -203,9 +203,9 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 	}
 	vehicleID := fmt.Sprintf("%s-%d", operator, vp.Veh)
 
-	if mode != "tram" {
-		log.Printf("MQTT ingestion: received message for mode=%s, topic=%s\n", mode, msg.Topic())
-	}
+	// if mode != "tram" {
+	// 	log.Printf("MQTT ingestion: received message for mode=%s, topic=%s\n", mode, msg.Topic())
+	// }
 
 	thinned := VehiclePosition{
 		Veh:    vehicleID,
