@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.33.1] - 2026-07-13
+
+### Fixed
+- **Next Stop ETA and Highlighting**: Resolved bug where previous stops were highlighted or shown as next stops when the vehicle was moving.
+- **Map & UI State Sync**: Unified next stop index resolution logic across `Map.tsx`, `TramCard.tsx`, and `TramPopup.tsx` so highlighted route segments always match the information overlays.
+- **Premature Next Stop Jumps**: Prevented next stop indicators from jumping to the subsequent stop prematurely when the vehicle is entering/arriving at a stop before doors open.
+
 ## [v0.33.0] - 2026-07-13
 
 ### Added

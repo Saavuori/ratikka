@@ -38,10 +38,18 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
     if (!tripDetails) return { currentStopIndex: -1, nextStopIndex: -1, lastKnownIndex: -1 };
 
     const isStopped = tram.drst === 1;
+    const hasExplicitStop = !!tram.stop;
     const stopIdToMatch = tram.stop || lastStopId;
-    let upcomingIndex = tripDetails.stops.findIndex(s => s.gtfsId === stopIdToMatch);
 
-    if (upcomingIndex === -1) {
+    let matchedIndex = -1;
+    if (stopIdToMatch) {
+      const cleanToMatch = stopIdToMatch.replace(/^HSL:/, '');
+      matchedIndex = tripDetails.stops.findIndex(
+        s => s.gtfsId === stopIdToMatch || s.gtfsId?.replace(/^HSL:/, '') === cleanToMatch
+      );
+    }
+
+    if (matchedIndex === -1) {
       const now = new Date();
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
       const nextIndex = tripDetails.stops.findIndex(stop => {
@@ -51,19 +59,33 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
       });
 
       if (nextIndex !== -1) {
-        upcomingIndex = nextIndex;
+        return {
+          currentStopIndex: -1,
+          nextStopIndex: nextIndex,
+          lastKnownIndex: nextIndex > 0 ? nextIndex - 1 : 0
+        };
       } else {
-        upcomingIndex = tripDetails.stops.length - 1;
+        return {
+          currentStopIndex: -1,
+          nextStopIndex: -1,
+          lastKnownIndex: tripDetails.stops.length - 1
+        };
       }
     }
 
-    if (isStopped) {
-      const currentStopIndex = upcomingIndex;
-      const nextStopIndex = upcomingIndex + 1 < tripDetails.stops.length ? upcomingIndex + 1 : -1;
-      return { currentStopIndex, nextStopIndex, lastKnownIndex: upcomingIndex };
+    if (hasExplicitStop) {
+      if (isStopped) {
+        const currentStopIndex = matchedIndex;
+        const nextStopIndex = matchedIndex + 1 < tripDetails.stops.length ? matchedIndex + 1 : -1;
+        return { currentStopIndex, nextStopIndex, lastKnownIndex: matchedIndex };
+      } else {
+        const nextStopIndex = matchedIndex;
+        const lastKnownIndex = matchedIndex - 1;
+        return { currentStopIndex: -1, nextStopIndex, lastKnownIndex };
+      }
     } else {
-      const nextStopIndex = upcomingIndex;
-      const lastKnownIndex = upcomingIndex - 1;
+      const nextStopIndex = matchedIndex + 1 < tripDetails.stops.length ? matchedIndex + 1 : -1;
+      const lastKnownIndex = matchedIndex;
       return { currentStopIndex: -1, nextStopIndex, lastKnownIndex };
     }
   };

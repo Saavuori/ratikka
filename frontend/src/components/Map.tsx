@@ -336,6 +336,7 @@ export const Map: React.FC<MapProps> = ({
           }
 
           const isStopped = selectedTram.drst === 1;
+          const hasExplicitStop = !!selectedTram.stop;
           if (selectedTram.stop) {
             lastSeenStopIdRef.current = selectedTram.stop;
           }
@@ -347,6 +348,8 @@ export const Map: React.FC<MapProps> = ({
             const cleanToMatch = stopIdToMatch.replace(/^HSL:/, '');
             lastKnownIndex = tripStops.findIndex(s => s.gtfsId === stopIdToMatch || s.gtfsId?.replace(/^HSL:/, '') === cleanToMatch);
           }
+
+          let nextStopIndex = -1;
 
           if (lastKnownIndex === -1) {
             // Fallback: Estimate position based on arrival times
@@ -360,19 +363,25 @@ export const Map: React.FC<MapProps> = ({
             });
 
             if (nextIndex !== -1) {
+              nextStopIndex = nextIndex;
               lastKnownIndex = nextIndex > 0 ? nextIndex - 1 : 0;
             } else {
+              nextStopIndex = -1;
               lastKnownIndex = tripStops.length - 1;
             }
-          }
-
-          let nextStopIndex = -1;
-          if (isStopped) {
-            // Doors open: we are currently at lastKnownIndex, next is lastKnownIndex + 1
-            nextStopIndex = lastKnownIndex + 1 < tripStops.length ? lastKnownIndex + 1 : -1;
           } else {
-            // Moving: departed lastKnownIndex, next is lastKnownIndex + 1
-            nextStopIndex = lastKnownIndex + 1 < tripStops.length ? lastKnownIndex + 1 : lastKnownIndex;
+            if (hasExplicitStop) {
+              if (isStopped) {
+                // Doors open: we are currently at lastKnownIndex
+                nextStopIndex = lastKnownIndex + 1 < tripStops.length ? lastKnownIndex + 1 : -1;
+              } else {
+                // Doors closed: physically at/arriving at lastKnownIndex, but doors closed
+                nextStopIndex = lastKnownIndex;
+              }
+            } else {
+              // Between stops: we departed lastKnownIndex (which was lastStopId)
+              nextStopIndex = lastKnownIndex + 1 < tripStops.length ? lastKnownIndex + 1 : -1;
+            }
           }
 
           if (nextStopIndex !== -1) {
