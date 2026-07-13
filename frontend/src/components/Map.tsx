@@ -4,7 +4,6 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import type { VehiclePosition, TripDetailsResponse } from '../types';
 import { lerp, lerpAngle } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
-import { fetchTripDetails } from '../lib/api';
 
 interface MapProps {
   trams: Record<string, VehiclePosition>;
@@ -35,6 +34,7 @@ interface MapProps {
   onMapBearingChange?: (bearing: number) => void;
   showTrams: boolean;
   showBuses: boolean;
+  selectedTripDetails: TripDetailsResponse | null;
 }
 
 interface RenderPosition {
@@ -64,12 +64,12 @@ export const Map: React.FC<MapProps> = ({
   onMapBearingChange,
   showTrams,
   showBuses,
+  selectedTripDetails,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
 
-  const [selectedTripDetails, setSelectedTripDetails] = React.useState<TripDetailsResponse | null>(null);
-  const selectedTripDetailsRef = useRef<TripDetailsResponse | null>(null);
+  const selectedTripDetailsRef = useRef<TripDetailsResponse | null>(selectedTripDetails);
 
   useEffect(() => {
     selectedTripDetailsRef.current = selectedTripDetails;
@@ -1507,36 +1507,6 @@ export const Map: React.FC<MapProps> = ({
     }
   }, [selectedBikeStationId]);
 
-  // Fetch trip details when selected vehicle changes
-  useEffect(() => {
-    if (!selectedTramId) {
-      setSelectedTripDetails(null);
-      return;
-    }
-
-    const selectedTram = trams[selectedTramId];
-    const tripId = selectedTram?.tripId || (selectedTramId.startsWith('HSL:') ? selectedTramId : null);
-    
-    if (!tripId) {
-      setSelectedTripDetails(null);
-      return;
-    }
-
-    // Don't refetch if we already have the details for this tripId
-    if (selectedTripDetailsRef.current && selectedTripDetailsRef.current.tripId === tripId) {
-      return;
-    }
-
-    console.log('[Map] Fetching trip details for selected vehicle:', selectedTramId, 'trip:', tripId);
-    fetchTripDetails(tripId)
-      .then((data) => {
-        setSelectedTripDetails(data);
-      })
-      .catch((err) => {
-        console.error('Failed to load trip details for map highlights:', err);
-        setSelectedTripDetails(null);
-      });
-  }, [selectedTramId, trams]);
 
   // Center, orient and tilt map on selected tram
   useEffect(() => {

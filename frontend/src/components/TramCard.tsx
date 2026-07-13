@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { VehiclePosition, TripDetailsResponse } from '../types';
 import { Navigation, Clock, X, Target, ChevronsUp, ChevronUp, ChevronDown, ChevronsDown } from 'lucide-react';
-import { fetchTripDetails } from '../lib/api';
 
 interface TramCardProps {
   tram: VehiclePosition;
@@ -9,11 +8,11 @@ interface TramCardProps {
   onClose: () => void;
   isFollowing: boolean;
   onToggleFollow: () => void;
+  tripDetails: TripDetailsResponse | null;
 }
 
-export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, isFollowing, onToggleFollow }) => {
+export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, isFollowing, onToggleFollow, tripDetails }) => {
   const speedKmh = Math.round(tram.spd * 3.6);
-  const [tripDetails, setTripDetails] = useState<TripDetailsResponse | null>(null);
   const [lastStopId, setLastStopId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -21,20 +20,6 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
       setLastStopId(tram.stop);
     }
   }, [tram.stop]);
-
-  useEffect(() => {
-    if (!tram.tripId) {
-      setTripDetails(null);
-      return;
-    }
-    fetchTripDetails(tram.tripId)
-      .then((data) => {
-        setTripDetails(data);
-      })
-      .catch((err) => {
-        console.error('Failed to load schedule for top card:', err);
-      });
-  }, [tram.tripId]);
 
   const getDelayColor = (seconds: number): string => {
     if (seconds > 60) return '#f87171';

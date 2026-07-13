@@ -267,160 +267,118 @@ func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
 	}
 	tripId := convertTripID(originalTripId)
 
-	queryStr := `
-		query GetTripDetails($tripId: String!) {
-			trip(id: $tripId) {
-				gtfsId
-				route {
-					shortName
-					longName
-					mode
-					color
-				}
-				tripHeadsign
-				stoptimes {
-					scheduledArrival
-					realtimeArrival
-					arrivalDelay
-					realtime
-					realtimeState
-					stop {
-						gtfsId
-						name
-						code
-						lat
-						lon
-					}
-				}
-				tripGeometry {
-					length
-					points
-				}
-			}
-		}
-	`
+	key := "trip:" + tripId
 
-	variables := map[string]interface{}{"tripId": tripId}
-	var raw rawTripResponse
-
-	if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
-		log.Printf("GraphQL query error for trip %s: %v\n", tripId, err)
-		http.Error(w, "upstream api error", http.StatusBadGateway)
+	if cached, ok := h.apiCache.Get(key); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(cached)
 		return
 	}
 
-	if raw.Trip == nil {
-		// Attempt fuzzyTrip fallback query
-		if route, dir, date, timeSec, ok := parseTripIdForFuzzy(originalTripId); ok {
-			log.Printf("Trip %s not found by ID. Attempting fuzzyTrip fallback with route=%s dir=%d date=%s time=%d", originalTripId, route, dir, date, timeSec)
+	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
+		// Double-check cache inside singleflight
+		if cached, ok := h.apiCache.Get(key); ok {
+			return cached, nil
+		}
 
-			fuzzyQueryStr := `
-				query GetFuzzyTripDetails($route: String!, $direction: Int!, $date: String!, $time: Int!) {
-					fuzzyTrip(route: $route, direction: $direction, date: $date, time: $time) {
-						gtfsId
-						route {
-							shortName
-							longName
-							mode
-							color
-						}
-						tripHeadsign
-						stoptimes {
-							scheduledArrival
-							realtimeArrival
-							arrivalDelay
-							realtime
-							realtimeState
-							stop {
-								gtfsId
-								name
-								code
-								lat
-								lon
-							}
-						}
-						tripGeometry {
-							length
-							points
+		queryStr := `
+			query GetTripDetails($tripId: String!) {
+				trip(id: $tripId) {
+					gtfsId
+					route {
+						shortName
+						longName
+						mode
+						color
+					}
+					tripHeadsign
+					stoptimes {
+						scheduledArrival
+						realtimeArrival
+						arrivalDelay
+						realtime
+						realtimeState
+						stop {
+							gtfsId
+							name
+							code
+							lat
+							lon
 						}
 					}
+					tripGeometry {
+						length
+						points
+					}
 				}
-			`
-
-			fuzzyVars := map[string]interface{}{
-				"route":     route,
-				"direction": dir,
-				"date":      date,
-				"time":      timeSec,
 			}
+		`
 
-			type fuzzyTripData struct {
-				GtfsId       string       `json:"gtfsId"`
-				Route        rawRouteInfo `json:"route"`
-				TripHeadsign string       `json:"tripHeadsign"`
-				Stoptimes    []struct {
-					ScheduledArrival   int    `json:"scheduledArrival"`
-					RealtimeArrival    int    `json:"realtimeArrival"`
-					ArrivalDelay       int    `json:"arrivalDelay"`
-					ScheduledDeparture int    `json:"scheduledDeparture"`
-					RealtimeDeparture  int    `json:"realtimeDeparture"`
-					DepartureDelay     int    `json:"departureDelay"`
-					Realtime           bool   `json:"realtime"`
-					RealtimeState      string `json:"realtimeState"`
-					Stop               struct {
-						GtfsId string  `json:"gtfsId"`
-						Name   string  `json:"name"`
-						Code   string  `json:"code"`
-						Lat    float64 `json:"lat"`
-						Lon    float64 `json:"lon"`
-					} `json:"stop"`
-				} `json:"stoptimes"`
-				TripGeometry *struct {
-					Length int    `json:"length"`
-					Points string `json:"points"`
-				} `json:"tripGeometry"`
-			}
+		variables := map[string]interface{}{"tripId": tripId}
+		var raw rawTripResponse
 
-			var fuzzyRaw struct {
-				FuzzyTrip *fuzzyTripData `json:"fuzzyTrip"`
-			}
+		if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
+			log.Printf("GraphQL query error for trip %s: %v\n", tripId, err)
+			return nil, fmt.Errorf("upstream api error")
+		}
 
-			if err := h.gql.query(r.Context(), fuzzyQueryStr, fuzzyVars, &fuzzyRaw); err == nil && fuzzyRaw.FuzzyTrip != nil {
-				// Copy stoptimes slice
-				stoptimes := make([]struct {
-					ScheduledArrival   int    `json:"scheduledArrival"`
-					RealtimeArrival    int    `json:"realtimeArrival"`
-					ArrivalDelay       int    `json:"arrivalDelay"`
-					ScheduledDeparture int    `json:"scheduledDeparture"`
-					RealtimeDeparture  int    `json:"realtimeDeparture"`
-					DepartureDelay     int    `json:"departureDelay"`
-					Realtime           bool   `json:"realtime"`
-					RealtimeState      string `json:"realtimeState"`
-					Stop               struct {
-						GtfsId string  `json:"gtfsId"`
-						Name   string  `json:"name"`
-						Code   string  `json:"code"`
-						Lat    float64 `json:"lat"`
-						Lon    float64 `json:"lon"`
-					} `json:"stop"`
-				}, len(fuzzyRaw.FuzzyTrip.Stoptimes))
+		if raw.Trip == nil {
+			// Attempt fuzzyTrip fallback query
+			if route, dir, date, timeSec, ok := parseTripIdForFuzzy(originalTripId); ok {
+				log.Printf("Trip %s not found by ID. Attempting fuzzyTrip fallback with route=%s dir=%d date=%s time=%d", originalTripId, route, dir, date, timeSec)
 
-				for i, s := range fuzzyRaw.FuzzyTrip.Stoptimes {
-					stoptimes[i] = s
+				fuzzyQueryStr := `
+					query GetFuzzyTripDetails($route: String!, $direction: Int!, $date: String!, $time: Int!) {
+						fuzzyTrip(route: $route, direction: $direction, date: $date, time: $time) {
+							gtfsId
+							route {
+								shortName
+								longName
+								mode
+								color
+							}
+							tripHeadsign
+							stoptimes {
+								scheduledArrival
+								realtimeArrival
+								arrivalDelay
+								realtime
+								realtimeState
+								stop {
+									gtfsId
+									name
+									code
+									lat
+									lon
+								}
+							}
+							tripGeometry {
+								length
+								points
+							}
+						}
+					}
+				`
+
+				fuzzyVars := map[string]interface{}{
+					"route":     route,
+					"direction": dir,
+					"date":      date,
+					"time":      timeSec,
 				}
 
-				raw.Trip = &struct {
-					GtfsId           string       `json:"gtfsId"`
-					Route            rawRouteInfo `json:"route"`
-					TripHeadsign     string       `json:"tripHeadsign"`
-					Stoptimes []struct {
-						ScheduledArrival   int `json:"scheduledArrival"`
-						RealtimeArrival    int `json:"realtimeArrival"`
-						ArrivalDelay       int `json:"arrivalDelay"`
-						ScheduledDeparture int `json:"scheduledDeparture"`
-						RealtimeDeparture  int `json:"realtimeDeparture"`
-						DepartureDelay     int `json:"departureDelay"`
-						Realtime           bool `json:"realtime"`
+				type fuzzyTripData struct {
+					GtfsId       string       `json:"gtfsId"`
+					Route        rawRouteInfo `json:"route"`
+					TripHeadsign string       `json:"tripHeadsign"`
+					Stoptimes    []struct {
+						ScheduledArrival   int    `json:"scheduledArrival"`
+						RealtimeArrival    int    `json:"realtimeArrival"`
+						ArrivalDelay       int    `json:"arrivalDelay"`
+						ScheduledDeparture int    `json:"scheduledDeparture"`
+						RealtimeDeparture  int    `json:"realtimeDeparture"`
+						DepartureDelay     int    `json:"departureDelay"`
+						Realtime           bool   `json:"realtime"`
 						RealtimeState      string `json:"realtimeState"`
 						Stop               struct {
 							GtfsId string  `json:"gtfsId"`
@@ -434,58 +392,130 @@ func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
 						Length int    `json:"length"`
 						Points string `json:"points"`
 					} `json:"tripGeometry"`
-				}{
-					GtfsId:       fuzzyRaw.FuzzyTrip.GtfsId,
-					Route:        fuzzyRaw.FuzzyTrip.Route,
-					TripHeadsign: fuzzyRaw.FuzzyTrip.TripHeadsign,
-					Stoptimes:    stoptimes,
-					TripGeometry: fuzzyRaw.FuzzyTrip.TripGeometry,
 				}
-				log.Printf("Successfully resolved trip by fuzzyTrip: %s -> %s", originalTripId, fuzzyRaw.FuzzyTrip.GtfsId)
-			} else if err != nil {
-				log.Printf("FuzzyTrip query failed for route %s date %s: %v", route, date, err)
+
+				var fuzzyRaw struct {
+					FuzzyTrip *fuzzyTripData `json:"fuzzyTrip"`
+				}
+
+				if err := h.gql.query(r.Context(), fuzzyQueryStr, fuzzyVars, &fuzzyRaw); err == nil && fuzzyRaw.FuzzyTrip != nil {
+					// Copy stoptimes slice
+					stoptimes := make([]struct {
+						ScheduledArrival   int    `json:"scheduledArrival"`
+						RealtimeArrival    int    `json:"realtimeArrival"`
+						ArrivalDelay       int    `json:"arrivalDelay"`
+						ScheduledDeparture int    `json:"scheduledDeparture"`
+						RealtimeDeparture  int    `json:"realtimeDeparture"`
+						DepartureDelay     int    `json:"departureDelay"`
+						Realtime           bool   `json:"realtime"`
+						RealtimeState      string `json:"realtimeState"`
+						Stop               struct {
+							GtfsId string  `json:"gtfsId"`
+							Name   string  `json:"name"`
+							Code   string  `json:"code"`
+							Lat    float64 `json:"lat"`
+							Lon    float64 `json:"lon"`
+						} `json:"stop"`
+					}, len(fuzzyRaw.FuzzyTrip.Stoptimes))
+
+					for i, s := range fuzzyRaw.FuzzyTrip.Stoptimes {
+						stoptimes[i] = s
+					}
+
+					raw.Trip = &struct {
+						GtfsId           string       `json:"gtfsId"`
+						Route            rawRouteInfo `json:"route"`
+						TripHeadsign     string       `json:"tripHeadsign"`
+						Stoptimes []struct {
+							ScheduledArrival   int `json:"scheduledArrival"`
+							RealtimeArrival    int `json:"realtimeArrival"`
+							ArrivalDelay       int `json:"arrivalDelay"`
+							ScheduledDeparture int `json:"scheduledDeparture"`
+							RealtimeDeparture  int `json:"realtimeDeparture"`
+							DepartureDelay     int `json:"departureDelay"`
+							Realtime           bool `json:"realtime"`
+							RealtimeState      string `json:"realtimeState"`
+							Stop               struct {
+								GtfsId string  `json:"gtfsId"`
+								Name   string  `json:"name"`
+								Code   string  `json:"code"`
+								Lat    float64 `json:"lat"`
+								Lon    float64 `json:"lon"`
+							} `json:"stop"`
+						} `json:"stoptimes"`
+						TripGeometry *struct {
+							Length int    `json:"length"`
+							Points string `json:"points"`
+						} `json:"tripGeometry"`
+					}{
+						GtfsId:       fuzzyRaw.FuzzyTrip.GtfsId,
+						Route:        fuzzyRaw.FuzzyTrip.Route,
+						TripHeadsign: fuzzyRaw.FuzzyTrip.TripHeadsign,
+						Stoptimes:    stoptimes,
+						TripGeometry: fuzzyRaw.FuzzyTrip.TripGeometry,
+					}
+					log.Printf("Successfully resolved trip by fuzzyTrip: %s -> %s", originalTripId, fuzzyRaw.FuzzyTrip.GtfsId)
+				} else if err != nil {
+					log.Printf("FuzzyTrip query failed for route %s date %s: %v", route, date, err)
+				}
 			}
 		}
-	}
 
-	if raw.Trip == nil {
-		http.Error(w, "trip not found", http.StatusNotFound)
+		if raw.Trip == nil {
+			return nil, fmt.Errorf("trip not found")
+		}
+
+		// Format response
+		t := raw.Trip
+		resp := TripDetailsResponse{
+			TripId: t.GtfsId,
+			Route: RouteResponse{
+				ShortName: t.Route.ShortName,
+				LongName:  t.Route.LongName,
+				Color:     t.Route.Color,
+			},
+			Headsign: t.TripHeadsign,
+			Stops:    make([]StopArrival, 0, len(t.Stoptimes)),
+		}
+
+		if t.TripGeometry != nil {
+			resp.Geometry = t.TripGeometry.Points
+		}
+
+		for _, stoptime := range t.Stoptimes {
+			resp.Stops = append(resp.Stops, StopArrival{
+				GtfsId:           stoptime.Stop.GtfsId,
+				Name:             stoptime.Stop.Name,
+				Code:             stoptime.Stop.Code,
+				Lat:              stoptime.Stop.Lat,
+				Lon:              stoptime.Stop.Lon,
+				ScheduledArrival: formatSeconds(stoptime.ScheduledArrival),
+				RealtimeArrival:  formatSeconds(stoptime.RealtimeArrival),
+				Delay:            stoptime.ArrivalDelay,
+				Realtime:         stoptime.Realtime,
+			})
+		}
+
+		jsonBytes, err := json.Marshal(resp)
+		if err != nil {
+			return nil, err
+		}
+
+		h.apiCache.Set(key, jsonBytes, 10*time.Second)
+		return jsonBytes, nil
+	})
+
+	if err != nil {
+		if err.Error() == "trip not found" {
+			http.Error(w, "trip not found", http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+		}
 		return
 	}
 
-	// Format response
-	t := raw.Trip
-	resp := TripDetailsResponse{
-		TripId: t.GtfsId,
-		Route: RouteResponse{
-			ShortName: t.Route.ShortName,
-			LongName:  t.Route.LongName,
-			Color:     t.Route.Color,
-		},
-		Headsign: t.TripHeadsign,
-		Stops:    make([]StopArrival, 0, len(t.Stoptimes)),
-	}
-
-	if t.TripGeometry != nil {
-		resp.Geometry = t.TripGeometry.Points
-	}
-
-	for _, stoptime := range t.Stoptimes {
-		resp.Stops = append(resp.Stops, StopArrival{
-			GtfsId:           stoptime.Stop.GtfsId,
-			Name:             stoptime.Stop.Name,
-			Code:             stoptime.Stop.Code,
-			Lat:              stoptime.Stop.Lat,
-			Lon:              stoptime.Stop.Lon,
-			ScheduledArrival: formatSeconds(stoptime.ScheduledArrival),
-			RealtimeArrival:  formatSeconds(stoptime.RealtimeArrival),
-			Delay:            stoptime.ArrivalDelay,
-			Realtime:         stoptime.Realtime,
-		})
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	w.Write(dataInterface.([]byte))
 }
 
 // Stop Details Output Structs
@@ -526,91 +556,121 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 		numDepartures = val
 	}
 
-	queryStr := `
-		query GetStopTimetable($stopId: String!, $numberOfDepartures: Int!) {
-			stop(id: $stopId) {
-				gtfsId
-				name
-				code
-				lat
-				lon
-				routes {
-					shortName
-					longName
-					mode
-				}
-				stoptimesWithoutPatterns(numberOfDepartures: $numberOfDepartures) {
-					scheduledArrival
-					realtimeArrival
-					arrivalDelay
-					realtime
-					realtimeState
-					headsign
-					trip {
-						gtfsId
-						route {
-							shortName
-							color
+	key := fmt.Sprintf("stop:%s:%d", stopId, numDepartures)
+
+	if cached, ok := h.apiCache.Get(key); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(cached)
+		return
+	}
+
+	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
+		// Double-check cache inside singleflight
+		if cached, ok := h.apiCache.Get(key); ok {
+			return cached, nil
+		}
+
+		queryStr := `
+			query GetStopTimetable($stopId: String!, $numberOfDepartures: Int!) {
+				stop(id: $stopId) {
+					gtfsId
+					name
+					code
+					lat
+					lon
+					routes {
+						shortName
+						longName
+						mode
+					}
+					stoptimesWithoutPatterns(numberOfDepartures: $numberOfDepartures) {
+						scheduledArrival
+						realtimeArrival
+						arrivalDelay
+						realtime
+						realtimeState
+						headsign
+						trip {
+							gtfsId
+							route {
+								shortName
+								color
+							}
 						}
 					}
 				}
 			}
+		`
+
+		variables := map[string]interface{}{
+			"stopId":             stopId,
+			"numberOfDepartures": numDepartures,
 		}
-	`
+		var raw rawStopResponse
 
-	variables := map[string]interface{}{
-		"stopId":             stopId,
-		"numberOfDepartures": numDepartures,
-	}
-	var raw rawStopResponse
-
-	if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
-		log.Printf("GraphQL query error for stop %s: %v\n", stopId, err)
-		http.Error(w, "upstream api error", http.StatusBadGateway)
-		return
-	}
-
-	if raw.Stop == nil {
-		http.Error(w, "stop not found", http.StatusNotFound)
-		return
-	}
-
-	s := raw.Stop
-	resp := StopDetailsResponse{
-		Stop: StopInfo{
-			GtfsId: s.GtfsId,
-			Name:   s.Name,
-			Code:   s.Code,
-			Lat:    s.Lat,
-			Lon:    s.Lon,
-		},
-		Routes:     make([]string, 0),
-		Departures: make([]StopDepartureInfo, 0, len(s.StoptimesWithoutPatterns)),
-	}
-
-	// Extract unique routes
-	seenRoutes := make(map[string]bool)
-	for _, route := range s.Routes {
-		if !seenRoutes[route.ShortName] {
-			seenRoutes[route.ShortName] = true
-			resp.Routes = append(resp.Routes, route.ShortName)
+		if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
+			log.Printf("GraphQL query error for stop %s: %v\n", stopId, err)
+			return nil, fmt.Errorf("upstream api error")
 		}
-	}
 
-	for _, dep := range s.StoptimesWithoutPatterns {
-		resp.Departures = append(resp.Departures, StopDepartureInfo{
-			Line:             dep.Trip.Route.ShortName,
-			Headsign:         dep.Headsign,
-			ScheduledArrival: formatSeconds(dep.ScheduledArrival),
-			RealtimeArrival:  formatSeconds(dep.RealtimeArrival),
-			Delay:            dep.ArrivalDelay,
-			Realtime:         dep.Realtime,
-			TripId:           dep.Trip.GtfsId,
-		})
+		if raw.Stop == nil {
+			return nil, fmt.Errorf("stop not found")
+		}
+
+		s := raw.Stop
+		resp := StopDetailsResponse{
+			Stop: StopInfo{
+				GtfsId: s.GtfsId,
+				Name:   s.Name,
+				Code:   s.Code,
+				Lat:    s.Lat,
+				Lon:    s.Lon,
+			},
+			Routes:     make([]string, 0),
+			Departures: make([]StopDepartureInfo, 0, len(s.StoptimesWithoutPatterns)),
+		}
+
+		// Extract unique routes
+		seenRoutes := make(map[string]bool)
+		for _, route := range s.Routes {
+			if !seenRoutes[route.ShortName] {
+				seenRoutes[route.ShortName] = true
+				resp.Routes = append(resp.Routes, route.ShortName)
+			}
+		}
+
+		for _, dep := range s.StoptimesWithoutPatterns {
+			resp.Departures = append(resp.Departures, StopDepartureInfo{
+				Line:             dep.Trip.Route.ShortName,
+				Headsign:         dep.Headsign,
+				ScheduledArrival: formatSeconds(dep.ScheduledArrival),
+				RealtimeArrival:  formatSeconds(dep.RealtimeArrival),
+				Delay:            dep.ArrivalDelay,
+				Realtime:         dep.Realtime,
+				TripId:           dep.Trip.GtfsId,
+			})
+		}
+
+		jsonBytes, err := json.Marshal(resp)
+		if err != nil {
+			return nil, err
+		}
+
+		h.apiCache.Set(key, jsonBytes, 10*time.Second)
+		return jsonBytes, nil
+	})
+
+	if err != nil {
+		if err.Error() == "stop not found" {
+			http.Error(w, "stop not found", http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+		}
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	w.Write(dataInterface.([]byte))
 }
 
 func formatSeconds(sec int) string {
@@ -650,95 +710,125 @@ func (h *Handlers) RouteDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	queryStr := `
-		query GetRouteDetails($shortName: String!) {
-			routes(name: $shortName, transportModes: [TRAM]) {
-				gtfsId
-				shortName
-				mode
-				color
-				patterns {
-					patternGeometry {
-						points
-					}
-					stops {
-						gtfsId
+	key := "route:" + shortName
+
+	if cached, ok := h.apiCache.Get(key); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(cached)
+		return
+	}
+
+	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
+		// Double-check cache inside singleflight
+		if cached, ok := h.apiCache.Get(key); ok {
+			return cached, nil
+		}
+
+		queryStr := `
+			query GetRouteDetails($shortName: String!) {
+				routes(name: $shortName, transportModes: [TRAM]) {
+					gtfsId
+					shortName
+					mode
+					color
+					patterns {
+						patternGeometry {
+							points
+						}
+						stops {
+							gtfsId
+						}
 					}
 				}
 			}
+		`
+
+		variables := map[string]interface{}{"shortName": shortName}
+		var raw rawRouteResponse
+
+		if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
+			log.Printf("GraphQL query error for route %s: %v\n", shortName, err)
+			return nil, fmt.Errorf("upstream api error")
 		}
-	`
 
-	variables := map[string]interface{}{"shortName": shortName}
-	var raw rawRouteResponse
-
-	if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
-		log.Printf("GraphQL query error for route %s: %v\n", shortName, err)
-		http.Error(w, "upstream api error", http.StatusBadGateway)
-		return
-	}
-
-	if len(raw.Routes) == 0 {
-		http.Error(w, "route not found", http.StatusNotFound)
-		return
-	}
-
-	// Find exact match or fallback to first
-	var matchedRoute *struct {
-		GtfsId    string `json:"gtfsId"`
-		ShortName string `json:"shortName"`
-		Mode      string `json:"mode"`
-		Color     string `json:"color"`
-		Patterns  []struct {
-			PatternGeometry struct {
-				Points string `json:"points"`
-			} `json:"patternGeometry"`
-			Stops []struct {
-				GtfsId string `json:"gtfsId"`
-			} `json:"stops"`
-		} `json:"patterns"`
-	}
-
-	for _, route := range raw.Routes {
-		if route.ShortName == shortName {
-			matchedRoute = &route
-			break
+		if len(raw.Routes) == 0 {
+			return nil, fmt.Errorf("route not found")
 		}
-	}
 
-	if matchedRoute == nil {
-		matchedRoute = &raw.Routes[0]
-	}
-
-	// Extract unique geometries and stops
-	geometries := make([]string, 0, len(matchedRoute.Patterns))
-	seenGeom := make(map[string]bool)
-	stops := make([]string, 0)
-	seenStops := make(map[string]bool)
-	for _, pattern := range matchedRoute.Patterns {
-		pts := pattern.PatternGeometry.Points
-		if pts != "" && !seenGeom[pts] {
-			seenGeom[pts] = true
-			geometries = append(geometries, pts)
+		// Find exact match or fallback to first
+		var matchedRoute *struct {
+			GtfsId    string `json:"gtfsId"`
+			ShortName string `json:"shortName"`
+			Mode      string `json:"mode"`
+			Color     string `json:"color"`
+			Patterns  []struct {
+				PatternGeometry struct {
+					Points string `json:"points"`
+				} `json:"patternGeometry"`
+				Stops []struct {
+					GtfsId string `json:"gtfsId"`
+				} `json:"stops"`
+			} `json:"patterns"`
 		}
-		for _, stop := range pattern.Stops {
-			id := stop.GtfsId
-			if id != "" && !seenStops[id] {
-				seenStops[id] = true
-				stops = append(stops, id)
+
+		for _, route := range raw.Routes {
+			if route.ShortName == shortName {
+				matchedRoute = &route
+				break
 			}
 		}
-	}
 
-	resp := RouteDetailsResponse{
-		ShortName:  matchedRoute.ShortName,
-		Color:      matchedRoute.Color,
-		Geometries: geometries,
-		Stops:      stops,
+		if matchedRoute == nil {
+			matchedRoute = &raw.Routes[0]
+		}
+
+		// Extract unique geometries and stops
+		geometries := make([]string, 0, len(matchedRoute.Patterns))
+		seenGeom := make(map[string]bool)
+		stops := make([]string, 0)
+		seenStops := make(map[string]bool)
+		for _, pattern := range matchedRoute.Patterns {
+			pts := pattern.PatternGeometry.Points
+			if pts != "" && !seenGeom[pts] {
+				seenGeom[pts] = true
+				geometries = append(geometries, pts)
+			}
+			for _, stop := range pattern.Stops {
+				id := stop.GtfsId
+				if id != "" && !seenStops[id] {
+					seenStops[id] = true
+					stops = append(stops, id)
+				}
+			}
+		}
+
+		resp := RouteDetailsResponse{
+			ShortName:  matchedRoute.ShortName,
+			Color:      matchedRoute.Color,
+			Geometries: geometries,
+			Stops:      stops,
+		}
+
+		jsonBytes, err := json.Marshal(resp)
+		if err != nil {
+			return nil, err
+		}
+
+		h.apiCache.Set(key, jsonBytes, 1*time.Hour)
+		return jsonBytes, nil
+	})
+
+	if err != nil {
+		if err.Error() == "route not found" {
+			http.Error(w, "route not found", http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+		}
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	w.Write(dataInterface.([]byte))
 }
 
 type BikeStationDetailsResponse struct {
@@ -782,77 +872,107 @@ func (h *Handlers) BikeStationDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	queryStr := `
-		query GetBikeStationDetails($stationId: String!) {
-			vehicleRentalStation(id: $stationId) {
-				stationId
-				name
-				allowPickup
-				allowDropoff
-				availableVehicles {
-					byType {
-						count
-						vehicleType {
-							formFactor
-						}
-					}
-				}
-				availableSpaces {
-					byType {
-						count
-						vehicleType {
-							formFactor
-						}
-					}
-				}
-			}
-		}
-	`
+	key := "bike:" + stationId
 
-	variables := map[string]interface{}{"stationId": stationId}
-	var raw rawBikeStationResponse
-
-	if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
-		log.Printf("GraphQL query error for bike station %s: %v\n", stationId, err)
-		http.Error(w, "upstream api error", http.StatusBadGateway)
+	if cached, ok := h.apiCache.Get(key); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(cached)
 		return
 	}
 
-	if raw.VehicleRentalStation == nil {
-		http.Error(w, "bike station not found", http.StatusNotFound)
+	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
+		// Double-check cache inside singleflight
+		if cached, ok := h.apiCache.Get(key); ok {
+			return cached, nil
+		}
+
+		queryStr := `
+			query GetBikeStationDetails($stationId: String!) {
+				vehicleRentalStation(id: $stationId) {
+					stationId
+					name
+					allowPickup
+					allowDropoff
+					availableVehicles {
+						byType {
+							count
+							vehicleType {
+								formFactor
+							}
+						}
+					}
+					availableSpaces {
+						byType {
+							count
+							vehicleType {
+								formFactor
+							}
+						}
+					}
+				}
+			}
+		`
+
+		variables := map[string]interface{}{"stationId": stationId}
+		var raw rawBikeStationResponse
+
+		if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
+			log.Printf("GraphQL query error for bike station %s: %v\n", stationId, err)
+			return nil, fmt.Errorf("upstream api error")
+		}
+
+		if raw.VehicleRentalStation == nil {
+			return nil, fmt.Errorf("bike station not found")
+		}
+
+		s := raw.VehicleRentalStation
+		bikes := 0
+		if s.AvailableVehicles != nil {
+			for _, bt := range s.AvailableVehicles.ByType {
+				if strings.ToUpper(bt.VehicleType.FormFactor) == "BICYCLE" {
+					bikes += bt.Count
+				}
+			}
+		}
+
+		spaces := 0
+		if s.AvailableSpaces != nil {
+			for _, bt := range s.AvailableSpaces.ByType {
+				if strings.ToUpper(bt.VehicleType.FormFactor) == "BICYCLE" {
+					spaces += bt.Count
+				}
+			}
+		}
+
+		resp := BikeStationDetailsResponse{
+			StationId:       s.StationId,
+			Name:            s.Name,
+			AllowPickup:     s.AllowPickup,
+			AllowDropoff:    s.AllowDropoff,
+			BikesAvailable:  bikes,
+			SpacesAvailable: spaces,
+		}
+
+		jsonBytes, err := json.Marshal(resp)
+		if err != nil {
+			return nil, err
+		}
+
+		h.apiCache.Set(key, jsonBytes, 15*time.Second)
+		return jsonBytes, nil
+	})
+
+	if err != nil {
+		if err.Error() == "bike station not found" {
+			http.Error(w, "bike station not found", http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+		}
 		return
-	}
-
-	s := raw.VehicleRentalStation
-	bikes := 0
-	if s.AvailableVehicles != nil {
-		for _, bt := range s.AvailableVehicles.ByType {
-			if strings.ToUpper(bt.VehicleType.FormFactor) == "BICYCLE" {
-				bikes += bt.Count
-			}
-		}
-	}
-
-	spaces := 0
-	if s.AvailableSpaces != nil {
-		for _, bt := range s.AvailableSpaces.ByType {
-			if strings.ToUpper(bt.VehicleType.FormFactor) == "BICYCLE" {
-				spaces += bt.Count
-			}
-		}
-	}
-
-	resp := BikeStationDetailsResponse{
-		StationId:       s.StationId,
-		Name:            s.Name,
-		AllowPickup:     s.AllowPickup,
-		AllowDropoff:    s.AllowDropoff,
-		BikesAvailable:  bikes,
-		SpacesAvailable: spaces,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	w.Write(dataInterface.([]byte))
 }
 
 // Disruption Alert Output Structs

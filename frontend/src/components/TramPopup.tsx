@@ -1,7 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import React, { useEffect, useState } from 'react';
 import type { VehiclePosition, TripDetailsResponse, Alert } from '../types';
-import { fetchTripDetails } from '../lib/api';
 import { AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Activity, Gauge, Compass, Cpu, Database, Users, ShieldCheck, ExternalLink } from 'lucide-react';
 
 interface TramPopupProps {
@@ -11,6 +10,9 @@ interface TramPopupProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   alerts: Alert[];
+  tripDetails: TripDetailsResponse | null;
+  loading: boolean;
+  error: string | null;
 }
 
 export const TramPopup: React.FC<TramPopupProps> = ({
@@ -20,15 +22,15 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   isCollapsed,
   onToggleCollapse,
   alerts = [],
+  tripDetails,
+  loading,
+  error,
 }) => {
   // Suppress unused variable warning for onClose
   if (false as boolean) {
     onClose();
   }
 
-  const [tripDetails, setTripDetails] = useState<TripDetailsResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const [showAllStops, setShowAllStops] = useState<boolean>(false);
   const [lastStopId, setLastStopId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'telemetry' | 'schedule' | 'diagnostics'>('telemetry');
@@ -57,32 +59,15 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   }, [tram.ts]);
 
   useEffect(() => {
-    if (!tram.tripId) {
-      setError('Trip ID not available for this vehicle');
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setTripDetails(null);
     setShowAllStops(false); // Reset to collapsed on trip change
     setLastStopId(tram.stop || null);
-
-    fetchTripDetails(tram.tripId)
-      .then((data) => {
-        setTripDetails(data);
-        setLoading(false);
-        if (onRouteNameReady && data.route?.longName) {
-          onRouteNameReady(data.route.longName);
-        }
-      })
-      .catch((err) => {
-        console.error(err);
-        setError('Failed to load schedule details');
-        setLoading(false);
-      });
   }, [tram.tripId]);
+
+  useEffect(() => {
+    if (onRouteNameReady && tripDetails?.route?.longName) {
+      onRouteNameReady(tripDetails.route.longName);
+    }
+  }, [tripDetails?.route?.longName, onRouteNameReady]);
 
   const getDelayColor = (seconds: number) => {
     if (seconds > 60) return '#f87171';

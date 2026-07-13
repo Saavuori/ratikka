@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.32.0] - 2026-07-13
+
+### Added
+- **API Request Coalescing (Singleflight)**: Integrated Go's `singleflight.Group` to merge concurrent queries for the same Route, Trip, Stop, or Bike Station into a single upstream Digitransit GraphQL API request.
+- **Thread-Safe In-Memory Response Caching**: Added a backend cache with custom TTLs: 1 hour for Route Details (static geometries and stop lists), 10 seconds for Trip and Stop timetables, and 15 seconds for Bike Stations.
+
+### Changed
+- **Lifting State Up (Fetch Deduplication)**: Lifted the `selectedTripDetails` fetch logic and state up to `App.tsx`, sharing it via props across `Map.tsx`, `TramCard.tsx`, and `TramPopup.tsx` to eliminate redundant concurrent HTTP requests on vehicle selection.
+
+---
+
 ## [v0.31.0] - 2026-07-13
 
 ### Added

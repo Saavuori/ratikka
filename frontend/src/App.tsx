@@ -9,9 +9,9 @@ import { TramCard } from './components/TramCard';
 import { StopPopup } from './components/StopPopup';
 import { BikePopup } from './components/BikePopup';
 import { VersionBadge } from './components/VersionBadge';
-import { fetchRouteDetails, fetchAlerts } from './lib/api';
+import { fetchRouteDetails, fetchAlerts, fetchTripDetails } from './lib/api';
 import { areTripsEquivalent } from './lib/trip';
-import type { VehiclePosition, Alert } from './types';
+import type { VehiclePosition, Alert, TripDetailsResponse } from './types';
 
 function App() {
   const { trams, handleUpdate } = useTramData();
@@ -327,6 +327,54 @@ function App() {
     ? (selectedTram.veh && selectedTram.veh !== '0' ? trams[selectedTram.veh] || selectedTram : selectedTram)
     : null;
 
+  const [selectedTripDetails, setSelectedTripDetails] = useState<TripDetailsResponse | null>(null);
+  const [isLoadingTripDetails, setIsLoadingTripDetails] = useState<boolean>(false);
+  const [tripDetailsError, setTripDetailsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const tripId = liveTram?.tripId;
+    if (!tripId) {
+      setSelectedTripDetails(null);
+      setIsLoadingTripDetails(false);
+      setTripDetailsError(null);
+      return;
+    }
+
+    // Don't refetch if we already have the details for this tripId
+    if (selectedTripDetails && selectedTripDetails.tripId === tripId) {
+      return;
+    }
+
+    setIsLoadingTripDetails(true);
+    setTripDetailsError(null);
+    setSelectedTripDetails(null);
+
+    let active = true;
+    fetchTripDetails(tripId)
+      .then((data) => {
+        if (active) {
+          setSelectedTripDetails(data);
+          setTripDetailsError(null);
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          console.error('Failed to fetch trip details:', err);
+          setTripDetailsError('Failed to load trip timetable');
+          setSelectedTripDetails(null);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoadingTripDetails(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [liveTram?.tripId]);
+
   const handleCloseTram = () => {
     setSelectedTram(null);
   };
@@ -355,6 +403,7 @@ function App() {
         onMapBearingChange={setMapBearing}
         showTrams={showTrams}
         showBuses={showBuses}
+        selectedTripDetails={selectedTripDetails}
       />
 
       {/* Sidebar Filters Panel */}
@@ -387,6 +436,7 @@ function App() {
           onClose={handleCloseTram}
           isFollowing={isFollowing}
           onToggleFollow={() => setIsFollowing(!isFollowing)}
+          tripDetails={selectedTripDetails}
         />
       )}
 
@@ -398,6 +448,9 @@ function App() {
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
           alerts={alerts}
+          tripDetails={selectedTripDetails}
+          loading={isLoadingTripDetails}
+          error={tripDetailsError}
         />
       )}
 
