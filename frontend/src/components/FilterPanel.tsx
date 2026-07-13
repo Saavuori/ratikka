@@ -21,6 +21,9 @@ interface FilterPanelProps {
   showBuses: boolean;
   setShowBuses: (show: boolean) => void;
   alerts: Alert[];
+  selectedTram: VehiclePosition | null;
+  selectedStop: { id: string; name: string; code: string; } | null;
+  selectedStopRoutes: string[];
 }
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
@@ -42,12 +45,68 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   showBuses,
   setShowBuses,
   alerts = [],
+  selectedTram = null,
+  selectedStop = null,
+  selectedStopRoutes = [],
 }) => {
   const [isAlertsExpanded, setIsAlertsExpanded] = useState(false);
 
-  const severeAlerts = alerts.filter((a) => a.severityLevel === 'SEVERE');
-  const warningAlerts = alerts.filter((a) => a.severityLevel === 'WARNING');
-  const totalAlertsCount = alerts.length;
+  // Filter alerts contextually
+  const filteredAlerts = alerts.filter(alert => {
+    // 1. Vehicle selected: show alerts affecting that vehicle's line
+    if (selectedTram) {
+      return alert.entities?.some(entity =>
+        entity.type === 'Route' && (entity.gtfsId === selectedTram.route || entity.shortName === selectedTram.desi)
+      );
+    }
+    
+    // 2. Stop selected: show alerts affecting the stop or serving lines
+    if (selectedStop) {
+      return alert.entities?.some(entity =>
+        (entity.type === 'Stop' && entity.gtfsId === selectedStop.id) ||
+        (entity.type === 'Route' && selectedStopRoutes.includes(entity.shortName || ''))
+      );
+    }
+
+    // 3. Line filters active: show alerts affecting checked lines
+    if (selectedLines.length > 0) {
+      return alert.entities?.some(entity =>
+        entity.type === 'Route' && selectedLines.includes(entity.shortName || '')
+      );
+    }
+
+    // 4. No active selection: show ONLY global/system-wide alerts
+    const hasSpecificRouteOrStop = alert.entities?.some(
+      entity => entity.type === 'Route' || entity.type === 'Stop'
+    );
+    return !hasSpecificRouteOrStop;
+  });
+
+  const severeAlerts = filteredAlerts.filter((a) => a.severityLevel === 'SEVERE');
+  const warningAlerts = filteredAlerts.filter((a) => a.severityLevel === 'WARNING');
+  const filteredCount = filteredAlerts.length;
+
+  // Determine widget text and badge label context
+  let widgetLabel = 'All services normal';
+  let badgeText = '';
+
+  if (selectedTram) {
+    widgetLabel = filteredCount > 0 ? `Alerts for Line ${selectedTram.desi}` : `Line ${selectedTram.desi} is clear`;
+    badgeText = filteredCount > 0 ? 'ALERT' : 'OK';
+  } else if (selectedStop) {
+    widgetLabel = filteredCount > 0 ? `Alerts for ${selectedStop.name}` : `${selectedStop.name} is clear`;
+    badgeText = filteredCount > 0 ? 'ALERT' : 'OK';
+  } else if (selectedLines.length > 0) {
+    const linesStr = selectedLines.join(', ');
+    widgetLabel = filteredCount > 0 ? `Alerts for Line ${linesStr}` : `Selected lines are clear`;
+    badgeText = filteredCount > 0 ? 'ALERT' : 'OK';
+  } else {
+    // No selection: Show global/system-wide alerts
+    widgetLabel = filteredCount > 0 
+      ? `${filteredCount} System Alert${filteredCount > 1 ? 's' : ''}` 
+      : 'All systems normal';
+    badgeText = filteredCount > 0 ? 'SYSTEM' : 'OK';
+  }
 
   const getAlertBadgeColor = () => {
     if (severeAlerts.length > 0) return 'rgba(239, 68, 68, 0.2)';
@@ -116,7 +175,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       {/* Service Alerts Widget */}
       <div className="settings-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px', marginTop: '4px' }}>
         <button
-          onClick={() => totalAlertsCount > 0 && setIsAlertsExpanded(!isAlertsExpanded)}
+          onClick={() => filteredCount > 0 && setIsAlertsExpanded(!isAlertsExpanded)}
           style={{
             width: '100%',
             display: 'flex',
@@ -126,30 +185,28 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             border: '1px solid rgba(255, 255, 255, 0.06)',
             padding: '8px 10px',
             borderRadius: '8px',
-            cursor: totalAlertsCount > 0 ? 'pointer' : 'default',
+            cursor: filteredCount > 0 ? 'pointer' : 'default',
             color: '#f8fafc',
             textAlign: 'left',
             outline: 'none',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {totalAlertsCount > 0 ? (
+            {filteredCount > 0 ? (
               <AlertTriangle size={14} style={{ color: getAlertTextColor() }} />
             ) : (
               <CheckCircle2 size={14} style={{ color: '#34d399' }} />
             )}
             <span style={{ fontSize: '0.7rem', fontWeight: 700 }}>
-              {totalAlertsCount > 0
-                ? `${totalAlertsCount} Service Alert${totalAlertsCount > 1 ? 's' : ''}`
-                : 'All services normal'}
+              {widgetLabel}
             </span>
           </div>
-          {totalAlertsCount > 0 && (
+          {badgeText && (
             <span
               style={{
                 fontSize: '0.55rem',
-                backgroundColor: getAlertBadgeColor(),
-                color: getAlertTextColor(),
+                backgroundColor: badgeText === 'OK' ? 'rgba(52, 211, 153, 0.15)' : getAlertBadgeColor(),
+                color: badgeText === 'OK' ? '#34d399' : getAlertTextColor(),
                 padding: '2px 6px',
                 borderRadius: '4px',
                 fontWeight: 800,
@@ -158,20 +215,22 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 gap: '2px',
               }}
             >
-              {severeAlerts.length > 0 ? 'SEVERE' : warningAlerts.length > 0 ? 'WARNING' : 'INFO'}
-              <ChevronDown
-                size={10}
-                style={{
-                  transform: isAlertsExpanded ? 'rotate(180deg)' : 'none',
-                  transition: 'transform 0.2s ease',
-                  marginLeft: '2px',
-                }}
-              />
+              {badgeText}
+              {filteredCount > 0 && (
+                <ChevronDown
+                  size={10}
+                  style={{
+                    transform: isAlertsExpanded ? 'rotate(180deg)' : 'none',
+                    transition: 'transform 0.2s ease',
+                    marginLeft: '2px',
+                  }}
+                />
+              )}
             </span>
           )}
         </button>
 
-        {isAlertsExpanded && totalAlertsCount > 0 && (
+        {isAlertsExpanded && filteredCount > 0 && (
           <div
             style={{
               marginTop: '8px',
@@ -183,7 +242,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
               paddingRight: '4px',
             }}
           >
-            {alerts.map((alert, idx) => {
+            {filteredAlerts.map((alert, idx) => {
               const severityColor =
                 alert.severityLevel === 'SEVERE'
                   ? '#ef4444'

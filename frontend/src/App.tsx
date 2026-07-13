@@ -426,6 +426,9 @@ function App() {
         showBuses={showBuses}
         setShowBuses={setShowBuses}
         alerts={alerts}
+        selectedTram={liveTram}
+        selectedStop={selectedStop}
+        selectedStopRoutes={selectedStopRoutes}
       />
 
       {/* Floating top-center tram telemetry card */}

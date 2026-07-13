@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.34.0] - 2026-07-13
+
+### Added
+- **Dynamic Contextual Alert Filtering**: Sidebar Service Alerts now adapt dynamically to user map selections. Shows alerts only for the selected vehicle, selected stop (itself and all serving routes), or checked line filters.
+- **Noise-Free Global Announcement Fallback**: If no selection or filter is active, the sidebar feed displays *only* general/system-wide announcements (e.g. weather delays, network strikes) that affect all lines, filtering out minor line-specific alerts.
+- **Positive Status indicators**: Shows clean states like `Line 9 is clear` or `All systems normal` to reassure users of clear service statuses.
+
+---
+
 ## [v0.33.1] - 2026-07-13
 
 ### Fixed
