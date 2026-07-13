@@ -1,8 +1,8 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import React, { useEffect, useState } from 'react';
-import type { StopDetailsResponse } from '../types';
+import type { StopDetailsResponse, Alert } from '../types';
 import { fetchStopDetails } from '../lib/api';
-import { X, Clock, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Clock, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 
 interface StopPopupProps {
   stopId: string;
@@ -15,6 +15,7 @@ interface StopPopupProps {
   onStopCoordsLoaded?: (lat: number, lng: number) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  alerts: Alert[];
 }
 
 export const StopPopup: React.FC<StopPopupProps> = ({
@@ -28,10 +29,18 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   onStopCoordsLoaded,
   isCollapsed,
   onToggleCollapse,
+  alerts = [],
 }) => {
   const [details, setDetails] = useState<StopDetailsResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const relevantAlerts = alerts.filter(alert =>
+    alert.entities?.some(entity =>
+      (entity.type === 'Stop' && entity.gtfsId === stopId) ||
+      (entity.type === 'Route' && details && details.routes?.includes(entity.shortName || ''))
+    )
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -105,6 +114,70 @@ export const StopPopup: React.FC<StopPopupProps> = ({
           <X size={18} />
         </button>
       </div>
+
+      {/* Service Alert Warnings */}
+      {relevantAlerts.length > 0 && (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+          marginTop: '6px',
+          marginBottom: '10px'
+        }}>
+          {relevantAlerts.map((alert, idx) => {
+            const severityColor =
+              alert.severityLevel === 'SEVERE'
+                ? '#ef4444'
+                : alert.severityLevel === 'WARNING'
+                ? '#f59e0b'
+                : '#3b82f6';
+            return (
+              <div
+                key={idx}
+                style={{
+                  background: 'rgba(239, 68, 68, 0.04)',
+                  border: '1px solid rgba(239, 68, 68, 0.12)',
+                  borderLeft: `3px solid ${severityColor}`,
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                }}
+              >
+                <AlertTriangle size={14} style={{ color: severityColor, flexShrink: 0, marginTop: '2px' }} />
+                <div style={{ flex: 1 }}>
+                  <h4 style={{ margin: 0, fontSize: '0.65rem', fontWeight: 700, color: '#f1f5f9' }}>
+                    {alert.headerText}
+                  </h4>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '0.6rem', color: '#94a3b8', lineHeight: 1.3 }}>
+                    {alert.descriptionText}
+                  </p>
+                  {alert.url && (
+                    <a
+                      href={alert.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '2px',
+                        color: '#38bdf8',
+                        textDecoration: 'none',
+                        marginTop: '4px',
+                        fontWeight: 600,
+                        fontSize: '0.55rem',
+                      }}
+                    >
+                      Official Info <ExternalLink size={8} />
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Body */}
       <div className="timeline-container" style={{ flex: 1, marginTop: '16px' }}>

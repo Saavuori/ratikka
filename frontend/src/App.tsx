@@ -9,13 +9,30 @@ import { TramCard } from './components/TramCard';
 import { StopPopup } from './components/StopPopup';
 import { BikePopup } from './components/BikePopup';
 import { VersionBadge } from './components/VersionBadge';
-import { fetchRouteDetails } from './lib/api';
+import { fetchRouteDetails, fetchAlerts } from './lib/api';
 import { areTripsEquivalent } from './lib/trip';
-import type { VehiclePosition } from './types';
+import type { VehiclePosition, Alert } from './types';
 
 function App() {
   const { trams, handleUpdate } = useTramData();
   const { status: connectionStatus } = useWebSocket({ onMessage: (data) => handleUpdate(data.vehicles) });
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+
+  useEffect(() => {
+    const getAlerts = () => {
+      fetchAlerts()
+        .then((data) => {
+          setAlerts(data.alerts || []);
+        })
+        .catch((err) => {
+          console.error('Failed to fetch service alerts:', err);
+        });
+    };
+
+    getAlerts();
+    const interval = setInterval(getAlerts, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Map settings states with localStorage persistence
   const [mapTheme, setMapTheme] = useState<'light' | 'dark'>(() => {
@@ -359,6 +376,7 @@ function App() {
         setShowTrams={setShowTrams}
         showBuses={showBuses}
         setShowBuses={setShowBuses}
+        alerts={alerts}
       />
 
       {/* Floating top-center tram telemetry card */}
@@ -379,6 +397,7 @@ function App() {
           onClose={handleCloseTram}
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
+          alerts={alerts}
         />
       )}
 
@@ -398,6 +417,7 @@ function App() {
           }}
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
+          alerts={alerts}
         />
       )}
 

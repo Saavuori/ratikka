@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,8 +9,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
 	"ratikka/internal/cache"
 )
 
@@ -21,19 +24,67 @@ var (
 
 var startTime = time.Now()
 
+// responseCacheItem represents a cached HTTP response payload
+type responseCacheItem struct {
+	data      []byte
+	expiresAt time.Time
+}
+
+// ResponseCache is a thread-safe in-memory cache for API payloads
+type ResponseCache struct {
+	mu    sync.RWMutex
+	items map[string]responseCacheItem
+}
+
+func NewResponseCache() *ResponseCache {
+	return &ResponseCache{
+		items: make(map[string]responseCacheItem),
+	}
+}
+
+func (c *ResponseCache) Get(key string) ([]byte, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	item, ok := c.items[key]
+	if !ok || time.Now().After(item.expiresAt) {
+		return nil, false
+	}
+	return item.data, true
+}
+
+func (c *ResponseCache) Set(key string, data []byte, ttl time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.items[key] = responseCacheItem{
+		data:      data,
+		expiresAt: time.Now().Add(ttl),
+	}
+}
+
 type Handlers struct {
 	cache cache.Cache
 	gql   *GraphQLClient
 	mqtt  interface {
 		IsConnected() bool
 	}
+	alertsCache     map[string][]AlertResponse
+	alertsCacheTime map[string]time.Time
+	alertsMutex     sync.RWMutex
+
+	// Caching and request coalescing for other API queries
+	apiCache *ResponseCache
+	sfGroup  *singleflight.Group
 }
 
 func NewHandlers(c cache.Cache, gql *GraphQLClient, mqtt interface{ IsConnected() bool }) *Handlers {
 	return &Handlers{
-		cache: c,
-		gql:   gql,
-		mqtt:  mqtt,
+		cache:           c,
+		gql:             gql,
+		mqtt:            mqtt,
+		alertsCache:     make(map[string][]AlertResponse),
+		alertsCacheTime: make(map[string]time.Time),
+		apiCache:        NewResponseCache(),
+		sfGroup:         &singleflight.Group{},
 	}
 }
 
@@ -803,4 +854,142 @@ func (h *Handlers) BikeStationDetails(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
+
+// Disruption Alert Output Structs
+type AlertsListResponse struct {
+	Alerts []AlertResponse `json:"alerts"`
+}
+
+type AlertResponse struct {
+	Feed            string                `json:"feed"`
+	SeverityLevel   string                `json:"severityLevel"`
+	Effect          string                `json:"effect"`
+	Cause           string                `json:"cause"`
+	HeaderText      string                `json:"headerText"`
+	DescriptionText string                `json:"descriptionText"`
+	Url             string                `json:"url"`
+	StartDate       int64                 `json:"startDate"`
+	EndDate         int64                 `json:"endDate"`
+	Entities        []AlertEntityResponse `json:"entities"`
+}
+
+type AlertEntityResponse struct {
+	Type      string `json:"type"`                // "Route" or "Stop"
+	GtfsId    string `json:"gtfsId"`              // "HSL:1006"
+	ShortName string `json:"shortName,omitempty"` // e.g. "6"
+	Mode      string `json:"mode,omitempty"`      // e.g. "TRAM"
+	Name      string `json:"name,omitempty"`      // e.g. "Senaatintori"
+	Code      string `json:"code,omitempty"`      // e.g. "H1234"
+}
+
+func (h *Handlers) Alerts(w http.ResponseWriter, r *http.Request) {
+	// Normalize language code
+	lang := "fi"
+	acceptLang := r.Header.Get("Accept-Language")
+	if strings.HasPrefix(acceptLang, "en") {
+		lang = "en"
+	} else if strings.HasPrefix(acceptLang, "sv") {
+		lang = "sv"
+	}
+
+	h.alertsMutex.RLock()
+	cacheTime, exists := h.alertsCacheTime[lang]
+	cachedAlerts, hasAlerts := h.alertsCache[lang]
+	if exists && hasAlerts && time.Since(cacheTime) < 60*time.Second {
+		defer h.alertsMutex.RUnlock()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(AlertsListResponse{Alerts: cachedAlerts})
+		return
+	}
+	h.alertsMutex.RUnlock()
+
+	h.alertsMutex.Lock()
+	defer h.alertsMutex.Unlock()
+
+	// Double check after acquiring write lock
+	cacheTime, exists = h.alertsCacheTime[lang]
+	cachedAlerts, hasAlerts = h.alertsCache[lang]
+	if exists && hasAlerts && time.Since(cacheTime) < 60*time.Second {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(AlertsListResponse{Alerts: cachedAlerts})
+		return
+	}
+
+	// Fetch from Digitransit GraphQL API
+	queryStr := `
+		query GetServiceAlerts {
+			alerts {
+				feed
+				alertSeverityLevel
+				alertEffect
+				alertCause
+				alertHeaderText
+				alertDescriptionText
+				alertUrl
+				effectiveStartDate
+				effectiveEndDate
+				entities {
+					__typename
+					... on Route {
+						gtfsId
+						shortName
+						mode
+					}
+					... on Stop {
+						gtfsId
+						name
+						code
+					}
+				}
+			}
+		}
+	`
+
+	// Context with the accept-language value
+	ctx := context.WithValue(r.Context(), AcceptLanguageKey, lang)
+
+	var raw rawAlertResponse
+	if err := h.gql.query(ctx, queryStr, nil, &raw); err != nil {
+		log.Printf("GraphQL query error for alerts: %v\n", err)
+		http.Error(w, "upstream api error", http.StatusBadGateway)
+		return
+	}
+
+	// Map rawAlerts to AlertResponse
+	alerts := make([]AlertResponse, 0, len(raw.Alerts))
+	for _, ra := range raw.Alerts {
+		entities := make([]AlertEntityResponse, 0, len(ra.Entities))
+		for _, re := range ra.Entities {
+			entities = append(entities, AlertEntityResponse{
+				Type:      re.Typename,
+				GtfsId:    re.GtfsId,
+				ShortName: re.ShortName,
+				Mode:      re.Mode,
+				Name:      re.Name,
+				Code:      re.Code,
+			})
+		}
+
+		alerts = append(alerts, AlertResponse{
+			Feed:            ra.Feed,
+			SeverityLevel:   ra.AlertSeverityLevel,
+			Effect:          ra.AlertEffect,
+			Cause:           ra.AlertCause,
+			HeaderText:      ra.AlertHeaderText,
+			DescriptionText: ra.AlertDescriptionText,
+			Url:             ra.AlertUrl,
+			StartDate:       ra.EffectiveStartDate,
+			EndDate:         ra.EffectiveEndDate,
+			Entities:        entities,
+		})
+	}
+
+	// Update cache
+	h.alertsCache[lang] = alerts
+	h.alertsCacheTime[lang] = time.Now()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(AlertsListResponse{Alerts: alerts})
+}
+
 

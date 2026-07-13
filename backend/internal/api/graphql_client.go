@@ -11,6 +11,10 @@ import (
 
 var DigitransitURLEndpoint = "https://api.digitransit.fi/routing/v2/hsl/gtfs/v1"
 
+type ContextKey string
+const AcceptLanguageKey ContextKey = "accept-language"
+
+
 type GraphQLClient struct {
 	apiKey     string
 	httpClient *http.Client
@@ -106,6 +110,33 @@ type rawStopResponse struct {
 	} `json:"stop"`
 }
 
+type rawAlertResponse struct {
+	Alerts []rawAlert `json:"alerts"`
+}
+
+type rawAlert struct {
+	Feed                 string      `json:"feed"`
+	AlertSeverityLevel   string      `json:"alertSeverityLevel"`
+	AlertEffect          string      `json:"alertEffect"`
+	AlertCause           string      `json:"alertCause"`
+	AlertHeaderText      string      `json:"alertHeaderText"`
+	AlertDescriptionText string      `json:"alertDescriptionText"`
+	AlertUrl             string      `json:"alertUrl"`
+	EffectiveStartDate   int64       `json:"effectiveStartDate"`
+	EffectiveEndDate     int64       `json:"effectiveEndDate"`
+	Entities             []rawEntity `json:"entities"`
+}
+
+type rawEntity struct {
+	Typename  string `json:"__typename"`
+	GtfsId    string `json:"gtfsId"`
+	ShortName string `json:"shortName,omitempty"`
+	Mode      string `json:"mode,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Code      string `json:"code,omitempty"`
+}
+
+
 func (c *GraphQLClient) query(ctx context.Context, query string, variables map[string]interface{}, out interface{}) error {
 	reqBody := graphQLRequest{
 		Query:     query,
@@ -126,6 +157,10 @@ func (c *GraphQLClient) query(ctx context.Context, query string, variables map[s
 	if c.apiKey != "" {
 		req.Header.Set("digitransit-subscription-key", c.apiKey)
 	}
+	if lang, ok := ctx.Value(AcceptLanguageKey).(string); ok && lang != "" {
+		req.Header.Set("Accept-Language", lang)
+	}
+
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

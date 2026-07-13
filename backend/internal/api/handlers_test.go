@@ -517,3 +517,90 @@ func TestHandlers_BikeStationDetails(t *testing.T) {
 	}
 }
 
+func TestHandlers_Alerts(t *testing.T) {
+	mockGraphQLResponse := `{
+		"data": {
+			"alerts": [
+				{
+					"feed": "HSL",
+					"alertSeverityLevel": "WARNING",
+					"alertEffect": "MODIFIED_SERVICE",
+					"alertCause": "ACCIDENT",
+					"alertHeaderText": "Line 6 diversion",
+					"alertDescriptionText": "Line 6 is diverted due to an accident.",
+					"alertUrl": "https://hsl.fi",
+					"effectiveStartDate": 1725458400,
+					"effectiveEndDate": 1725462000,
+					"entities": [
+						{
+							"__typename": "Route",
+							"gtfsId": "HSL:1006",
+							"shortName": "6",
+							"mode": "TRAM"
+						}
+					]
+				}
+			]
+		}
+	}`
+
+	queryCount := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queryCount++
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(mockGraphQLResponse))
+	}))
+	defer ts.Close()
+
+	oldEndpoint := DigitransitURLEndpoint
+	DigitransitURLEndpoint = ts.URL
+	defer func() { DigitransitURLEndpoint = oldEndpoint }()
+
+	memCache := cache.NewMemoryCache()
+	mqtt := &mockMqttWorker{connected: true}
+	gql := NewGraphQLClient("test-api-key")
+	handlers := NewHandlers(memCache, gql, mqtt)
+
+	// First request: triggers fetch
+	req := httptest.NewRequest("GET", "/api/v1/alerts", nil)
+	rr := httptest.NewRecorder()
+	handlers.Alerts(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+
+	var resp AlertsListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.Alerts) != 1 {
+		t.Fatalf("expected 1 alert, got %d", len(resp.Alerts))
+	}
+	alert := resp.Alerts[0]
+	if alert.HeaderText != "Line 6 diversion" {
+		t.Errorf("expected header 'Line 6 diversion', got %q", alert.HeaderText)
+	}
+	if len(alert.Entities) != 1 || alert.Entities[0].ShortName != "6" {
+		t.Errorf("expected entities shortName '6', got %v", alert.Entities)
+	}
+
+	if queryCount != 1 {
+		t.Errorf("expected 1 backend query, got %d", queryCount)
+	}
+
+	// Second request: should hit cache
+	rr2 := httptest.NewRecorder()
+	handlers.Alerts(rr2, req)
+
+	if rr2.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rr2.Code)
+	}
+
+	if queryCount != 1 {
+		t.Errorf("expected query count to remain 1 due to caching, got %d", queryCount)
+	}
+}
+
+

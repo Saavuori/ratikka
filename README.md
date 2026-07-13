@@ -24,6 +24,7 @@ A premium, high-performance web application mapping **all active Helsinki trams,
 * **Immersive Chase Mode (Follow Vehicle)**: Lock onto any tram or bus to automatically track it. The camera auto-centers and auto-rotates (bearing) matching the vehicle's live heading.
 * **Interactive Route Network & Highlights**: Toggle route networks on the map. Click a stop to see all routes serving it highlighted, or click a vehicle to highlight its specific path.
 * **Live City Bike Station Capacity**: Click HSL City Bike POI stops to fetch live availability counts (bikes available vs. empty spaces) directly from Digitransit.
+* **Real-time HSL Service Disruptions**: View active transit disruptions, detours, and delay alerts dynamically fetched and cached from Digitransit's Routing API. Warnings are shown as a collapsible list in the sidebar and contextually highlighted inside individual tram and stop timetables.
 * **Flexible Filtering**: A widened 190px left filter panel featuring a 3-column line button grid layout to easily filter specific routes (supporting 4-character lines) and checkboxes to toggle tram or bus layers independently.
 * **Glassmorphic UI Panels**: Premium responsive control cards that adjust seamlessly across mobile and desktop, including inline stop telemetry on the top info card.
 

@@ -1,4 +1,4 @@
-import type { TripDetailsResponse, StopDetailsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse } from '../types';
+import type { TripDetailsResponse, StopDetailsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, AlertsListResponse } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -41,4 +41,13 @@ export async function fetchBikeStationDetails(stationId: string): Promise<BikeSt
   }
   return res.json();
 }
+
+export async function fetchAlerts(): Promise<AlertsListResponse> {
+  const res = await fetch(`${API_BASE}/alerts`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch service alerts: ${res.statusText}`);
+  }
+  return res.json();
+}
+
 

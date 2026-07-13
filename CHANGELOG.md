@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.31.0] - 2026-07-13
+
+### Added
+- **HSL Service Disruption Alerts**: Integrated real-time service disruptions from Digitransit's Routing API.
+- **Normalized Multi-lingual Caching**: Added server-side caching (60s TTL) in Go backend keyed by `Accept-Language` headers (`fi`, `sv`, `en`) to prevent API rate limiting while maintaining localized alert messages.
+- **Sidebar Alerts Feed**: Implemented a collapsible, interactive Service Alerts feed inside the left `FilterPanel` listing active alerts with severity-colored left borders (INFO, WARNING, SEVERE), affected routes, and stops.
+- **Context-Aware Timetable Warnings**: Highlighted specific service disruptions inside `TramPopup` and `StopPopup` if they affect the selected transit vehicle line or the stop timetable.
+
+---
+
 ## [v0.30.0] - 2026-06-17
 
 ### Added

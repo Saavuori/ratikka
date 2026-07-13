@@ -102,3 +102,30 @@ export interface BikeStationDetailsResponse {
   spacesAvailable: number;
 }
 
+export interface AlertEntity {
+  type: string; // "Route" or "Stop"
+  gtfsId: string;
+  shortName?: string;
+  mode?: string;
+  name?: string;
+  code?: string;
+}
+
+export interface Alert {
+  feed: string;
+  severityLevel: 'INFO' | 'WARNING' | 'SEVERE';
+  effect: string;
+  cause: string;
+  headerText: string;
+  descriptionText: string;
+  url: string;
+  startDate: number;
+  endDate: number;
+  entities: AlertEntity[];
+}
+
+export interface AlertsListResponse {
+  alerts: Alert[];
+}
+
+
