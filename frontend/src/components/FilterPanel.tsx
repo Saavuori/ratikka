@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { VehiclePosition, Alert } from '../types';
-import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Route, Train, Bus, AlertTriangle, CheckCircle2, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Route, Train, Bus, AlertTriangle, ExternalLink } from 'lucide-react';
 
 interface FilterPanelProps {
   trams: Record<string, VehiclePosition>;
@@ -50,6 +50,32 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   selectedStopRoutes = [],
 }) => {
   const [isAlertsExpanded, setIsAlertsExpanded] = useState(false);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStart(e.touches[0].clientX);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStart === null) return;
+    const currentX = e.touches[0].clientX;
+    const diff = currentX - touchStart;
+
+    // Swipe left (at least 45px) to collapse
+    if (diff < -45 && !isCollapsed) {
+      onToggleCollapse();
+      setTouchStart(null);
+    }
+    // Swipe right (at least 45px) to expand
+    else if (diff > 45 && isCollapsed) {
+      onToggleCollapse();
+      setTouchStart(null);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setTouchStart(null);
+  };
 
   // Filter alerts contextually
   const filteredAlerts = alerts.filter(alert => {
@@ -139,7 +165,20 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   });
 
   return (
-    <div className={`glass-panel filter-panel ${isCollapsed ? 'collapsed' : ''}`}>
+    <div
+      className={`glass-panel filter-panel ${isCollapsed ? 'collapsed' : ''}`}
+      style={{
+        pointerEvents: 'auto',
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onClick={() => {
+        if (isCollapsed) {
+          onToggleCollapse();
+        }
+      }}
+    >
       {/* Collapse/Expand Toggle Tab */}
       <button
         className="filter-toggle-tab"
@@ -155,7 +194,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       </button>
 
       {/* Header */}
-      <div className="panel-header" style={{ paddingBottom: '8px' }}>
+      <div className="panel-header" style={{ paddingBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
           HSL - LIVE
           <span
@@ -170,6 +209,25 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             style={{ width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block' }}
           />
         </h1>
+        {!isCollapsed && (
+          <button
+            className="mobile-close-btn"
+            onClick={onToggleCollapse}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'none',
+              alignItems: 'center',
+              outline: 'none',
+            }}
+            aria-label="Collapse panel"
+          >
+            <ChevronLeft size={16} />
+          </button>
+        )}
       </div>
 
       {/* Service Alerts Widget */}
@@ -183,7 +241,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             justifyContent: 'space-between',
             background: 'rgba(255, 255, 255, 0.02)',
             border: '1px solid rgba(255, 255, 255, 0.06)',
-            padding: '8px 10px',
+            padding: filteredCount > 0 ? '8px 10px' : '5px 8px',
             borderRadius: '8px',
             cursor: filteredCount > 0 ? 'pointer' : 'default',
             color: '#f8fafc',
@@ -192,21 +250,19 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {filteredCount > 0 ? (
+            {filteredCount > 0 && (
               <AlertTriangle size={14} style={{ color: getAlertTextColor() }} />
-            ) : (
-              <CheckCircle2 size={14} style={{ color: '#34d399' }} />
             )}
             <span style={{ fontSize: '0.7rem', fontWeight: 700 }}>
               {widgetLabel}
             </span>
           </div>
-          {badgeText && (
+          {badgeText && badgeText !== 'OK' && (
             <span
               style={{
                 fontSize: '0.55rem',
-                backgroundColor: badgeText === 'OK' ? 'rgba(52, 211, 153, 0.15)' : getAlertBadgeColor(),
-                color: badgeText === 'OK' ? '#34d399' : getAlertTextColor(),
+                backgroundColor: getAlertBadgeColor(),
+                color: getAlertTextColor(),
                 padding: '2px 6px',
                 borderRadius: '4px',
                 fontWeight: 800,
@@ -216,16 +272,14 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
               }}
             >
               {badgeText}
-              {filteredCount > 0 && (
-                <ChevronDown
-                  size={10}
-                  style={{
-                    transform: isAlertsExpanded ? 'rotate(180deg)' : 'none',
-                    transition: 'transform 0.2s ease',
-                    marginLeft: '2px',
-                  }}
-                />
-              )}
+              <ChevronDown
+                size={10}
+                style={{
+                  transform: isAlertsExpanded ? 'rotate(180deg)' : 'none',
+                  transition: 'transform 0.2s ease',
+                  marginLeft: '2px',
+                }}
+              />
             </span>
           )}
         </button>
@@ -398,10 +452,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           <div className="legend-item">
             <span className="legend-color" style={{ backgroundColor: '#e17055' }} />
             <span>Stopped</span>
-          </div>
-          <div className="legend-item">
-            <span className="legend-color" style={{ backgroundColor: '#ff4757' }} />
-            <span>Next Stop</span>
           </div>
         </div>
       </div>

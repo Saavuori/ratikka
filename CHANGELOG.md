@@ -2,12 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.34.0] - 2026-07-13
+## [v0.34.0] - 2026-07-18
 
 ### Added
 - **Dynamic Contextual Alert Filtering**: Sidebar Service Alerts now adapt dynamically to user map selections. Shows alerts only for the selected vehicle, selected stop (itself and all serving routes), or checked line filters.
 - **Noise-Free Global Announcement Fallback**: If no selection or filter is active, the sidebar feed displays *only* general/system-wide announcements (e.g. weather delays, network strikes) that affect all lines, filtering out minor line-specific alerts.
 - **Positive Status indicators**: Shows clean states like `Line 9 is clear` or `All systems normal` to reassure users of clear service statuses.
+- **Compact Alerts Bar**: Hid the checkmark icon and the "OK" badge in clean state to dramatically reduce visual clutter and maximize vertical space in the sidebar.
+- **Mobile Sidebar Collapsed Peek**: Hidden the toggle tab button on mobile. The sidebar now leaves a subtle 16px glass edge peeking out when collapsed, allowing users to intuitively click or swipe it out.
+- **Swipe Gestures on Mobile**: Enabled touch gestures to swipe the sidebar open (swipe right) and closed (swipe left).
+- **Mobile Close Header Chevron**: Added a clear collapse chevron inside the header on mobile when the panel is open.
+- **Removed Irrelevant Legend Key**: Removed the "Next Stop" legend key to free up additional vertical space.
 
 ---
 

@@ -1071,7 +1071,29 @@ body {
   .maplibregl-ctrl-bottom-left {
     bottom: calc(20px + env(safe-area-inset-bottom)) !important;
   }
+
+  /* Hide the toggle tab icon on mobile */
+  .filter-toggle-tab {
+    display: none !important;
+  }
+
+  /* Collapsed sidebar peek layout on mobile */
+  .filter-panel.collapsed {
+    /* Slide out but leave a 16px peek of the rounded/border edge visible on mobile */
+    transform: translateX(calc(-100% + 16px)) !important;
+    cursor: pointer;
+  }
+
+  .filter-panel.collapsed:hover {
+    background: hsla(224, 71%, 8%, 0.95);
+  }
+
+  /* Render close chevron in panel header on mobile when open */
+  .mobile-close-btn {
+    display: flex !important;
+  }
 }
+
 
 
 
