@@ -231,182 +231,184 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       </div>
 
       {/* Service Alerts Widget */}
-      <div className="settings-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px', marginTop: '4px' }}>
-        <button
-          onClick={() => filteredCount > 0 && setIsAlertsExpanded(!isAlertsExpanded)}
-          style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            background: 'rgba(255, 255, 255, 0.02)',
-            border: '1px solid rgba(255, 255, 255, 0.06)',
-            padding: filteredCount > 0 ? '8px 10px' : '5px 8px',
-            borderRadius: '8px',
-            cursor: filteredCount > 0 ? 'pointer' : 'default',
-            color: '#f8fafc',
-            textAlign: 'left',
-            outline: 'none',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {filteredCount > 0 && (
-              <AlertTriangle size={14} style={{ color: getAlertTextColor() }} />
-            )}
-            <span style={{ fontSize: '0.7rem', fontWeight: 700 }}>
-              {widgetLabel}
-            </span>
-          </div>
-          {badgeText && badgeText !== 'OK' && (
-            <span
-              style={{
-                fontSize: '0.55rem',
-                backgroundColor: getAlertBadgeColor(),
-                color: getAlertTextColor(),
-                padding: '2px 6px',
-                borderRadius: '4px',
-                fontWeight: 800,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '2px',
-              }}
-            >
-              {badgeText}
-              <ChevronDown
-                size={10}
-                style={{
-                  transform: isAlertsExpanded ? 'rotate(180deg)' : 'none',
-                  transition: 'transform 0.2s ease',
-                  marginLeft: '2px',
-                }}
-              />
-            </span>
-          )}
-        </button>
-
-        {isAlertsExpanded && filteredCount > 0 && (
-          <div
+      {filteredCount > 0 && (
+        <div className="settings-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px', marginTop: '4px' }}>
+          <button
+            onClick={() => filteredCount > 0 && setIsAlertsExpanded(!isAlertsExpanded)}
             style={{
-              marginTop: '8px',
+              width: '100%',
               display: 'flex',
-              flexDirection: 'column',
-              gap: '6px',
-              maxHeight: '220px',
-              overflowY: 'auto',
-              paddingRight: '4px',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              padding: filteredCount > 0 ? '8px 10px' : '5px 8px',
+              borderRadius: '8px',
+              cursor: filteredCount > 0 ? 'pointer' : 'default',
+              color: '#f8fafc',
+              textAlign: 'left',
+              outline: 'none',
             }}
           >
-            {filteredAlerts.map((alert, idx) => {
-              const severityColor =
-                alert.severityLevel === 'SEVERE'
-                  ? '#ef4444'
-                  : alert.severityLevel === 'WARNING'
-                  ? '#f59e0b'
-                  : '#3b82f6';
-              return (
-                <div
-                  key={idx}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {filteredCount > 0 && (
+                <AlertTriangle size={14} style={{ color: getAlertTextColor() }} />
+              )}
+              <span style={{ fontSize: '0.7rem', fontWeight: 700 }}>
+                {widgetLabel}
+              </span>
+            </div>
+            {badgeText && badgeText !== 'OK' && (
+              <span
+                style={{
+                  fontSize: '0.55rem',
+                  backgroundColor: getAlertBadgeColor(),
+                  color: getAlertTextColor(),
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontWeight: 800,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                }}
+              >
+                {badgeText}
+                <ChevronDown
+                  size={10}
                   style={{
-                    background: 'rgba(255, 255, 255, 0.01)',
-                    border: `1px solid rgba(255, 255, 255, 0.03)`,
-                    borderLeft: `3px solid ${severityColor}`,
-                    padding: '8px',
-                    borderRadius: '4px',
-                    fontSize: '0.65rem',
+                    transform: isAlertsExpanded ? 'rotate(180deg)' : 'none',
+                    transition: 'transform 0.2s ease',
+                    marginLeft: '2px',
                   }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '4px' }}>
-                    <h4 style={{ margin: 0, fontWeight: 700, color: '#f1f5f9', fontSize: '0.65rem' }}>
-                      {alert.headerText}
-                    </h4>
+                />
+              </span>
+            )}
+          </button>
+
+          {isAlertsExpanded && filteredCount > 0 && (
+            <div
+              style={{
+                marginTop: '8px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                maxHeight: '220px',
+                overflowY: 'auto',
+                paddingRight: '4px',
+              }}
+            >
+              {filteredAlerts.map((alert, idx) => {
+                const severityColor =
+                  alert.severityLevel === 'SEVERE'
+                    ? '#ef4444'
+                    : alert.severityLevel === 'WARNING'
+                    ? '#f59e0b'
+                    : '#3b82f6';
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.01)',
+                      border: `1px solid rgba(255, 255, 255, 0.03)`,
+                      borderLeft: `3px solid ${severityColor}`,
+                      padding: '8px',
+                      borderRadius: '4px',
+                      fontSize: '0.65rem',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '4px' }}>
+                      <h4 style={{ margin: 0, fontWeight: 700, color: '#f1f5f9', fontSize: '0.65rem' }}>
+                        {alert.headerText}
+                      </h4>
+                    </div>
+                    <p style={{ margin: '4px 0', color: '#94a3b8', lineHeight: 1.3 }}>
+                      {alert.descriptionText}
+                    </p>
+                    
+                    {/* Affected lines */}
+                    {alert.entities && alert.entities.some(e => e.type === 'Route') && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+                        <span style={{ color: '#64748b', fontSize: '0.55rem', alignSelf: 'center' }}>Lines:</span>
+                        {alert.entities
+                          .filter(e => e.type === 'Route' && e.shortName)
+                          .map((e, eIdx) => (
+                            <span
+                              key={eIdx}
+                              style={{
+                                fontSize: '0.55rem',
+                                backgroundColor: e.mode === 'BUS' ? '#0984e3' : '#00b894',
+                                color: '#fff',
+                                padding: '1px 4px',
+                                borderRadius: '3px',
+                                fontWeight: 800,
+                              }}
+                            >
+                              {e.shortName}
+                            </span>
+                          ))}
+                      </div>
+                    )}
+
+                    {/* Affected stops */}
+                    {alert.entities && alert.entities.some(e => e.type === 'Stop') && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                        <span style={{ color: '#64748b', fontSize: '0.55rem', alignSelf: 'center' }}>Stops:</span>
+                        {alert.entities
+                          .filter(e => e.type === 'Stop' && e.name)
+                          .slice(0, 3)
+                          .map((e, eIdx) => (
+                            <span
+                              key={eIdx}
+                              style={{
+                                fontSize: '0.55rem',
+                                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                                color: '#cbd5e1',
+                                padding: '1px 4px',
+                                borderRadius: '3px',
+                                maxWidth: '80px',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              }}
+                              title={`${e.name} (${e.code})`}
+                            >
+                              {e.name}
+                            </span>
+                          ))}
+                        {alert.entities.filter(e => e.type === 'Stop').length > 3 && (
+                          <span style={{ color: '#64748b', fontSize: '0.55rem', alignSelf: 'center' }}>
+                            +{alert.entities.filter(e => e.type === 'Stop').length - 3} more
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {alert.url && (
+                      <a
+                        href={alert.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                          color: '#38bdf8',
+                          textDecoration: 'none',
+                          marginTop: '6px',
+                          fontWeight: 600,
+                          fontSize: '0.55rem',
+                        }}
+                      >
+                        Read more <ExternalLink size={8} />
+                      </a>
+                    )}
                   </div>
-                  <p style={{ margin: '4px 0', color: '#94a3b8', lineHeight: 1.3 }}>
-                    {alert.descriptionText}
-                  </p>
-                  
-                  {/* Affected lines */}
-                  {alert.entities && alert.entities.some(e => e.type === 'Route') && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                      <span style={{ color: '#64748b', fontSize: '0.55rem', alignSelf: 'center' }}>Lines:</span>
-                      {alert.entities
-                        .filter(e => e.type === 'Route' && e.shortName)
-                        .map((e, eIdx) => (
-                          <span
-                            key={eIdx}
-                            style={{
-                              fontSize: '0.55rem',
-                              backgroundColor: e.mode === 'BUS' ? '#0984e3' : '#00b894',
-                              color: '#fff',
-                              padding: '1px 4px',
-                              borderRadius: '3px',
-                              fontWeight: 800,
-                            }}
-                          >
-                            {e.shortName}
-                          </span>
-                        ))}
-                    </div>
-                  )}
-
-                  {/* Affected stops */}
-                  {alert.entities && alert.entities.some(e => e.type === 'Stop') && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
-                      <span style={{ color: '#64748b', fontSize: '0.55rem', alignSelf: 'center' }}>Stops:</span>
-                      {alert.entities
-                        .filter(e => e.type === 'Stop' && e.name)
-                        .slice(0, 3)
-                        .map((e, eIdx) => (
-                          <span
-                            key={eIdx}
-                            style={{
-                              fontSize: '0.55rem',
-                              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                              color: '#cbd5e1',
-                              padding: '1px 4px',
-                              borderRadius: '3px',
-                              maxWidth: '80px',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap'
-                            }}
-                            title={`${e.name} (${e.code})`}
-                          >
-                            {e.name}
-                          </span>
-                        ))}
-                      {alert.entities.filter(e => e.type === 'Stop').length > 3 && (
-                        <span style={{ color: '#64748b', fontSize: '0.55rem', alignSelf: 'center' }}>
-                          +{alert.entities.filter(e => e.type === 'Stop').length - 3} more
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {alert.url && (
-                    <a
-                      href={alert.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '2px',
-                        color: '#38bdf8',
-                        textDecoration: 'none',
-                        marginTop: '6px',
-                        fontWeight: 600,
-                        fontSize: '0.55rem',
-                      }}
-                    >
-                      Read more <ExternalLink size={8} />
-                    </a>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filter Section */}
       <div className="filter-scroll-area" style={{ marginTop: '8px' }}>

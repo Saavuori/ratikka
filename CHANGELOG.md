@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.35.2] - 2026-07-18
+
+### Fixed
+- **Legend Horizontal Alignment**: Changed the legend list items to align compactly side-by-side on the left using `justify-content: flex-start` and `gap: 12px`, removing the empty middle space.
+- **Service Alerts Widget Spacing**: Wrapped the alerts widget in a conditional check so it completely disappears from the layout when there are no disruptions, fully reclaiming vertical sidebar space.
+
+---
+
 ## [v0.35.1] - 2026-07-18
 
 ### Fixed

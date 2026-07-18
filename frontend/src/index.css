@@ -168,9 +168,9 @@ body {
 .legend-list {
   display: flex;
   flex-direction: row;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
-  gap: 4px;
+  gap: 12px;
 }
 
 .stats-active-vehicles-compact {
@@ -514,9 +514,9 @@ body {
 .legend-list {
   display: flex;
   flex-direction: row;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
-  gap: 4px;
+  gap: 12px;
 }
 
 .legend-item {
