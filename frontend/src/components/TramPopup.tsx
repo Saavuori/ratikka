@@ -43,6 +43,32 @@ export const TramPopup: React.FC<TramPopupProps> = ({
 
   // Diagnostic states
   const [latency, setLatency] = useState<number>(0);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStart(e.touches[0].clientX);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStart === null) return;
+    const currentX = e.touches[0].clientX;
+    const diff = currentX - touchStart;
+
+    // Swipe left (at least 45px) to expand (on the right panel)
+    if (diff < -45 && isCollapsed) {
+      onToggleCollapse();
+      setTouchStart(null);
+    }
+    // Swipe right (at least 45px) to collapse (on the right panel)
+    else if (diff > 45 && !isCollapsed) {
+      onToggleCollapse();
+      setTouchStart(null);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setTouchStart(null);
+  };
 
   useEffect(() => {
     if (tram.stop) {
@@ -170,7 +196,18 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   const accPercent = Math.min(100, (Math.abs(accVal) / 1.5) * 100);
 
   return (
-    <div className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`} style={{ display: 'flex', flexDirection: 'column' }}>
+    <div
+      className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}
+      style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onClick={() => {
+        if (isCollapsed) {
+          onToggleCollapse();
+        }
+      }}
+    >
       {/* Dynamic Keyframes injecting locally */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes spin-wheels {
@@ -211,7 +248,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
       </button>
 
       {/* Header */}
-      <div className="panel-header" style={{ padding: '0 0 10px 0', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+      <div className="panel-header" style={{ padding: '0 0 10px 0', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div className="desi-circle">{tram.desi}</div>
           <div>
@@ -223,6 +260,24 @@ export const TramPopup: React.FC<TramPopupProps> = ({
             </p>
           </div>
         </div>
+        {!isCollapsed && (
+          <button
+            onClick={onToggleCollapse}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              outline: 'none',
+            }}
+            aria-label="Collapse panel"
+          >
+            <ChevronRight size={16} />
+          </button>
+        )}
       </div>
 
       {/* Service Alert Warnings */}

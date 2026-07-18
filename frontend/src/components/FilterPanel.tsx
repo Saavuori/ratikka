@@ -219,7 +219,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
               color: 'var(--text-secondary)',
               cursor: 'pointer',
               padding: '4px',
-              display: 'none',
+              display: 'flex',
               alignItems: 'center',
               outline: 'none',
             }}

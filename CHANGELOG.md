@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.36.0] - 2026-07-18
+
+### Added
+- **Global Glass Peeking Layout**: Enforced the peeking sidebar collapsed style globally on all screen sizes, hiding the toggle buttons `.filter-toggle-tab` and `.detail-toggle-tab` globally.
+- **Right Sidebar Peeking & Gestures**: Added right sidebar peek offset (16px) when collapsed, click-to-expand onClick support, touch swipe controls (swipe left to expand, swipe right to collapse), and a ChevronRight close header button on `TramPopup`, `StopPopup`, and `BikePopup`.
+
+---
+
 ## [v0.35.2] - 2026-07-18
 
 ### Fixed

@@ -120,7 +120,12 @@ body {
 }
 
 .filter-panel.collapsed {
-  transform: translateX(-100%);
+  transform: translateX(calc(-100% + 16px)) !important;
+  cursor: pointer;
+}
+
+.filter-panel.collapsed:hover {
+  background: hsla(224, 71%, 8%, 0.95);
 }
 
 .panel-stats {
@@ -187,6 +192,7 @@ body {
 
 /* Sidebar Collapse Toggle Tab */
 .filter-toggle-tab {
+  display: none !important;
   position: absolute;
   right: -20px;
   top: 16px;
@@ -198,7 +204,6 @@ body {
   border: 1px solid var(--border-glow);
   border-left: none;
   border-radius: 0 4px 4px 0;
-  display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
@@ -240,11 +245,17 @@ body {
 }
 
 .detail-popup.collapsed {
-  transform: translateX(100%);
+  transform: translateX(calc(100% - 16px)) !important;
+  cursor: pointer;
+}
+
+.detail-popup.collapsed:hover {
+  background: hsla(224, 71%, 8%, 0.95);
 }
 
 /* Detail Popup Collapse Toggle Tab */
 .detail-toggle-tab {
+  display: none !important;
   position: absolute;
   left: -20px;
   top: 16px;
@@ -256,7 +267,6 @@ body {
   border: 1px solid var(--border-glow);
   border-right: none;
   border-radius: 4px 0 0 4px;
-  display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
@@ -1072,23 +1082,7 @@ body {
     bottom: calc(20px + env(safe-area-inset-bottom)) !important;
   }
 
-  /* Hide the toggle tab icon on mobile */
-  .filter-toggle-tab {
-    display: none !important;
-  }
-
-  /* Collapsed sidebar peek layout on mobile */
-  .filter-panel.collapsed {
-    /* Slide out but leave a 16px peek of the rounded/border edge visible on mobile */
-    transform: translateX(calc(-100% + 16px)) !important;
-    cursor: pointer;
-  }
-
-  .filter-panel.collapsed:hover {
-    background: hsla(224, 71%, 8%, 0.95);
-  }
-
-  /* Render close chevron in panel header on mobile when open */
+  /* Mobile close chevron styles */
   .mobile-close-btn {
     display: flex !important;
   }

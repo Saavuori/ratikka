@@ -21,6 +21,32 @@ export const BikePopup: React.FC<BikePopupProps> = ({
   const [details, setDetails] = useState<BikeStationDetailsResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStart(e.touches[0].clientX);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStart === null) return;
+    const currentX = e.touches[0].clientX;
+    const diff = currentX - touchStart;
+
+    // Swipe left (at least 45px) to expand (on the right panel)
+    if (diff < -45 && isCollapsed) {
+      onToggleCollapse();
+      setTouchStart(null);
+    }
+    // Swipe right (at least 45px) to collapse (on the right panel)
+    else if (diff > 45 && !isCollapsed) {
+      onToggleCollapse();
+      setTouchStart(null);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setTouchStart(null);
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -39,7 +65,18 @@ export const BikePopup: React.FC<BikePopupProps> = ({
   }, [stationId]);
 
   return (
-    <div className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}>
+    <div
+      className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}
+      style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onClick={() => {
+        if (isCollapsed) {
+          onToggleCollapse();
+        }
+      }}
+    >
       {/* Collapse/Expand Toggle Tab */}
       <button
         className="detail-toggle-tab"
@@ -55,7 +92,7 @@ export const BikePopup: React.FC<BikePopupProps> = ({
       </button>
 
       {/* Header */}
-      <div className="panel-header" style={{ padding: '0 0 16px 0', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+      <div className="panel-header" style={{ padding: '0 0 16px 0', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h2 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>{stationName}</h2>
@@ -64,9 +101,29 @@ export const BikePopup: React.FC<BikePopupProps> = ({
             {stationId}
           </p>
         </div>
-        <button onClick={onClose} className="close-btn">
-          <X size={18} />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          {!isCollapsed && (
+            <button
+              onClick={onToggleCollapse}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                padding: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                outline: 'none',
+              }}
+              aria-label="Collapse panel"
+            >
+              <ChevronRight size={16} />
+            </button>
+          )}
+          <button onClick={onClose} className="close-btn">
+            <X size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Body */}
