@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Search, MapPin, Navigation, X, LocateFixed, ArrowRight, Footprints, Train, Bus, TrainFront, Ship, ArrowUpDown, Loader2 } from 'lucide-react';
+import { Search, MapPin, Navigation, X, LocateFixed, ArrowRight, Footprints, Train, Bus, TrainFront, Ship, ArrowUpDown, Loader2, ChevronDown, Minimize2 } from 'lucide-react';
 import type { GeocodeResult, JourneyItinerary, JourneyLeg, JourneyEndpoint } from '../types';
 import { fetchGeocode, fetchJourneyPlan } from '../lib/api';
 import { useGeolocation } from '../hooks/useGeolocation';
@@ -75,6 +75,9 @@ function legColor(leg: JourneyLeg): string {
 
 export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange, onOpenChange, hidden = false, isMobile }) => {
   const [open, setOpen] = useState(false);
+  // When collapsed the planner shrinks to a summary bar so the highlighted route
+  // stays on the map and remains visible (closing, by contrast, clears it).
+  const [collapsed, setCollapsed] = useState(false);
   const { coords, status: geoStatus, request: requestGeo } = useGeolocation();
 
   const [from, setFrom] = useState<JourneyEndpoint | null>(null);
@@ -223,6 +226,9 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     if (from && to && itineraries[idx]) {
       onSelectionChange({ from, to, itinerary: itineraries[idx] });
     }
+    // On mobile the expanded panel covers the map, so collapse to a summary bar
+    // once a route is chosen — the highlighted route on the map becomes visible.
+    if (isMobile) setCollapsed(true);
   };
 
   const resetAll = () => {
@@ -239,8 +245,36 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
 
   const handleClose = () => {
     resetAll();
+    setCollapsed(false);
     setOpen(false);
   };
+
+  const selectedItinerary = itineraries[selectedIdx] ?? null;
+
+  // Compact row of mode/route chips shared by the results list and summary bar.
+  const renderLegChips = (it: JourneyItinerary) => (
+    <div className="journey-legs">
+      {it.legs.map((leg, li) => {
+        const isLast = li === it.legs.length - 1;
+        return (
+          <React.Fragment key={li}>
+            <span
+              className="journey-leg-chip"
+              style={{
+                backgroundColor: leg.transit ? legColor(leg) : 'transparent',
+                color: leg.transit ? '#fff' : 'var(--text-secondary)',
+                border: leg.transit ? 'none' : '1px dashed var(--border-button-hover)',
+              }}
+            >
+              {legModeIcon(leg.mode)}
+              {leg.transit && <span className="journey-leg-label">{leg.route?.shortName}</span>}
+            </span>
+            {!isLast && <span className="journey-leg-sep">›</span>}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
 
   if (!open) {
     if (hidden) return null;
@@ -253,6 +287,37 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         <Search size={16} />
         <span>Where to?</span>
       </button>
+    );
+  }
+
+  // Collapsed summary bar: keeps the route highlighted on the map while showing a
+  // one-tap-to-expand summary. Closing (X) clears the journey entirely.
+  if (collapsed) {
+    return (
+      <div className="journey-collapsed-bar">
+        <button
+          className="journey-collapsed-main"
+          onClick={() => setCollapsed(false)}
+          aria-label="Expand journey planner"
+        >
+          {selectedItinerary ? (
+            <>
+              {renderLegChips(selectedItinerary)}
+              <span className="journey-collapsed-dur">{formatDuration(selectedItinerary.duration)}</span>
+              <ChevronDown size={15} className="journey-collapsed-caret" />
+            </>
+          ) : (
+            <>
+              <Search size={15} style={{ color: 'var(--accent-green)' }} />
+              <span className="journey-collapsed-label">{to?.name || 'Plan a journey'}</span>
+              <ChevronDown size={15} className="journey-collapsed-caret" />
+            </>
+          )}
+        </button>
+        <button className="journey-collapsed-close" onClick={handleClose} aria-label="Clear journey">
+          <X size={16} />
+        </button>
+      </div>
     );
   }
 
@@ -306,9 +371,19 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         <h2 className="journey-title">
           <Search size={15} /> Plan a journey
         </h2>
-        <button className="journey-close" onClick={handleClose} aria-label="Close journey planner">
-          <X size={16} />
-        </button>
+        <div className="journey-header-actions">
+          <button
+            className="journey-close"
+            onClick={() => setCollapsed(true)}
+            aria-label="Minimize journey planner"
+            title="Minimize to see the map"
+          >
+            <Minimize2 size={15} />
+          </button>
+          <button className="journey-close" onClick={handleClose} aria-label="Close journey planner" title="Clear journey">
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
       <div className="journey-fields">
@@ -384,27 +459,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
                     </span>
                     <span className="journey-itinerary-duration">{formatDuration(it.duration)}</span>
                   </div>
-                  <div className="journey-legs">
-                    {it.legs.map((leg, li) => {
-                      const isLast = li === it.legs.length - 1;
-                      return (
-                        <React.Fragment key={li}>
-                          <span
-                            className="journey-leg-chip"
-                            style={{
-                              backgroundColor: leg.transit ? legColor(leg) : 'transparent',
-                              color: leg.transit ? '#fff' : 'var(--text-secondary)',
-                              border: leg.transit ? 'none' : '1px dashed var(--border-button-hover)',
-                            }}
-                          >
-                            {legModeIcon(leg.mode)}
-                            {leg.transit && <span className="journey-leg-label">{leg.route?.shortName}</span>}
-                          </span>
-                          {!isLast && <span className="journey-leg-sep">›</span>}
-                        </React.Fragment>
-                      );
-                    })}
-                  </div>
+                  {renderLegChips(it)}
                   {transitLegs.length > 0 && (
                     <div className="journey-itinerary-meta">
                       Board at <strong>{transitLegs[0].from.name}</strong>
