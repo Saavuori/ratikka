@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import type { BikeStationDetailsResponse } from '../types';
 import { fetchBikeStationDetails } from '../lib/api';
 import { X, Bike, Navigation, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, CheckCircle, AlertCircle } from 'lucide-react';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 interface BikePopupProps {
   stationId: string;
@@ -22,6 +23,7 @@ export const BikePopup: React.FC<BikePopupProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [touchStart, setTouchStart] = useState<number | null>(null);
+  const isMobile = useIsMobile();
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.touches[0].clientX);
@@ -68,15 +70,18 @@ export const BikePopup: React.FC<BikePopupProps> = ({
     <div
       className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}
       style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      onTouchStart={isMobile ? undefined : handleTouchStart}
+      onTouchMove={isMobile ? undefined : handleTouchMove}
+      onTouchEnd={isMobile ? undefined : handleTouchEnd}
       onClick={() => {
         if (isCollapsed) {
           onToggleCollapse();
         }
       }}
     >
+      {/* Drag handle affordance (mobile bottom-sheet only) */}
+      <div className="sheet-handle" onClick={() => !isCollapsed && onToggleCollapse()} />
+
       {/* Collapse/Expand Toggle Tab */}
       <button
         className="detail-toggle-tab"
@@ -117,7 +122,7 @@ export const BikePopup: React.FC<BikePopupProps> = ({
               }}
               aria-label="Collapse panel"
             >
-              <ChevronRight size={16} />
+              {isMobile ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
             </button>
           )}
           <button onClick={onClose} className="close-btn">

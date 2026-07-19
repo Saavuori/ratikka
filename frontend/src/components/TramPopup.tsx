@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import type { VehiclePosition, TripDetailsResponse, Alert } from '../types';
 import { AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Activity, Gauge, Compass, Cpu, Database, Users, ShieldCheck, ExternalLink } from 'lucide-react';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 interface TramPopupProps {
   tram: VehiclePosition;
@@ -44,6 +45,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   // Diagnostic states
   const [latency, setLatency] = useState<number>(0);
   const [touchStart, setTouchStart] = useState<number | null>(null);
+  const isMobile = useIsMobile();
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.touches[0].clientX);
@@ -199,15 +201,18 @@ export const TramPopup: React.FC<TramPopupProps> = ({
     <div
       className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}
       style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      onTouchStart={isMobile ? undefined : handleTouchStart}
+      onTouchMove={isMobile ? undefined : handleTouchMove}
+      onTouchEnd={isMobile ? undefined : handleTouchEnd}
       onClick={() => {
         if (isCollapsed) {
           onToggleCollapse();
         }
       }}
     >
+      {/* Drag handle affordance (mobile bottom-sheet only) */}
+      <div className="sheet-handle" onClick={() => !isCollapsed && onToggleCollapse()} />
+
       {/* Dynamic Keyframes injecting locally */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes spin-wheels {
@@ -275,7 +280,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
             }}
             aria-label="Collapse panel"
           >
-            <ChevronRight size={16} />
+            {isMobile ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           </button>
         )}
       </div>

@@ -32,6 +32,9 @@
   --bg-button-hover: rgba(30, 41, 59, 0.5);
   --border-button: rgba(255, 255, 255, 0.04);
   --border-button-hover: rgba(255, 255, 255, 0.15);
+
+  /* Mobile bottom tab bar height, including its own padding (excludes safe-area inset) */
+  --bottom-nav-h: 60px;
 }
 
 [data-theme='light'] {
@@ -1073,23 +1076,116 @@ body {
   bottom: calc(8px + env(safe-area-inset-bottom)) !important;
 }
 
+/* Drag handle affordance shown atop bottom sheets on mobile (hidden on desktop) */
+.sheet-handle {
+  display: none;
+}
+
+/* Bottom Tab Bar (mobile only) */
+.bottom-nav {
+  display: none;
+}
+
+.bottom-nav-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 6px 4px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bottom-nav-btn.active {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.12);
+}
+
 /* Mobile responsive bottom navigation area safety adjustments */
 @media (max-width: 768px) {
   .version-badge {
-    bottom: calc(20px + env(safe-area-inset-bottom));
+    bottom: calc(var(--bottom-nav-h) + 12px + env(safe-area-inset-bottom));
     left: 12px;
+    /* Sit behind bottom sheets (z-index: 10) so an expanded sheet fully covers it */
+    z-index: 9;
   }
   .maplibregl-ctrl-bottom-right,
   .maplibregl-ctrl-bottom-left {
-    bottom: calc(20px + env(safe-area-inset-bottom)) !important;
+    bottom: calc(var(--bottom-nav-h) + 12px + env(safe-area-inset-bottom)) !important;
   }
 
   /* Mobile close chevron styles */
   .mobile-close-btn {
     display: flex !important;
   }
+
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 200;
+    background: var(--bg-panel);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border-glow);
+    padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
+    gap: 4px;
+    justify-content: space-around;
+    box-shadow: 0 -8px 24px -8px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Filter panel & detail popups become full-width bottom sheets, replacing the
+     side-drawer layout used on desktop. Only one sheet is expanded at a time
+     (enforced in App.tsx), so a collapsed sheet is fully hidden rather than peeking. */
+  .filter-panel,
+  .detail-popup {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom));
+    width: 100%;
+    height: auto;
+    max-height: 72vh;
+    max-height: 72dvh;
+    padding: 8px 18px calc(14px + env(safe-area-inset-bottom));
+    border-radius: 20px 20px 0 0;
+    border: 1px solid var(--border-glow);
+    border-bottom: none;
+    transform: none !important;
+    transition: max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1), padding 0.32s ease, opacity 0.2s ease;
+    overflow-y: auto;
+    cursor: default;
+  }
+
+  .filter-panel.collapsed,
+  .detail-popup.collapsed {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-width: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .sheet-handle {
+    display: block;
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(148, 163, 184, 0.4);
+    margin: 0 auto 10px auto;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
 }
-
-
-
-
