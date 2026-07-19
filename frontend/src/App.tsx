@@ -11,6 +11,7 @@ import { StopPopup } from './components/StopPopup';
 import { BikePopup } from './components/BikePopup';
 import { VersionBadge } from './components/VersionBadge';
 import { BottomNav, type MobileTab } from './components/BottomNav';
+import { JourneySearch, type JourneySelection } from './components/JourneySearch';
 import { fetchRouteDetails, fetchAlerts, fetchTripDetails } from './lib/api';
 import { areTripsEquivalent } from './lib/trip';
 import type { VehiclePosition, Alert, TripDetailsResponse } from './types';
@@ -92,6 +93,9 @@ function App() {
   } | null>(null);
 
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
+
+  // Journey planning (destination search) state
+  const [journey, setJourney] = useState<JourneySelection | null>(null);
 
   // Reset following mode when selected tram changes
   useEffect(() => {
@@ -399,6 +403,19 @@ function App() {
     setSelectedTram(null);
   };
 
+  // Opening the journey planner clears any vehicle/stop/bike selection so the
+  // map is dedicated to the planned route; closing it clears the journey.
+  const handleJourneyOpenChange = (open: boolean) => {
+    if (open) {
+      setSelectedTram(null);
+      setSelectedStop(null);
+      setSelectedBikeStation(null);
+      setSelectedStopRoutes([]);
+    } else {
+      setJourney(null);
+    }
+  };
+
   // Bottom tab bar state (mobile only): drives which bottom sheet is expanded.
   const hasDetailSelection = !!(selectedTram || selectedStop || selectedBikeStation);
   const activeMobileTab: MobileTab = !isFilterCollapsed
@@ -443,6 +460,8 @@ function App() {
         showTrams={showTrams}
         showBuses={showBuses}
         selectedTripDetails={selectedTripDetails}
+        journeyLegs={journey?.itinerary.legs ?? null}
+        journeyEndpoints={journey ? { from: journey.from, to: journey.to } : null}
       />
 
       {/* Sidebar Filters Panel */}
@@ -526,6 +545,14 @@ function App() {
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
         />
       )}
+
+      {/* Destination search / journey planner (top-center) */}
+      <JourneySearch
+        onSelectionChange={setJourney}
+        onOpenChange={handleJourneyOpenChange}
+        hidden={!!(liveTram && liveTram.veh !== '0')}
+        isMobile={isMobile}
+      />
 
       {/* Version Badge */}
       <VersionBadge />

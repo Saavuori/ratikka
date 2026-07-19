@@ -1,4 +1,4 @@
-import type { TripDetailsResponse, StopDetailsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, AlertsListResponse } from '../types';
+import type { TripDetailsResponse, StopDetailsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyEndpoint } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -46,6 +46,49 @@ export async function fetchAlerts(): Promise<AlertsListResponse> {
   const res = await fetch(`${API_BASE}/alerts`);
   if (!res.ok) {
     throw new Error(`Failed to fetch service alerts: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/**
+ * Search for a destination by free-text. An optional focus point (typically the
+ * user's current location) ranks nearby results first.
+ */
+export async function fetchGeocode(
+  text: string,
+  focus?: { lat: number; lon: number },
+  signal?: AbortSignal
+): Promise<GeocodeResponse> {
+  const params = new URLSearchParams({ text });
+  if (focus) {
+    params.set('lat', String(focus.lat));
+    params.set('lon', String(focus.lon));
+  }
+  const res = await fetch(`${API_BASE}/geocode?${params.toString()}`, { signal });
+  if (!res.ok) {
+    throw new Error(`Failed to search destination: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/**
+ * Plan a journey between two points, returning ranked itineraries with the
+ * exact stops the rider would board and alight at.
+ */
+export async function fetchJourneyPlan(
+  from: JourneyEndpoint,
+  to: JourneyEndpoint,
+  signal?: AbortSignal
+): Promise<JourneyPlanResponse> {
+  const params = new URLSearchParams({
+    fromLat: String(from.lat),
+    fromLon: String(from.lon),
+    toLat: String(to.lat),
+    toLon: String(to.lon),
+  });
+  const res = await fetch(`${API_BASE}/plan?${params.toString()}`, { signal });
+  if (!res.ok) {
+    throw new Error(`Failed to plan journey: ${res.statusText}`);
   }
   return res.json();
 }

@@ -21,6 +21,7 @@ A premium, high-performance web application mapping **all active Helsinki trams,
 
 ### Live Map
 
+* **Destination Journey Search**: A top-center "Where to?" search plans a trip from your current location (used by default) to any searched destination, ranks the routes that get you there, and highlights the exact stops to use — boarding stop in green, final stop in coral, transfers in gold — while drawing each transit and walking leg on the map and fitting the journey into view.
 * **Real-time 60fps Vehicle Interpolation**: Live MQTT vehicle coordinate updates for both **trams and buses** are mathematically interpolated (lerp) for buttery-smooth vehicle movement.
 * **State-Coded Vehicle Markers**: Every vehicle renders as a labelled circle carrying its line number, coloured by live state — `#0984e3` blue while moving, `#e17055` coral while stopped or with doors open. A separate heading arrow encodes the mode: a round green (`#00985f`) pointer for trams, a rounded-square blue (`#007ac9`) pointer for buses.
 * **Immersive Chase Mode (Follow Vehicle)**: Lock onto any tram or bus to automatically track it. The camera auto-centers and auto-rotates (bearing) matching the vehicle's live heading, and releases as soon as you drag the map.
@@ -74,6 +75,8 @@ All endpoints are served by the Go backend under `/api/v1`. See [docs/API_REFERE
 | `GET` | `/api/v1/stop/{stopId}` | Stop details and upcoming departures (`?departures=N`) |
 | `GET` | `/api/v1/route/{shortName}` | Route geometry and colour by short name |
 | `GET` | `/api/v1/bike-station/{stationId}` | Live City Bike capacity |
+| `GET` | `/api/v1/geocode` | Destination search (Digitransit geocoding, `?text=&lat=&lon=`) |
+| `GET` | `/api/v1/plan` | Journey planning between two points (`?fromLat=&fromLon=&toLat=&toLon=`) |
 | `GET` | `/api/v1/stream` | WebSocket stream of live vehicle positions |
 | `GET` | `/metrics` | Prometheus exposition format |
 | `GET` | `/` | Embedded React SPA (go:embed static fallback) |
