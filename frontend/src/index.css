@@ -17,6 +17,7 @@
 
   /* Premium HSL Design Tokens */
   --bg-panel: hsla(224, 71%, 4%, 0.85);
+  --bg-panel-hover: hsla(224, 71%, 8%, 0.95);
   --border-glow: hsla(217, 33%, 32%, 0.5);
   --border-focus: hsla(160, 84%, 39%, 0.6);
   --accent-green: #00b894;
@@ -39,6 +40,7 @@
   background-color: #f8fafc;
 
   --bg-panel: rgba(255, 255, 255, 0.88);
+  --bg-panel-hover: rgba(255, 255, 255, 0.96);
   --border-glow: rgba(148, 163, 184, 0.3);
   --border-focus: rgba(16, 185, 129, 0.6);
   --bg-card: rgba(241, 245, 249, 0.6);
@@ -125,7 +127,7 @@ body {
 }
 
 .filter-panel.collapsed:hover {
-  background: hsla(224, 71%, 8%, 0.95);
+  background: var(--bg-panel-hover);
 }
 
 .panel-stats {
@@ -250,7 +252,7 @@ body {
 }
 
 .detail-popup.collapsed:hover {
-  background: hsla(224, 71%, 8%, 0.95);
+  background: var(--bg-panel-hover);
 }
 
 /* Detail Popup Collapse Toggle Tab */

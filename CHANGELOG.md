@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.36.1] - 2026-07-19
+
+### Fixed
+- **Collapsed Sidebar Theme Leak**: The `.filter-panel.collapsed:hover` and `.detail-popup.collapsed:hover` rules hardcoded a dark background, overriding the theme-aware `var(--bg-panel)` inherited from `.glass-panel`. Since the collapsed peek strip is click-to-expand, hovering it in light theme flipped the sidebars to near-black on every open/close. Added a `--bg-panel-hover` design token to both theme blocks and pointed the hover rules at it; the dark theme keeps its previous colour.
+
+---
+
 ## [v0.36.0] - 2026-07-18
 
 ### Added
