@@ -1398,6 +1398,82 @@ body {
 }
 .journey-itinerary-meta strong { color: var(--text-primary); font-weight: 600; }
 
+.journey-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Collapsed summary bar (keeps the route on the map, tap to expand) */
+.journey-collapsed-bar {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 106;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100vw - 24px);
+  padding: 6px 6px 6px 6px;
+  border-radius: 9999px;
+  background: var(--bg-panel);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-glow);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+}
+.journey-collapsed-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-primary);
+  padding: 4px 6px 4px 10px;
+  border-radius: 9999px;
+  outline: none;
+  overflow: hidden;
+}
+.journey-collapsed-main:hover { background: var(--bg-button); }
+.journey-collapsed-main .journey-legs { flex-wrap: nowrap; overflow: hidden; }
+.journey-collapsed-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.journey-collapsed-dur {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent-green);
+  white-space: nowrap;
+}
+.journey-collapsed-caret {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.journey-collapsed-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  cursor: pointer;
+  outline: none;
+}
+.journey-collapsed-close:hover { color: var(--text-primary); background: var(--bg-button); }
+
 /* Mobile responsive bottom navigation area safety adjustments */
 @media (max-width: 768px) {
   .version-badge {
@@ -1482,13 +1558,21 @@ body {
   .journey-launcher {
     top: 12px;
   }
+  .journey-collapsed-bar {
+    top: 12px;
+  }
   .journey-panel {
     top: 10px;
     width: calc(100vw - 20px);
     max-width: none;
-    max-height: calc(100dvh - 20px - var(--bottom-nav-h));
+    /* Cap the height so the lower part of the map (and the highlighted route)
+       stays visible while the planner is expanded. */
+    max-height: 60dvh;
   }
   .journey-panel.mobile .journey-results {
-    max-height: calc(100dvh - 240px - var(--bottom-nav-h));
+    max-height: calc(60dvh - 190px);
+  }
+  .journey-panel.mobile .journey-suggestions {
+    max-height: calc(60dvh - 150px);
   }
 }
