@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { VehiclePosition, Alert } from '../types';
 import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Route, Train, Bus, AlertTriangle, ExternalLink } from 'lucide-react';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 interface FilterPanelProps {
   trams: Record<string, VehiclePosition>;
@@ -51,6 +52,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 }) => {
   const [isAlertsExpanded, setIsAlertsExpanded] = useState(false);
   const [touchStart, setTouchStart] = useState<number | null>(null);
+  const isMobile = useIsMobile();
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.touches[0].clientX);
@@ -170,15 +172,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       style={{
         pointerEvents: 'auto',
       }}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      onTouchStart={isMobile ? undefined : handleTouchStart}
+      onTouchMove={isMobile ? undefined : handleTouchMove}
+      onTouchEnd={isMobile ? undefined : handleTouchEnd}
       onClick={() => {
         if (isCollapsed) {
           onToggleCollapse();
         }
       }}
     >
+      {/* Drag handle affordance (mobile bottom-sheet only) */}
+      <div className="sheet-handle" onClick={() => !isCollapsed && onToggleCollapse()} />
+
       {/* Collapse/Expand Toggle Tab */}
       <button
         className="filter-toggle-tab"
@@ -225,7 +230,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             }}
             aria-label="Collapse panel"
           >
-            <ChevronLeft size={16} />
+            {isMobile ? <ChevronDown size={16} /> : <ChevronLeft size={16} />}
           </button>
         )}
       </div>

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useTramData } from './hooks/useTramData';
+import { useIsMobile } from './hooks/useIsMobile';
 import { Map } from './components/Map';
 import { FilterPanel } from './components/FilterPanel';
 import { TramPopup } from './components/TramPopup';
@@ -9,6 +10,7 @@ import { TramCard } from './components/TramCard';
 import { StopPopup } from './components/StopPopup';
 import { BikePopup } from './components/BikePopup';
 import { VersionBadge } from './components/VersionBadge';
+import { BottomNav, type MobileTab } from './components/BottomNav';
 import { fetchRouteDetails, fetchAlerts, fetchTripDetails } from './lib/api';
 import { areTripsEquivalent } from './lib/trip';
 import type { VehiclePosition, Alert, TripDetailsResponse } from './types';
@@ -17,6 +19,7 @@ function App() {
   const { trams, handleUpdate } = useTramData();
   const { status: connectionStatus } = useWebSocket({ onMessage: (data) => handleUpdate(data.vehicles) });
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const getAlerts = () => {
@@ -107,12 +110,29 @@ function App() {
 
   // Auto-collapse sidebar when a tram, stop, or bike station is selected on mobile
   useEffect(() => {
-    if ((selectedTram || selectedStop || selectedBikeStation) && window.innerWidth <= 768) {
+    if ((selectedTram || selectedStop || selectedBikeStation) && isMobile) {
       setIsFilterCollapsed(true);
     }
-  }, [selectedTram, selectedStop, selectedBikeStation]);
-  // Slide (swipe) gesture detection for left and right panels on touch devices
+  }, [selectedTram, selectedStop, selectedBikeStation, isMobile]);
+
+  // On mobile the filter and detail panels render as bottom sheets that occupy the
+  // same slot, so only one may be expanded at a time (opening one closes the other).
   useEffect(() => {
+    if (isMobile && !isFilterCollapsed) {
+      setIsDetailCollapsed(true);
+    }
+  }, [isFilterCollapsed, isMobile]);
+
+  useEffect(() => {
+    if (isMobile && !isDetailCollapsed) {
+      setIsFilterCollapsed(true);
+    }
+  }, [isDetailCollapsed, isMobile]);
+
+  // Slide (swipe) gesture detection for left and right panels on touch devices.
+  // Desktop-only: on mobile the panels are bottom sheets driven by the bottom nav.
+  useEffect(() => {
+    if (isMobile) return;
     let touchStartX = 0;
     let touchStartY = 0;
     const edgeThreshold = 45; // px from screen edge to trigger edge swipes
@@ -169,7 +189,7 @@ function App() {
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [isFilterCollapsed, isDetailCollapsed]);
+  }, [isFilterCollapsed, isDetailCollapsed, isMobile]);
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
   const [selectedStopRoutes, setSelectedStopRoutes] = useState<string[]>([]);
   const [mapBearing, setMapBearing] = useState<number>(0);
@@ -379,6 +399,25 @@ function App() {
     setSelectedTram(null);
   };
 
+  // Bottom tab bar state (mobile only): drives which bottom sheet is expanded.
+  const hasDetailSelection = !!(selectedTram || selectedStop || selectedBikeStation);
+  const activeMobileTab: MobileTab = !isFilterCollapsed
+    ? 'filters'
+    : hasDetailSelection && !isDetailCollapsed
+    ? 'details'
+    : 'map';
+
+  const handleMobileTabSelect = (tab: MobileTab) => {
+    if (tab === 'map') {
+      setIsFilterCollapsed(true);
+      setIsDetailCollapsed(true);
+    } else if (tab === 'filters') {
+      setIsFilterCollapsed(false);
+    } else {
+      setIsDetailCollapsed(false);
+    }
+  };
+
   return (
     <div className="dashboard-container">
       {/* Fullscreen Map Canvas */}
@@ -490,6 +529,15 @@ function App() {
 
       {/* Version Badge */}
       <VersionBadge />
+
+      {/* Mobile bottom tab bar: switches between the map, filters, and details sheets */}
+      {isMobile && (
+        <BottomNav
+          active={activeMobileTab}
+          hasDetails={hasDetailSelection}
+          onSelect={handleMobileTabSelect}
+        />
+      )}
     </div>
   );
 }

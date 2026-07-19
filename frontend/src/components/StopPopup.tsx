@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import type { StopDetailsResponse, Alert } from '../types';
 import { fetchStopDetails } from '../lib/api';
 import { X, Clock, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 interface StopPopupProps {
   stopId: string;
@@ -35,6 +36,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [touchStart, setTouchStart] = useState<number | null>(null);
+  const isMobile = useIsMobile();
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.touches[0].clientX);
@@ -110,15 +112,18 @@ export const StopPopup: React.FC<StopPopupProps> = ({
     <div
       className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}
       style={{ pointerEvents: 'auto' }}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      onTouchStart={isMobile ? undefined : handleTouchStart}
+      onTouchMove={isMobile ? undefined : handleTouchMove}
+      onTouchEnd={isMobile ? undefined : handleTouchEnd}
       onClick={() => {
         if (isCollapsed) {
           onToggleCollapse();
         }
       }}
     >
+      {/* Drag handle affordance (mobile bottom-sheet only) */}
+      <div className="sheet-handle" onClick={() => !isCollapsed && onToggleCollapse()} />
+
       {/* Collapse/Expand Toggle Tab */}
       <button
         className="detail-toggle-tab"
@@ -162,7 +167,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
             }}
             aria-label="Collapse panel"
           >
-            <ChevronRight size={16} />
+            {isMobile ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           </button>
         )}
         <button onClick={onClose} className="close-btn">
