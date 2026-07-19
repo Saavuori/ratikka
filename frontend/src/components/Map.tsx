@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { VehiclePosition, TripDetailsResponse } from '../types';
+import type { Feature } from 'geojson';
+import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
 import { lerp, lerpAngle } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
 
@@ -35,6 +36,8 @@ interface MapProps {
   showTrams: boolean;
   showBuses: boolean;
   selectedTripDetails: TripDetailsResponse | null;
+  journeyLegs?: JourneyLeg[] | null;
+  journeyEndpoints?: { from: JourneyEndpoint; to: JourneyEndpoint } | null;
 }
 
 interface RenderPosition {
@@ -65,6 +68,8 @@ export const Map: React.FC<MapProps> = ({
   showTrams,
   showBuses,
   selectedTripDetails,
+  journeyLegs = null,
+  journeyEndpoints = null,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -101,6 +106,10 @@ export const Map: React.FC<MapProps> = ({
   const mapThemeRef = useRef<'light' | 'dark'>(mapTheme);
   const isFollowingRef = useRef<boolean>(isFollowing);
   const isInteractingRef = useRef<boolean>(false);
+
+  const journeyLegsRef = useRef<JourneyLeg[] | null>(journeyLegs);
+  const journeyEndpointsRef = useRef<{ from: JourneyEndpoint; to: JourneyEndpoint } | null>(journeyEndpoints);
+  const journeyFitKeyRef = useRef<string>('');
 
   const lastSeenStopIdRef = useRef<string | null>(null);
 
@@ -266,6 +275,102 @@ export const Map: React.FC<MapProps> = ({
       type: 'FeatureCollection',
       features,
     });
+  };
+
+  // Render a planned journey: coloured transit legs, dashed walk legs, the
+  // origin/destination markers, and highlighted board/alight/transfer/via stops.
+  const updateJourney = (
+    map: maplibregl.Map,
+    legs: JourneyLeg[] | null,
+    endpoints: { from: JourneyEndpoint; to: JourneyEndpoint } | null,
+    fitBounds: boolean
+  ) => {
+    const lineSource = map.getSource('journey-lines') as maplibregl.GeoJSONSource | undefined;
+    const stopSource = map.getSource('journey-stops') as maplibregl.GeoJSONSource | undefined;
+    const endpointSource = map.getSource('journey-endpoints') as maplibregl.GeoJSONSource | undefined;
+    if (!lineSource || !stopSource || !endpointSource) return;
+
+    if (!legs || legs.length === 0) {
+      const empty = { type: 'FeatureCollection' as const, features: [] };
+      lineSource.setData(empty);
+      stopSource.setData(empty);
+      endpointSource.setData(empty);
+      return;
+    }
+
+    const lineFeatures: Feature[] = [];
+    const allCoords: [number, number][] = [];
+
+    legs.forEach((leg) => {
+      const coords = leg.geometry ? decodePolyline(leg.geometry) : [];
+      coords.forEach((c) => allCoords.push(c));
+      if (coords.length >= 2) {
+        const color = leg.transit
+          ? (leg.route?.color ? (leg.route.color.startsWith('#') ? leg.route.color : `#${leg.route.color}`) : '#00985f')
+          : '#94a3b8';
+        lineFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: coords },
+          properties: { transit: leg.transit, color },
+        });
+      }
+    });
+
+    // Collect highlighted stops with a priority so transfer/board/alight win
+    // over plain "via" stops sharing the same location.
+    const priority: Record<string, number> = { board: 4, alight: 4, transfer: 3, via: 1 };
+    const stopByKey: Record<string, { lat: number; lon: number; name: string; kind: string }> = {};
+    const addStop = (lat: number, lon: number, name: string, kind: string) => {
+      if (lat === 0 && lon === 0) return;
+      const key = `${lat.toFixed(5)},${lon.toFixed(5)}`;
+      const existing = stopByKey[key];
+      if (!existing || priority[kind] > priority[existing.kind]) {
+        stopByKey[key] = { lat, lon, name, kind };
+      }
+    };
+
+    const transitLegs = legs.filter((l) => l.transit);
+    transitLegs.forEach((leg, i) => {
+      const boardKind = i === 0 ? 'board' : 'transfer';
+      const alightKind = i === transitLegs.length - 1 ? 'alight' : 'transfer';
+      addStop(leg.from.lat, leg.from.lon, leg.from.name, boardKind);
+      addStop(leg.to.lat, leg.to.lon, leg.to.name, alightKind);
+      leg.intermediateStops.forEach((s) => addStop(s.lat, s.lon, s.name, 'via'));
+    });
+
+    const stopFeatures: Feature[] = Object.values(stopByKey).map((s) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
+      properties: { kind: s.kind, name: s.name },
+    }));
+
+    const endpointFeatures: Feature[] = [];
+    if (endpoints) {
+      endpointFeatures.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [endpoints.from.lon, endpoints.from.lat] },
+        properties: { role: 'origin' },
+      });
+      endpointFeatures.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [endpoints.to.lon, endpoints.to.lat] },
+        properties: { role: 'destination' },
+      });
+      allCoords.push([endpoints.from.lon, endpoints.from.lat]);
+      allCoords.push([endpoints.to.lon, endpoints.to.lat]);
+    }
+
+    lineSource.setData({ type: 'FeatureCollection', features: lineFeatures });
+    stopSource.setData({ type: 'FeatureCollection', features: stopFeatures });
+    endpointSource.setData({ type: 'FeatureCollection', features: endpointFeatures });
+
+    if (fitBounds && allCoords.length >= 2) {
+      const bounds = allCoords.reduce(
+        (b, c) => b.extend(c),
+        new maplibregl.LngLatBounds(allCoords[0], allCoords[0])
+      );
+      map.fitBounds(bounds, { padding: { top: 90, bottom: 90, left: 60, right: 60 }, maxZoom: 16, duration: 700 });
+    }
   };
 
   // Animation references to run independent of React re-renders
@@ -1174,8 +1279,119 @@ export const Map: React.FC<MapProps> = ({
       }, 'trams-circles');
     }
 
+    // --- Journey planner sources & layers ---
+    if (!map.getSource('journey-lines')) {
+      map.addSource('journey-lines', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    if (!map.getSource('journey-stops')) {
+      map.addSource('journey-stops', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    if (!map.getSource('journey-endpoints')) {
+      map.addSource('journey-endpoints', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+
+    // Walk legs: dashed grey casing rendered beneath transit legs
+    if (!map.getLayer('journey-walk-layer')) {
+      map.addLayer({
+        id: 'journey-walk-layer',
+        type: 'line',
+        source: 'journey-lines',
+        filter: ['!', ['get', 'transit']] as maplibregl.FilterSpecification,
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#94a3b8',
+          'line-width': 4,
+          'line-opacity': 0.85,
+          'line-dasharray': [1.5, 1.5],
+        },
+      }, 'trams-circles');
+    }
+
+    // Transit legs: solid, coloured by route
+    if (!map.getLayer('journey-transit-layer')) {
+      map.addLayer({
+        id: 'journey-transit-layer',
+        type: 'line',
+        source: 'journey-lines',
+        filter: ['get', 'transit'] as maplibregl.FilterSpecification,
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': ['coalesce', ['get', 'color'], '#00985f'],
+          'line-width': 6,
+          'line-opacity': 0.9,
+        },
+      }, 'trams-circles');
+    }
+
+    // Highlighted journey stops (board / alight / transfer / via)
+    if (!map.getLayer('journey-stops-layer')) {
+      map.addLayer({
+        id: 'journey-stops-layer',
+        type: 'circle',
+        source: 'journey-stops',
+        paint: {
+          'circle-radius': [
+            'match',
+            ['get', 'kind'],
+            'board', 7,
+            'alight', 7,
+            'transfer', 6,
+            4,
+          ],
+          'circle-color': [
+            'match',
+            ['get', 'kind'],
+            'board', '#00b894',
+            'alight', '#e17055',
+            'transfer', '#fdcb6e',
+            '#ffffff',
+          ],
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': [
+            'match',
+            ['get', 'kind'],
+            'via', 1.5,
+            2.5,
+          ],
+        },
+      }, 'trams-circles');
+    }
+
+    // Origin & destination pin markers (sit above the highlighted stops)
+    if (!map.getLayer('journey-endpoints-layer')) {
+      map.addLayer({
+        id: 'journey-endpoints-layer',
+        type: 'circle',
+        source: 'journey-endpoints',
+        paint: {
+          'circle-radius': 9,
+          'circle-color': [
+            'match',
+            ['get', 'role'],
+            'origin', '#00b894',
+            'destination', '#e17055',
+            '#0984e3',
+          ],
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 3.5,
+        },
+      }, 'trams-circles');
+    }
+
     // Draw route geometries now that style and layer are loaded
     drawRouteGeometries(map, routeGeometriesRef.current);
+
+    // Restore any active journey after a style/theme change
+    updateJourney(map, journeyLegsRef.current, journeyEndpointsRef.current, false);
 
     // Hide default bus stops from the vector style
     const busStopLayers = ['stops_bus', 'stops_trunk'];
@@ -1547,6 +1763,24 @@ export const Map: React.FC<MapProps> = ({
       drawRouteGeometries(map, routeGeometries);
     }
   }, [routeGeometries]);
+
+  // Update planned journey rendering. Fit the camera only when the journey
+  // itself changes (not on unrelated re-renders) to avoid fighting the user.
+  useEffect(() => {
+    journeyLegsRef.current = journeyLegs;
+    journeyEndpointsRef.current = journeyEndpoints;
+
+    const map = mapRef.current;
+    if (!map || !map.getStyle() || !map.getSource('journey-lines')) return;
+
+    const fitKey = journeyLegs && journeyLegs.length > 0
+      ? `${journeyLegs.length}:${journeyLegs[0].geometry?.slice(0, 12)}:${journeyLegs[journeyLegs.length - 1].geometry?.slice(-12)}`
+      : '';
+    const shouldFit = fitKey !== '' && fitKey !== journeyFitKeyRef.current;
+    journeyFitKeyRef.current = fitKey;
+
+    updateJourney(map, journeyLegs, journeyEndpoints, shouldFit);
+  }, [journeyLegs, journeyEndpoints]);
 
   // Dynamic 3D Mode changes
   useEffect(() => {

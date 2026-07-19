@@ -128,4 +128,70 @@ export interface AlertsListResponse {
   alerts: Alert[];
 }
 
+// --- Destination search & journey planning ---
+
+export interface GeocodeResult {
+  id: string;
+  name: string;
+  label: string;
+  locality?: string;
+  layer?: string;
+  lat: number;
+  lon: number;
+}
+
+export interface GeocodeResponse {
+  results: GeocodeResult[];
+}
+
+export interface JourneyPlace {
+  name: string;
+  lat: number;
+  lon: number;
+  stopId?: string;
+  stopCode?: string;
+}
+
+export interface JourneyRoute {
+  shortName: string;
+  longName: string;
+  color: string;
+  mode: string;
+}
+
+export interface JourneyLeg {
+  mode: string;
+  transit: boolean;
+  duration: number; // seconds
+  distance: number; // meters
+  startTime: number; // epoch ms
+  endTime: number; // epoch ms
+  headsign?: string;
+  route?: JourneyRoute;
+  from: JourneyPlace;
+  to: JourneyPlace;
+  intermediateStops: JourneyPlace[];
+  geometry: string; // encoded polyline
+}
+
+export interface JourneyItinerary {
+  duration: number; // seconds
+  walkDistance: number; // meters
+  startTime: number; // epoch ms
+  endTime: number; // epoch ms
+  transfers: number;
+  legs: JourneyLeg[];
+}
+
+export interface JourneyPlanResponse {
+  itineraries: JourneyItinerary[];
+}
+
+// A resolved point used as journey origin/destination.
+export interface JourneyEndpoint {
+  name: string;
+  lat: number;
+  lon: number;
+}
+
 

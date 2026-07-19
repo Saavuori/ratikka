@@ -29,6 +29,18 @@ func NewGraphQLClient(apiKey string) *GraphQLClient {
 	}
 }
 
+// APIKey exposes the configured Digitransit subscription key so REST proxies
+// (e.g. the geocoding search) can authenticate without reaching for the
+// environment directly.
+func (c *GraphQLClient) APIKey() string {
+	return c.apiKey
+}
+
+// HTTPClient exposes the shared HTTP client for non-GraphQL upstream proxies.
+func (c *GraphQLClient) HTTPClient() *http.Client {
+	return c.httpClient
+}
+
 type graphQLRequest struct {
 	Query     string                 `json:"query"`
 	Variables map[string]interface{} `json:"variables,omitempty"`

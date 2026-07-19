@@ -17,6 +17,8 @@
   - [REST — Stop Details](#rest--stop-details)
   - [REST — Route Details](#rest--route-details)
   - [REST — Bike Station Details](#rest--bike-station-details)
+  - [REST — Destination Search (Geocode)](#rest--destination-search-geocode)
+  - [REST — Journey Plan](#rest--journey-plan)
   - [REST — Health Check](#rest--health-check)
   - [REST — Version Info](#rest--version-info)
 
@@ -499,6 +501,122 @@ Get live capacity and rental status for a specific city bike station.
   "spacesAvailable": 8
 }
 ```
+
+---
+
+### REST — Destination Search (Geocode)
+
+Free-text place search powering the journey planner's destination autocomplete.
+Proxies the Digitransit geocoding (Pelias) API server-side so the subscription
+key never reaches the browser. Results are constrained to the HSL region and
+cached for 60 seconds.
+
+| Property | Value |
+|---|---|
+| **Method** | `GET` |
+| **Path** | `/api/v1/geocode` |
+| **Auth** | None (backend adds Digitransit key) |
+
+**Query Parameters:**
+
+| Param | Required | Example | Description |
+|---|---|---|---|
+| `text` | Yes | `kamppi` | Free-text search query (min. 2 chars from the client) |
+| `lat` | No | `60.1699` | Focus point latitude — ranks nearby results first |
+| `lon` | No | `24.9384` | Focus point longitude |
+
+**Response** `200 OK`:
+
+```json
+{
+  "results": [
+    {
+      "id": "gtfs:stop:HSL:1040601",
+      "name": "Kamppi",
+      "label": "Kamppi, Helsinki",
+      "locality": "Helsinki",
+      "layer": "stop",
+      "lat": 60.1690,
+      "lon": 24.9310
+    }
+  ]
+}
+```
+
+`400` if `text` is missing; `502` on an upstream error.
+
+---
+
+### REST — Journey Plan
+
+Plans a trip between two points and returns ranked itineraries — the routes that
+take the rider from origin to destination, including the exact stops to board
+and alight at. Proxies the Digitransit routing `plan` query and is cached for 20
+seconds. The frontend defaults the origin to the user's current location.
+
+| Property | Value |
+|---|---|
+| **Method** | `GET` |
+| **Path** | `/api/v1/plan` |
+| **Auth** | None (backend adds Digitransit key) |
+
+**Query Parameters:**
+
+| Param | Required | Example | Description |
+|---|---|---|---|
+| `fromLat` / `fromLon` | Yes | `60.1699` / `24.9384` | Origin coordinates |
+| `toLat` / `toLon` | Yes | `60.1990` / `24.9330` | Destination coordinates |
+| `numItineraries` | No | `4` | Number of itineraries (1–6, default 4) |
+| `arriveBy` | No | `false` | If `true`, treat the time as an arrival deadline |
+| `modes` | No | `TRAM,BUS` | CSV of transit modes (`TRAM,BUS,RAIL,SUBWAY,FERRY`); `WALK` is always included. Empty = all |
+
+**Response** `200 OK`:
+
+```json
+{
+  "itineraries": [
+    {
+      "duration": 1200,
+      "walkDistance": 340.5,
+      "startTime": 1750000000000,
+      "endTime": 1750001200000,
+      "transfers": 0,
+      "legs": [
+        {
+          "mode": "WALK",
+          "transit": false,
+          "duration": 180,
+          "distance": 220.0,
+          "startTime": 1750000000000,
+          "endTime": 1750000180000,
+          "from": { "name": "Origin", "lat": 60.17, "lon": 24.94 },
+          "to": { "name": "Kamppi", "lat": 60.169, "lon": 24.931, "stopId": "HSL:1040601", "stopCode": "1234" },
+          "intermediateStops": [],
+          "geometry": "<encoded polyline>"
+        },
+        {
+          "mode": "TRAM",
+          "transit": true,
+          "duration": 600,
+          "distance": 2100.0,
+          "startTime": 1750000200000,
+          "endTime": 1750000800000,
+          "headsign": "Pasila",
+          "route": { "shortName": "9", "longName": "Pasila - Jätkäsaari", "color": "007AC9", "mode": "TRAM" },
+          "from": { "name": "Kamppi", "lat": 60.169, "lon": 24.931, "stopId": "HSL:1040601", "stopCode": "1234" },
+          "to": { "name": "Pasila", "lat": 60.199, "lon": 24.933, "stopId": "HSL:1174501", "stopCode": "5678" },
+          "intermediateStops": [
+            { "name": "Sokos", "lat": 60.171, "lon": 24.941, "stopId": "HSL:1020101", "stopCode": "0001" }
+          ],
+          "geometry": "<encoded polyline>"
+        }
+      ]
+    }
+  ]
+}
+```
+
+`400` on missing/invalid coordinates; `404` if no journey is found; `502` on an upstream error.
 
 ---
 
