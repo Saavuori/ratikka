@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
+import type { FilterSpecification, MapLayerMouseEvent, PropertyValueSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { VehiclePosition, TripDetailsResponse } from '../types';
 import { lerp, lerpAngle } from '../lib/lerp';
@@ -349,39 +350,23 @@ export const Map: React.FC<MapProps> = ({
             lastKnownIndex = tripStops.findIndex(s => s.gtfsId === stopIdToMatch || s.gtfsId?.replace(/^HSL:/, '') === cleanToMatch);
           }
 
-          let nextStopIndex = -1;
+          let nextStopIndex: number;
 
           if (lastKnownIndex === -1) {
-            // Fallback: Estimate position based on arrival times
+            // Fallback: estimate position from arrival times
             const now = new Date();
             const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-            const nextIndex = tripStops.findIndex(stop => {
+            nextStopIndex = tripStops.findIndex(stop => {
               const [h, m] = stop.realtimeArrival.split(':').map(Number);
-              const stopMinutes = h * 60 + m;
-              return stopMinutes >= currentMinutes;
+              return h * 60 + m >= currentMinutes;
             });
-
-            if (nextIndex !== -1) {
-              nextStopIndex = nextIndex;
-              lastKnownIndex = nextIndex > 0 ? nextIndex - 1 : 0;
-            } else {
-              nextStopIndex = -1;
-              lastKnownIndex = tripStops.length - 1;
-            }
+          } else if (hasExplicitStop && !isStopped) {
+            // Doors closed: physically at/arriving at lastKnownIndex
+            nextStopIndex = lastKnownIndex;
           } else {
-            if (hasExplicitStop) {
-              if (isStopped) {
-                // Doors open: we are currently at lastKnownIndex
-                nextStopIndex = lastKnownIndex + 1 < tripStops.length ? lastKnownIndex + 1 : -1;
-              } else {
-                // Doors closed: physically at/arriving at lastKnownIndex, but doors closed
-                nextStopIndex = lastKnownIndex;
-              }
-            } else {
-              // Between stops: we departed lastKnownIndex (which was lastStopId)
-              nextStopIndex = lastKnownIndex + 1 < tripStops.length ? lastKnownIndex + 1 : -1;
-            }
+            // Doors open at lastKnownIndex, or between stops having departed it
+            nextStopIndex = lastKnownIndex + 1 < tripStops.length ? lastKnownIndex + 1 : -1;
           }
 
           if (nextStopIndex !== -1) {
@@ -837,7 +822,7 @@ export const Map: React.FC<MapProps> = ({
           'and',
           ['!', ['get', 'isTrunkStop']],
           ['match', ['get', 'mode'], 'BUS', true, false]
-        ] as any,
+        ] as unknown as FilterSpecification,
         paint: {
           'circle-color': '#007ac9',
           'circle-radius': [
@@ -859,7 +844,7 @@ export const Map: React.FC<MapProps> = ({
         'source-layer': 'stops',
         minzoom: 13,
         maxzoom: 15.5,
-        filter: ['and', ['get', 'isTrunkStop'], ['match', ['get', 'mode'], 'BUS', true, false]] as any,
+        filter: ['and', ['get', 'isTrunkStop'], ['match', ['get', 'mode'], 'BUS', true, false]] as unknown as FilterSpecification,
         paint: {
           'circle-color': '#007ac9',
           'circle-radius': [
@@ -1120,7 +1105,7 @@ export const Map: React.FC<MapProps> = ({
             ['zoom'],
             15, ['literal', [0, 0]],
             16, ['literal', [0, -28]]
-          ] as any
+          ] as unknown as PropertyValueSpecification<[number, number]>
         },
         filter: ['==', ['to-string', ['coalesce', ['get', 'stationId'], ['get', 'id'], '']], '']
       }, 'citybike_icon');
@@ -1212,7 +1197,7 @@ export const Map: React.FC<MapProps> = ({
             'all',
             ['==', ['get', 'mode'], 'TRAM'],
             ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]]
-          ] as any);
+          ] as unknown as FilterSpecification);
         }
       }
     }
@@ -1269,7 +1254,7 @@ export const Map: React.FC<MapProps> = ({
       }
     });
 
-    const handleStopClick = (e: any) => {
+    const handleStopClick = (e: MapLayerMouseEvent) => {
       if (!e.features || e.features.length === 0) return;
       const feat = e.features[0];
       // Support both Digitransit tile properties (gtfsId, name, code)
@@ -1298,7 +1283,7 @@ export const Map: React.FC<MapProps> = ({
     map.on('click', 'stops_trunk', handleStopClick);
     map.on('click', 'stops_signs', handleStopClick);
 
-    const handleBikeClick = (e: any) => {
+    const handleBikeClick = (e: MapLayerMouseEvent) => {
       if (!e.features || e.features.length === 0) return;
       const feat = e.features[0];
       const stationId = feat.properties?.id || feat.properties?.stationId;
@@ -1384,7 +1369,7 @@ export const Map: React.FC<MapProps> = ({
     // Handle zoom, rotate, and pitch start/end events via direct DOM events on the container.
     // This immediately stops the 60fps centering loop from fighting with user interaction.
     const mapContainer = mapContainerRef.current;
-    let wheelTimeout: any = null;
+    let wheelTimeout: ReturnType<typeof setTimeout> | null = null;
 
     const handleWheel = () => {
       isInteractingRef.current = true;
@@ -1411,9 +1396,7 @@ export const Map: React.FC<MapProps> = ({
     window.addEventListener('touchend', handleInteractionEnd);
 
     // Report initial bearing and listen to map rotate events
-    if (onMapBearingChange) {
-      onMapBearingChange(map.getBearing());
-    }
+    callbacksRef.current.onMapBearingChange?.(map.getBearing());
     map.on('rotate', () => {
       if (callbacksRef.current.onMapBearingChange) {
         callbacksRef.current.onMapBearingChange(map.getBearing());
@@ -1435,6 +1418,9 @@ export const Map: React.FC<MapProps> = ({
       window.removeEventListener('touchend', handleInteractionEnd);
       map.remove();
     };
+    // Builds the map exactly once per API key. `setupCustomMapElements` is a stable
+    // local helper; adding it would tear down and rebuild the whole map on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKey]);
 
   // Handle map style (theme) changes dynamically
@@ -1452,11 +1438,8 @@ export const Map: React.FC<MapProps> = ({
     const map = mapRef.current;
     if (!map) return;
 
-    console.log('[Map] Selection ring filter update — selectedTramId:', selectedTramId);
     if (map.getStyle() && map.getLayer('trams-selected-layer')) {
       map.setFilter('trams-selected-layer', ['==', ['get', 'veh'], selectedTramId || '']);
-    } else {
-      console.warn('[Map] trams-selected-layer not found');
     }
   }, [selectedTramId]);
 
@@ -1523,7 +1506,6 @@ export const Map: React.FC<MapProps> = ({
     if (!map || !selectedTramId) return;
 
     const selectedTram = latestTramsRef.current[selectedTramId];
-    console.log('[Map] Center on tram — selectedTramId:', selectedTramId, 'found:', !!selectedTram, 'latestTramsRef keys sample:', Object.keys(latestTramsRef.current).slice(0, 5));
     if (selectedTram) {
       const easeOptions: maplibregl.EaseToOptions = {
         center: [selectedTram.lng, selectedTram.lat],
@@ -1564,6 +1546,11 @@ export const Map: React.FC<MapProps> = ({
     }
   }, [showRouteNetwork]);
 
+  // Which line the selected vehicle runs. This is the only thing the stop-filter effect
+  // below needs from `trams` — depending on the whole map would re-run every layer filter
+  // on every position frame.
+  const selectedTramDesi = selectedTramId ? trams[selectedTramId]?.desi ?? null : null;
+
   // Dynamic Stop Route Filtering
   useEffect(() => {
     const map = mapRef.current;
@@ -1571,9 +1558,8 @@ export const Map: React.FC<MapProps> = ({
 
     // Build the list of active lines we want to show stops for
     const activeRoutes = [...lineFilters];
-    const selectedTram = selectedTramId ? trams[selectedTramId] : null;
-    if (selectedTram && !activeRoutes.includes(selectedTram.desi)) {
-      activeRoutes.push(selectedTram.desi);
+    if (selectedTramDesi && !activeRoutes.includes(selectedTramDesi)) {
+      activeRoutes.push(selectedTramDesi);
     }
 
     const allowedStopIdsSet = new Set<string>();
@@ -1611,7 +1597,7 @@ export const Map: React.FC<MapProps> = ({
           'all',
           ['==', ['get', 'mode'], 'TRAM'],
           excludeSelectedStopFilter
-        ] as any);
+        ] as unknown as FilterSpecification);
       } else if (allowedStopIds.length === 0) {
         map.setFilter('stops_tram', ['==', '1', '2']);
       } else {
@@ -1620,7 +1606,7 @@ export const Map: React.FC<MapProps> = ({
           ['==', ['get', 'mode'], 'TRAM'],
           ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]],
           excludeSelectedStopFilter
-        ] as any);
+        ] as unknown as FilterSpecification);
       }
     }
 
@@ -1636,7 +1622,7 @@ export const Map: React.FC<MapProps> = ({
             'all',
             ['==', ['get', 'mode'], 'BUS'],
             excludeSelectedStopFilter
-          ] as any);
+          ] as unknown as FilterSpecification);
         } else if (allowedStopIds.length === 0) {
           map.setLayoutProperty(layerId, 'visibility', 'none');
         } else {
@@ -1646,7 +1632,7 @@ export const Map: React.FC<MapProps> = ({
             ['==', ['get', 'mode'], 'BUS'],
             ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]],
             excludeSelectedStopFilter
-          ] as any);
+          ] as unknown as FilterSpecification);
         }
       }
     });
@@ -1664,7 +1650,7 @@ export const Map: React.FC<MapProps> = ({
           'all',
           ['in', ['get', 'mode'], ['literal', signModes]],
           excludeSelectedStopFilter
-        ] as any);
+        ] as unknown as FilterSpecification);
       } else if (allowedStopIds.length === 0) {
         map.setFilter('stops_signs', ['==', '1', '2']);
       } else {
@@ -1673,10 +1659,10 @@ export const Map: React.FC<MapProps> = ({
           ['in', ['get', 'mode'], ['literal', signModes]],
           ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]],
           excludeSelectedStopFilter
-        ] as any);
+        ] as unknown as FilterSpecification);
       }
     }
-  }, [lineFilters, selectedTramId, trams, routeGeometries, showTrams, showBuses, selectedStopId]);
+  }, [lineFilters, selectedTramDesi, routeGeometries, showTrams, showBuses, selectedStopId]);
 
   return (
     <div className="map-wrapper">

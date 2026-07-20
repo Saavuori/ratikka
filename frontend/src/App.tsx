@@ -1,7 +1,7 @@
-/* eslint-disable react-hooks/set-state-in-effect */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useTramData } from './hooks/useTramData';
+import { useSwipeGestures } from './hooks/useSwipeGestures';
 import { Map } from './components/Map';
 import { FilterPanel } from './components/FilterPanel';
 import { TramPopup } from './components/TramPopup';
@@ -90,13 +90,6 @@ function App() {
 
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
 
-  // Reset following mode when selected tram changes
-  useEffect(() => {
-    setIsFollowing(false);
-  }, [selectedTram?.veh]);
-
-
-
   // Detail panel collapse state: defaults to true (hidden/collapsed when item is selected)
   const [isDetailCollapsed, setIsDetailCollapsed] = useState<boolean>(true);
 
@@ -105,81 +98,45 @@ function App() {
     typeof window !== 'undefined' ? window.innerWidth <= 768 : false
   );
 
-  // Auto-collapse sidebar when a tram, stop, or bike station is selected on mobile
-  useEffect(() => {
-    if ((selectedTram || selectedStop || selectedBikeStation) && window.innerWidth <= 768) {
+  // Shared consequences of picking something on the map. This is event-driven, so it
+  // lives in the selection handlers rather than an effect watching the selection —
+  // an effect would cost an extra render pass per selection.
+  const onSelectionMade = useCallback(() => {
+    setIsFollowing(false);
+    if (window.innerWidth <= 768) {
       setIsFilterCollapsed(true);
     }
-  }, [selectedTram, selectedStop, selectedBikeStation]);
-  // Slide (swipe) gesture detection for left and right panels on touch devices
-  useEffect(() => {
-    let touchStartX = 0;
-    let touchStartY = 0;
-    const edgeThreshold = 45; // px from screen edge to trigger edge swipes
-    const swipeThreshold = 55; // px of horizontal movement to trigger swipe
+  }, []);
 
-    const handleTouchStart = (e: TouchEvent) => {
-      touchStartX = e.touches[0].clientX;
-      touchStartY = e.touches[0].clientY;
-    };
+  useSwipeGestures({
+    isFilterCollapsed,
+    isDetailCollapsed,
+    setFilterCollapsed: setIsFilterCollapsed,
+    setDetailCollapsed: setIsDetailCollapsed,
+  });
 
-    const handleTouchEnd = (e: TouchEvent) => {
-      if (e.changedTouches.length === 0) return;
-      const touchEndX = e.changedTouches[0].clientX;
-      const touchEndY = e.changedTouches[0].clientY;
-      const deltaX = touchEndX - touchStartX;
-      const deltaY = touchEndY - touchStartY;
-
-      // Ensure it's mostly a horizontal swipe
-      if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5 && Math.abs(deltaX) > swipeThreshold) {
-        const screenWidth = window.innerWidth;
-
-        // Left Panel (FilterPanel) Swipes
-        if (deltaX > 0) {
-          // Swipe right: Open left panel if swipe started near left edge
-          if (touchStartX < edgeThreshold) {
-            setIsFilterCollapsed(false);
-          }
-        } else {
-          // Swipe left: Close left panel if it is currently open and swipe started inside it
-          if (!isFilterCollapsed && touchStartX < 250) {
-            setIsFilterCollapsed(true);
-          }
-        }
-
-        // Right Panel (DetailPopup / StopPopup / BikePopup) Swipes
-        if (deltaX < 0) {
-          // Swipe left: Open right panel if swipe started near right edge
-          if (screenWidth - touchStartX < edgeThreshold) {
-            setIsDetailCollapsed(false);
-          }
-        } else {
-          // Swipe right: Close right panel if it is currently open and swipe started inside it
-          if (!isDetailCollapsed && screenWidth - touchStartX < 350) {
-            setIsDetailCollapsed(true);
-          }
-        }
-      }
-    };
-
-    window.addEventListener('touchstart', handleTouchStart, { passive: true });
-    window.addEventListener('touchend', handleTouchEnd, { passive: true });
-
-    return () => {
-      window.removeEventListener('touchstart', handleTouchStart);
-      window.removeEventListener('touchend', handleTouchEnd);
-    };
-  }, [isFilterCollapsed, isDetailCollapsed]);
   const [selectedLines, setSelectedLines] = useState<string[]>([]);
   const [selectedStopRoutes, setSelectedStopRoutes] = useState<string[]>([]);
   const [mapBearing, setMapBearing] = useState<number>(0);
   const [routeGeometries, setRouteGeometries] = useState<Record<string, { geometries: string[]; color?: string; stops?: string[] }>>({});
 
-  // Fetch route geometries when selectedLines filter, selectedTram, or selectedStopRoutes changes
+  // Mirrors of route-fetch state, read by the effect below without becoming deps of it.
+  const loadedRoutesRef = useRef(routeGeometries);
+  const inFlightRoutesRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    loadedRoutesRef.current = routeGeometries;
+  }, [routeGeometries]);
+
+  // Only the selected vehicle's line matters here, not its live position.
+  const selectedTramDesi = selectedTram?.desi ?? null;
+
+  // Fetch route geometries when the line filter, selected vehicle's line, or the
+  // routes serving the selected stop change.
   useEffect(() => {
     const linesToHighlight = [...selectedLines];
-    if (selectedTram && !linesToHighlight.includes(selectedTram.desi)) {
-      linesToHighlight.push(selectedTram.desi);
+    if (selectedTramDesi && !linesToHighlight.includes(selectedTramDesi)) {
+      linesToHighlight.push(selectedTramDesi);
     }
     selectedStopRoutes.forEach((line) => {
       if (!linesToHighlight.includes(line)) {
@@ -188,6 +145,9 @@ function App() {
     });
 
     if (linesToHighlight.length === 0) {
+      // Same as above: this effect's whole job is keeping the cached geometries in
+      // step with the current selection, including clearing them.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRouteGeometries({});
       return;
     }
@@ -203,30 +163,38 @@ function App() {
     });
 
     linesToHighlight.forEach((line) => {
-      if (!routeGeometries[line]) {
-        fetchRouteDetails(line)
-          .then((data) => {
-            setRouteGeometries((prev) => ({
-              ...prev,
-              [line]: {
-                geometries: data.geometries,
-                color: data.color,
-                stops: data.stops,
-              },
-            }));
-          })
-          .catch((err) => {
-            console.error(`Failed to fetch route details for ${line}:`, err);
-          });
-      }
-    });
-  }, [selectedLines, selectedTram, selectedStopRoutes]);
+      // `routeGeometries` is deliberately not a dep (it changes as fetches land, which
+      // would re-run this effect), so consult the ref mirror plus an in-flight set
+      // instead of the stale render closure.
+      if (loadedRoutesRef.current[line] || inFlightRoutesRef.current.has(line)) return;
 
-  const handleSelectTram = (tram: VehiclePosition | null) => {
+      inFlightRoutesRef.current.add(line);
+      fetchRouteDetails(line)
+        .then((data) => {
+          setRouteGeometries((prev) => ({
+            ...prev,
+            [line]: {
+              geometries: data.geometries,
+              color: data.color,
+              stops: data.stops,
+            },
+          }));
+        })
+        .catch((err) => {
+          console.error(`Failed to fetch route details for ${line}:`, err);
+        })
+        .finally(() => {
+          inFlightRoutesRef.current.delete(line);
+        });
+    });
+  }, [selectedLines, selectedTramDesi, selectedStopRoutes]);
+
+  const handleSelectTram = useCallback((tram: VehiclePosition | null) => {
     setSelectedStop(null);
     setSelectedBikeStation(null);
     setSelectedTram(tram);
-  };
+    if (tram) onSelectionMade();
+  }, [onSelectionMade]);
 
   const handleSelectStop = (
     stopId: string,
@@ -246,39 +214,42 @@ function App() {
     setSelectedStopRoutes([]); // Reset selected stop routes!
     setSelectedStop({ id: stopId, name, code, lat, lng, mode, isTrunkStop });
     setIsDetailCollapsed(false); // Auto-expand detail panel to show schedule
+    onSelectionMade();
   };
 
-  const handleSelectBikeStation = (station: { id: string; name: string } | null) => {
+  const handleSelectBikeStation = useCallback((station: { id: string; name: string } | null) => {
     setSelectedTram(null);
     setSelectedStop(null);
     setSelectedBikeStation(station);
     if (station) {
       setIsDetailCollapsed(false); // Auto-expand detail panel to show bike capacity
+      onSelectionMade();
     }
-  };
+  }, [onSelectionMade]);
 
-  const handleCloseStop = () => {
+  const handleCloseStop = useCallback(() => {
     setSelectedStop(null);
     setSelectedStopRoutes([]);
-  };
+  }, []);
 
-  const handleCloseBikeStation = () => {
+  const handleCloseBikeStation = useCallback(() => {
     setSelectedBikeStation(null);
-  };
+  }, []);
 
-  const handleToggleLine = (line: string) => {
+  const handleToggleLine = useCallback((line: string) => {
     setSelectedLines((prev) =>
       prev.includes(line) ? prev.filter((l) => l !== line) : [...prev, line]
     );
-  };
+  }, []);
 
-  const handleClearFilters = () => {
+  const handleClearFilters = useCallback(() => {
     setSelectedLines([]);
-  };
+  }, []);
 
   const handleSelectTripFromStop = (tripId: string, lineDesi: string) => {
     // Find if the tram for this trip is currently online
     const matchedTram = Object.values(trams).find((t) => areTripsEquivalent(t.tripId, tripId));
+    onSelectionMade();
     if (matchedTram) {
       setSelectedStop(null);
       setSelectedTram(matchedTram);
@@ -306,20 +277,53 @@ function App() {
 
   // Stop route filter: only filter after routes are loaded.
   // While loading (selectedStop set but selectedStopRoutes not yet arrived) keep all trams visible.
-  const displayedTrams = Object.fromEntries(
-    Object.entries(trams).filter((entry) => {
-      const tram = entry[1];
-      if (tram.mode === 'tram' && !showTrams) return false;
-      if (tram.mode === 'bus' && !showBuses) return false;
-      if (selectedLines.length > 0 && !selectedLines.includes(tram.desi)) {
-        return false;
-      }
-      // Filter by stop routes if a stop is selected
-      if (selectedStop && selectedStopRoutes.length > 0 && !selectedStopRoutes.includes(tram.desi)) {
-        return false;
-      }
-      return true;
-    })
+  // Memoised because a new object identity here re-runs Map's layer-filter effects on every
+  // position frame, which is several `setFilter` calls per WebSocket message.
+  const displayedTrams = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(trams).filter((entry) => {
+          const tram = entry[1];
+          if (tram.mode === 'tram' && !showTrams) return false;
+          if (tram.mode === 'bus' && !showBuses) return false;
+          if (selectedLines.length > 0 && !selectedLines.includes(tram.desi)) {
+            return false;
+          }
+          // Filter by stop routes if a stop is selected
+          if (selectedStop && selectedStopRoutes.length > 0 && !selectedStopRoutes.includes(tram.desi)) {
+            return false;
+          }
+          return true;
+        })
+      ),
+    [trams, showTrams, showBuses, selectedLines, selectedStop, selectedStopRoutes]
+  );
+
+  // Distinct line designators for the filter grid. The set of lines in service changes
+  // rarely, so we hold the array identity steady across position frames — that is what
+  // lets the memoised FilterPanel skip re-rendering.
+  const activeLinesKey = useMemo(() => {
+    const lines = new Set<string>();
+    for (const tram of Object.values(trams)) {
+      if (tram.mode === 'tram' && !showTrams) continue;
+      if (tram.mode === 'bus' && !showBuses) continue;
+      lines.add(tram.desi);
+    }
+    return Array.from(lines)
+      .sort((a, b) => {
+        const numA = parseInt(a);
+        const numB = parseInt(b);
+        if (isNaN(numA) && isNaN(numB)) return a.localeCompare(b);
+        if (isNaN(numA)) return 1;
+        if (isNaN(numB)) return -1;
+        return numA - numB;
+      })
+      .join(' ');
+  }, [trams, showTrams, showBuses]);
+
+  const activeLines = useMemo(
+    () => (activeLinesKey === '' ? [] : activeLinesKey.split(' ')),
+    [activeLinesKey]
   );
 
   // The live tram being tracked (prefer live data over stale selectedTram snapshot)
@@ -334,14 +338,12 @@ function App() {
   useEffect(() => {
     const tripId = liveTram?.tripId;
     if (!tripId) {
+      // Clearing the previous trip's data is the synchronisation this effect exists for;
+      // there is no external event to hang it off.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedTripDetails(null);
       setIsLoadingTripDetails(false);
       setTripDetailsError(null);
-      return;
-    }
-
-    // Don't refetch if we already have the details for this tripId
-    if (selectedTripDetails && selectedTripDetails.tripId === tripId) {
       return;
     }
 
@@ -375,9 +377,20 @@ function App() {
     };
   }, [liveTram?.tripId]);
 
-  const handleCloseTram = () => {
+  const handleCloseTram = useCallback(() => {
     setSelectedTram(null);
-  };
+  }, []);
+
+  // Stable so StopPopup's fetch effect can list it as a dependency without refetching.
+  const handleStopCoordsLoaded = useCallback((lat: number, lng: number) => {
+    setSelectedStop((prev) => (prev ? { ...prev, lat, lng } : prev));
+  }, []);
+
+  // Stable identities so the memoised panels aren't invalidated every render.
+  const toggleFilterCollapsed = useCallback(() => setIsFilterCollapsed((v) => !v), []);
+  const toggleDetailCollapsed = useCallback(() => setIsDetailCollapsed((v) => !v), []);
+  const toggleFollowing = useCallback(() => setIsFollowing((v) => !v), []);
+  const disableFollowing = useCallback(() => setIsFollowing(false), []);
 
   return (
     <div className="dashboard-container">
@@ -399,7 +412,7 @@ function App() {
         showRouteNetwork={showRouteNetwork}
         is3D={is3D}
         isFollowing={isFollowing}
-        onDisableFollowing={() => setIsFollowing(false)}
+        onDisableFollowing={disableFollowing}
         onMapBearingChange={setMapBearing}
         showTrams={showTrams}
         showBuses={showBuses}
@@ -408,13 +421,13 @@ function App() {
 
       {/* Sidebar Filters Panel */}
       <FilterPanel
-        trams={trams}
+        activeLines={activeLines}
         selectedLines={selectedLines}
         onToggleLine={handleToggleLine}
         onClearFilters={handleClearFilters}
         connectionStatus={connectionStatus}
         isCollapsed={isFilterCollapsed}
-        onToggleCollapse={() => setIsFilterCollapsed(!isFilterCollapsed)}
+        onToggleCollapse={toggleFilterCollapsed}
         mapTheme={mapTheme}
         setMapTheme={setMapTheme}
         showRouteNetwork={showRouteNetwork}
@@ -426,7 +439,8 @@ function App() {
         showBuses={showBuses}
         setShowBuses={setShowBuses}
         alerts={alerts}
-        selectedTram={liveTram}
+        selectedTramDesi={liveTram?.desi ?? null}
+        selectedTramRoute={liveTram?.route ?? null}
         selectedStop={selectedStop}
         selectedStopRoutes={selectedStopRoutes}
       />
@@ -438,7 +452,7 @@ function App() {
           mapBearing={mapBearing}
           onClose={handleCloseTram}
           isFollowing={isFollowing}
-          onToggleFollow={() => setIsFollowing(!isFollowing)}
+          onToggleFollow={toggleFollowing}
           tripDetails={selectedTripDetails}
         />
       )}
@@ -449,7 +463,7 @@ function App() {
           tram={liveTram!}
           onClose={handleCloseTram}
           isCollapsed={isDetailCollapsed}
-          onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
+          onToggleCollapse={toggleDetailCollapsed}
           alerts={alerts}
           tripDetails={selectedTripDetails}
           loading={isLoadingTripDetails}
@@ -464,15 +478,11 @@ function App() {
           stopName={selectedStop.name}
           stopCode={selectedStop.code}
           onClose={handleCloseStop}
-          onSelectTripId={(tripId, lineDesi) => handleSelectTripFromStop(tripId, lineDesi)}
+          onSelectTripId={handleSelectTripFromStop}
           onStopRoutesLoaded={setSelectedStopRoutes}
-          onStopCoordsLoaded={(lat, lng) => {
-            setSelectedStop((prev) =>
-              prev && prev.id === selectedStop.id ? { ...prev, lat, lng } : prev
-            );
-          }}
+          onStopCoordsLoaded={handleStopCoordsLoaded}
           isCollapsed={isDetailCollapsed}
-          onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
+          onToggleCollapse={toggleDetailCollapsed}
           alerts={alerts}
         />
       )}
@@ -484,7 +494,7 @@ function App() {
           stationName={selectedBikeStation.name}
           onClose={handleCloseBikeStation}
           isCollapsed={isDetailCollapsed}
-          onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
+          onToggleCollapse={toggleDetailCollapsed}
         />
       )}
 

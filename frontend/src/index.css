@@ -1,6 +1,3 @@
-/* Import premium Outfit/Inter fonts from Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-
 :root {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -27,11 +24,25 @@
   --bg-card: hsla(217, 33%, 17%, 0.4);
 
   --text-primary: #f8fafc;
+  --text-strong: #f1f5f9;
+  --text-body: #cbd5e1;
   --text-secondary: #94a3b8;
+  --text-muted: #7e8da3;
   --bg-button: rgba(30, 41, 59, 0.3);
   --bg-button-hover: rgba(30, 41, 59, 0.5);
   --border-button: rgba(255, 255, 255, 0.04);
   --border-button-hover: rgba(255, 255, 255, 0.15);
+
+  /* Surfaces and hairlines that must invert with the theme */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-faint: rgba(255, 255, 255, 0.04);
+  --surface-raised: rgba(30, 41, 59, 0.6);
+  --surface-faint: rgba(255, 255, 255, 0.02);
+  --timeline-dot-bg: #1e293b;
+  --timeline-rail: rgba(255, 255, 255, 0.06);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+  --app-bg: #020617;
 }
 
 [data-theme='light'] {
@@ -46,11 +57,24 @@
   --bg-card: rgba(241, 245, 249, 0.6);
 
   --text-primary: #1e293b;
-  --text-secondary: #64748b;
+  --text-strong: #0f172a;
+  --text-body: #334155;
+  --text-secondary: #526074;
+  --text-muted: #64748b;
   --bg-button: rgba(148, 163, 184, 0.1);
   --bg-button-hover: rgba(148, 163, 184, 0.2);
   --border-button: rgba(148, 163, 184, 0.15);
   --border-button-hover: rgba(148, 163, 184, 0.3);
+
+  --border-subtle: rgba(15, 23, 42, 0.12);
+  --border-faint: rgba(15, 23, 42, 0.06);
+  --surface-raised: rgba(148, 163, 184, 0.16);
+  --surface-faint: rgba(15, 23, 42, 0.03);
+  --timeline-dot-bg: #e2e8f0;
+  --timeline-rail: rgba(15, 23, 42, 0.1);
+  --scrollbar-thumb: rgba(15, 23, 42, 0.2);
+  --scrollbar-thumb-hover: rgba(15, 23, 42, 0.35);
+  --app-bg: #f8fafc;
 }
 
 body {
@@ -60,7 +84,7 @@ body {
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  background-color: #020617;
+  background-color: var(--app-bg);
 }
 
 /* Global resets for map integration */
@@ -76,9 +100,18 @@ body {
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  background-color: #020617;
+  background-color: var(--app-bg);
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* Map drag shouldn't select text, but panel content is real content —
+   stop names, times and IDs need to be copyable. */
+.glass-panel,
+.tram-card-overlay,
+.version-badge {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .map-wrapper {
@@ -180,59 +213,6 @@ body {
   gap: 12px;
 }
 
-.stats-active-vehicles-compact {
-  display: none;
-}
-
-.stats-active-vehicles {
-  display: block;
-}
-
-.mobile-line-badge {
-  display: none;
-}
-
-/* Sidebar Collapse Toggle Tab */
-.filter-toggle-tab {
-  display: none !important;
-  position: absolute;
-  right: -20px;
-  top: 16px;
-  width: 20px;
-  height: 32px;
-  background: var(--bg-panel);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border-glow);
-  border-left: none;
-  border-radius: 0 4px 4px 0;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--text-secondary);
-  opacity: 0.6;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  padding: 0;
-  z-index: 101;
-}
-
-.filter-toggle-tab:hover {
-  color: #34d399;
-  background: var(--bg-panel);
-  border-color: var(--accent-green);
-  opacity: 1;
-}
-
-.filter-toggle-tab .icon-desktop {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.filter-toggle-tab .icon-mobile {
-  display: none;
-}
-
 /* DetailPopup Specific (Shared between Tram and Stop popups) */
 .detail-popup {
   top: 80px;
@@ -253,47 +233,6 @@ body {
 
 .detail-popup.collapsed:hover {
   background: var(--bg-panel-hover);
-}
-
-/* Detail Popup Collapse Toggle Tab */
-.detail-toggle-tab {
-  display: none !important;
-  position: absolute;
-  left: -20px;
-  top: 16px;
-  width: 20px;
-  height: 32px;
-  background: var(--bg-panel);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border-glow);
-  border-right: none;
-  border-radius: 4px 0 0 4px;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--text-secondary);
-  opacity: 0.6;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  padding: 0;
-  z-index: 101;
-}
-
-.detail-toggle-tab:hover {
-  color: #34d399;
-  background: var(--bg-panel);
-  border-color: var(--accent-green);
-  opacity: 1;
-}
-
-.detail-toggle-tab .icon-desktop {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.detail-toggle-tab .icon-mobile {
-  display: none;
 }
 
 .desi-circle {
@@ -335,7 +274,7 @@ body {
 }
 
 .next-stop-sub {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--border-subtle);
   padding-top: 8px;
   display: flex;
   justify-content: space-between;
@@ -351,13 +290,13 @@ body {
 .callout-val {
   font-size: 0.9rem;
   font-weight: 800;
-  color: #f1f5f9;
+  color: var(--text-strong);
 }
 
 .callout-val.next-name {
   font-size: 0.85rem;
   font-weight: 700;
-  color: #cbd5e1;
+  color: var(--text-body);
 }
 
 .callout-val.next-eta {
@@ -395,7 +334,7 @@ body {
   justify-content: space-between;
   align-items: center;
   padding-bottom: 16px;
-  border-b: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .panel-title {
@@ -421,8 +360,8 @@ body {
   gap: 6px;
   padding: 4px 10px;
   border-radius: 9999px;
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-faint);
 }
 
 .status-dot {
@@ -496,7 +435,7 @@ body {
 
 .line-btn-count {
   font-size: 0.6rem;
-  color: #64748b;
+  color: var(--text-muted);
   margin-top: 2px;
 }
 
@@ -510,7 +449,7 @@ body {
 /* Legend Styling */
 .legend-section {
   padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--border-subtle);
   margin-top: 8px;
 }
 
@@ -523,13 +462,6 @@ body {
   margin-bottom: 6px;
 }
 
-.legend-list {
-  display: flex;
-  flex-direction: row;
-  justify-content: flex-start;
-  align-items: center;
-  gap: 12px;
-}
 
 .legend-item {
   display: flex;
@@ -540,18 +472,23 @@ body {
   white-space: nowrap;
 }
 
+/* Shape carries the meaning alongside colour: moving = circle, stopped = square */
 .legend-color {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  border: 1px solid #ffffff;
+  border: 1px solid var(--text-primary);
   flex-shrink: 0;
+}
+
+.legend-color.is-stopped {
+  border-radius: 1px;
 }
 
 /* Map Settings Section */
 .settings-section {
   padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--border-subtle);
   margin-top: 8px;
 }
 
@@ -605,7 +542,7 @@ body {
 .close-btn {
   background: none;
   border: none;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 6px;
   border-radius: 8px;
@@ -616,8 +553,8 @@ body {
 }
 
 .close-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #f1f5f9;
+  background: var(--border-subtle);
+  color: var(--text-strong);
 }
 
 /* Version Badge */
@@ -632,8 +569,8 @@ body {
   background: rgba(15, 23, 42, 0.85);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #64748b;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
   font-family: 'Courier New', monospace;
   font-size: 9px;
   padding: 4px 8px;
@@ -645,7 +582,7 @@ body {
 
 .version-badge:hover {
   opacity: 0.9;
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--scrollbar-thumb);
 }
 
 .version-badge__tag {
@@ -654,12 +591,12 @@ body {
 }
 
 .version-badge__sha {
-  color: #94a3b8;
+  color: var(--text-secondary);
   letter-spacing: 0.05em;
 }
 
 .version-badge__date {
-  color: #64748b;
+  color: var(--text-muted);
 }
 
 .version-badge__sep {
@@ -670,7 +607,7 @@ body {
 /* Metrics and Timeline Grid */
 .metric-grid {
   display: grid;
-  grid-template-cols: 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 12px;
   margin-bottom: 16px;
   margin-top: 16px;
@@ -678,14 +615,14 @@ body {
 
 .metric-card {
   background: var(--bg-card);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-faint);
   border-radius: 10px;
   padding: 12px;
 }
 
 .metric-label {
   font-size: 0.65rem;
-  color: #64748b;
+  color: var(--text-muted);
   text-transform: uppercase;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -715,7 +652,7 @@ body {
   position: relative;
   margin-left: 12px;
   padding-left: 20px;
-  border-left: 2px solid rgba(255, 255, 255, 0.06);
+  border-left: 2px solid var(--border-faint);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -735,8 +672,8 @@ body {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #1e293b;
-  border: 2px solid #64748b;
+  background: var(--timeline-dot-bg);
+  border: 2px solid var(--text-muted);
   transition: all 0.2s;
 }
 
@@ -779,8 +716,8 @@ body {
 }
 
 .timeline-item.upcoming .timeline-dot {
-  border-color: #64748b;
-  background: #1e293b;
+  border-color: var(--text-muted);
+  background: var(--timeline-dot-bg);
 }
 
 .timeline-stop-info {
@@ -797,7 +734,7 @@ body {
 
 .timeline-stop-code {
   font-size: 0.65rem;
-  color: #64748b;
+  color: var(--text-muted);
   margin-top: 2px;
 }
 
@@ -845,15 +782,26 @@ body {
   overflow-y: auto;
 }
 
+/* A real <button> so departures are keyboard-reachable; resets undo the UA styling. */
 .departure-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  width: 100%;
   padding: 6px 8px;
+  border: none;
   border-radius: 10px;
   background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: all 0.2s;
+}
+
+.departure-item:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .departure-item:hover {
@@ -900,7 +848,7 @@ body {
 
 .departure-sub {
   font-size: 0.65rem;
-  color: #64748b;
+  color: var(--text-muted);
   margin-top: 2px;
 }
 
@@ -946,7 +894,7 @@ body {
 }
 
 .maplibregl-ctrl-group button {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
 }
 
 .maplibregl-ctrl-group button:last-child {
@@ -965,11 +913,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* TramCard Overlay (Top Center Floating Card) */
@@ -1028,20 +976,20 @@ body {
 
 .tram-card-metric-unit {
   font-size: 0.65rem;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-weight: 400;
 }
 
 .tram-card-divider {
   width: 1px;
   height: 16px;
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: var(--border-subtle);
 }
 
 .tram-card-route {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #cbd5e1;
+  color: var(--text-body);
   max-width: 180px;
   white-space: nowrap;
   overflow: hidden;
@@ -1051,7 +999,7 @@ body {
 .tram-card-close {
   background: none;
   border: none;
-  color: #94a3b8;
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 4px;
   border-radius: 50%;
@@ -1063,8 +1011,8 @@ body {
 }
 
 .tram-card-close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #f1f5f9;
+  background: var(--border-subtle);
+  color: var(--text-strong);
 }
 
 /* MapLibre Controls safe area offset */
@@ -1073,20 +1021,109 @@ body {
   bottom: calc(8px + env(safe-area-inset-bottom)) !important;
 }
 
-/* Mobile responsive bottom navigation area safety adjustments */
+/* Keyboard focus ring — panels and controls are otherwise focus-invisible */
+:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
+}
+
+/* Tablet: give the panels room without crowding the map */
+@media (max-width: 1024px) {
+  .filter-panel {
+    top: 72px;
+    height: calc(100dvh - 144px);
+  }
+
+  .detail-popup {
+    width: 300px;
+  }
+}
+
+/* Phone: panels become near-fullwidth sheets, map keeps a usable strip */
 @media (max-width: 768px) {
   .version-badge {
     bottom: calc(20px + env(safe-area-inset-bottom));
     left: 12px;
   }
+
   .maplibregl-ctrl-bottom-right,
   .maplibregl-ctrl-bottom-left {
     bottom: calc(20px + env(safe-area-inset-bottom)) !important;
   }
 
-  /* Mobile close chevron styles */
-  .mobile-close-btn {
-    display: flex !important;
+  .filter-panel {
+    top: 64px;
+    width: min(78vw, 300px);
+    height: calc(100dvh - 128px);
+    padding: 12px;
+  }
+
+  .detail-popup {
+    top: 64px;
+    width: min(88vw, 360px);
+    max-height: calc(100dvh - 88px);
+    padding: 16px;
+  }
+
+  /* The peeking sliver needs to be wider to stay tappable */
+  .filter-panel.collapsed {
+    transform: translateX(calc(-100% + 22px)) !important;
+  }
+
+  .detail-popup.collapsed {
+    transform: translateX(calc(100% - 22px)) !important;
+  }
+
+  /* Three columns of line chips read better than two at this width */
+  .line-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  .line-btn {
+    padding: 9px 2px;
+    min-height: 42px;
+  }
+
+  /* Telemetry pill must not collide with either sidebar */
+  .tram-card-overlay {
+    left: 50%;
+    max-width: calc(100vw - 96px);
+    padding: 6px 10px 6px 8px;
+    gap: 8px;
+  }
+
+  .tram-card-route {
+    display: none;
+  }
+
+  .timeline-container,
+  .departure-list {
+    max-height: none;
+  }
+}
+
+/* Short viewports (landscape phones): reclaim vertical space */
+@media (max-height: 520px) {
+  .filter-panel {
+    top: 8px;
+    height: calc(100dvh - 16px);
+  }
+
+  .detail-popup {
+    top: 8px;
+    max-height: calc(100dvh - 16px);
+  }
+}
+
+/* Respect users who ask for less motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

@@ -1,7 +1,7 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 import React, { useEffect, useState } from 'react';
 import type { VehiclePosition, TripDetailsResponse, Alert } from '../types';
-import { AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Activity, Gauge, Compass, Cpu, Database, Users, ShieldCheck, ExternalLink } from 'lucide-react';
+import { useCollapsiblePanel } from '../hooks/useCollapsiblePanel';
+import { AlertTriangle, Loader2, ChevronRight, ChevronDown, ChevronUp, Activity, Gauge, Compass, Cpu, Database, Users, ShieldCheck, ExternalLink } from 'lucide-react';
 
 interface TramPopupProps {
   tram: VehiclePosition;
@@ -43,38 +43,8 @@ export const TramPopup: React.FC<TramPopupProps> = ({
 
   // Diagnostic states
   const [latency, setLatency] = useState<number>(0);
-  const [touchStart, setTouchStart] = useState<number | null>(null);
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStart(e.touches[0].clientX);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStart === null) return;
-    const currentX = e.touches[0].clientX;
-    const diff = currentX - touchStart;
-
-    // Swipe left (at least 45px) to expand (on the right panel)
-    if (diff < -45 && isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-    // Swipe right (at least 45px) to collapse (on the right panel)
-    else if (diff > 45 && !isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setTouchStart(null);
-  };
-
-  useEffect(() => {
-    if (tram.stop) {
-      setLastStopId(tram.stop);
-    }
-  }, [tram.stop]);
+  const collapseProps = useCollapsiblePanel(isCollapsed, onToggleCollapse, 'Show vehicle details');
 
   useEffect(() => {
     // Live latency tick
@@ -84,10 +54,16 @@ export const TramPopup: React.FC<TramPopupProps> = ({
     return () => clearInterval(interval);
   }, [tram.ts]);
 
-  useEffect(() => {
-    setShowAllStops(false); // Reset to collapsed on trip change
+  // Same render-time adjustment as TramCard: remember the last reported stop, and reset
+  // both it and the expanded-list state when the vehicle starts a new trip.
+  const [renderedTripId, setRenderedTripId] = useState<string | null>(tram.tripId);
+  if (tram.tripId !== renderedTripId) {
+    setRenderedTripId(tram.tripId);
+    setShowAllStops(false);
     setLastStopId(tram.stop || null);
-  }, [tram.tripId]);
+  } else if (tram.stop && tram.stop !== lastStopId) {
+    setLastStopId(tram.stop);
+  }
 
   useEffect(() => {
     if (onRouteNameReady && tripDetails?.route?.longName) {
@@ -197,16 +173,9 @@ export const TramPopup: React.FC<TramPopupProps> = ({
 
   return (
     <div
-      className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}
+      {...collapseProps}
+      className={`glass-panel detail-popup ${collapseProps.className}`}
       style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onClick={() => {
-        if (isCollapsed) {
-          onToggleCollapse();
-        }
-      }}
     >
       {/* Dynamic Keyframes injecting locally */}
       <style dangerouslySetInnerHTML={{ __html: `
@@ -233,26 +202,13 @@ export const TramPopup: React.FC<TramPopupProps> = ({
         }
       ` }} />
 
-      {/* Collapse/Expand Toggle Tab */}
-      <button
-        className="detail-toggle-tab"
-        onClick={onToggleCollapse}
-        aria-label={isCollapsed ? 'Show Schedule' : 'Hide Schedule'}
-      >
-        <span className="icon-desktop">
-          {isCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-        </span>
-        <span className="icon-mobile">
-          {isCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </span>
-      </button>
 
       {/* Header */}
-      <div className="panel-header" style={{ padding: '0 0 10px 0', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="panel-header" style={{ padding: '0 0 10px 0', borderBottom: '1px solid var(--border-faint)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div className="desi-circle">{tram.desi}</div>
           <div>
-            <h2 style={{ fontSize: '0.8rem', fontWeight: 700, margin: 0, color: '#e2e8f0' }}>
+            <h2 style={{ fontSize: '0.8rem', fontWeight: 700, margin: 0, color: 'var(--text-strong)' }}>
               {tripDetails?.headsign ? `→ ${tripDetails.headsign}` : `Line ${tram.desi}`}
             </h2>
             <p className="panel-subtitle" style={{ marginTop: '1px' }}>
@@ -312,10 +268,10 @@ export const TramPopup: React.FC<TramPopupProps> = ({
               >
                 <AlertTriangle size={14} style={{ color: severityColor, flexShrink: 0, marginTop: '2px' }} />
                 <div style={{ flex: 1 }}>
-                  <h4 style={{ margin: 0, fontSize: '0.65rem', fontWeight: 700, color: '#f1f5f9' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-strong)' }}>
                     {alert.headerText}
                   </h4>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '0.6rem', color: '#94a3b8', lineHeight: 1.3 }}>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '0.6rem', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
                     {alert.descriptionText}
                   </p>
                   {alert.url && (
@@ -345,13 +301,13 @@ export const TramPopup: React.FC<TramPopupProps> = ({
       )}
 
       {/* Overengineered Tabs Navigation */}
-      <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)', marginBottom: '12px', marginTop: '6px' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-faint)', marginBottom: '12px', marginTop: '6px' }}>
         <button 
           onClick={() => setActiveTab('telemetry')} 
           style={{
             flex: 1, padding: '8px 4px', background: 'none', border: 'none',
             borderBottom: activeTab === 'telemetry' ? `2px solid ${tram.mode === 'bus' ? '#0984e3' : '#00b894'}` : '2px solid transparent',
-            color: activeTab === 'telemetry' ? '#f8fafc' : '#64748b',
+            color: activeTab === 'telemetry' ? 'var(--text-primary)' : 'var(--text-muted)',
             fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
           }}
@@ -364,7 +320,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
           style={{
             flex: 1, padding: '8px 4px', background: 'none', border: 'none',
             borderBottom: activeTab === 'schedule' ? `2px solid ${tram.mode === 'bus' ? '#0984e3' : '#00b894'}` : '2px solid transparent',
-            color: activeTab === 'schedule' ? '#f8fafc' : '#64748b',
+            color: activeTab === 'schedule' ? 'var(--text-primary)' : 'var(--text-muted)',
             fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
           }}
@@ -377,7 +333,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
           style={{
             flex: 1, padding: '8px 4px', background: 'none', border: 'none',
             borderBottom: activeTab === 'diagnostics' ? `2px solid ${tram.mode === 'bus' ? '#0984e3' : '#00b894'}` : '2px solid transparent',
-            color: activeTab === 'diagnostics' ? '#f8fafc' : '#64748b',
+            color: activeTab === 'diagnostics' ? 'var(--text-primary)' : 'var(--text-muted)',
             fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
           }}
@@ -397,9 +353,9 @@ export const TramPopup: React.FC<TramPopupProps> = ({
             {/* Live Visual Vehicle Schematic Card */}
             <div style={{
               background: 'var(--bg-card)', padding: '12px 14px', borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.03)', textAlign: 'center'
+              border: '1px solid var(--border-faint)', textAlign: 'center'
             }}>
-              <span style={{ fontSize: '0.6rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>
+              <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>
                 Vehicle Control Diagnostics
               </span>
 
@@ -408,7 +364,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                 {tram.mode === 'bus' ? (
                   /* BUS SCHEMATIC */
                   <svg width="220" height="70" viewBox="0 0 220 70" fill="none">
-                    <line x1="10" y1="58" x2="210" y2="58" stroke="rgba(255,255,255,0.08)" strokeWidth="2" strokeDasharray="4 4"/>
+                    <line x1="10" y1="58" x2="210" y2="58" stroke="var(--border-subtle)" strokeWidth="2" strokeDasharray="4 4"/>
                     <rect x="25" y="15" width="170" height="36" rx="3" fill="rgba(30, 41, 59, 0.4)" stroke="#0984e3" strokeWidth="2"/>
                     <path d="M25,20 L35,20 L35,35 L25,35 Z" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8" strokeWidth="1"/>
                     
@@ -439,7 +395,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                 ) : (
                   /* TRAM SCHEMATIC */
                   <svg width="220" height="70" viewBox="0 0 220 70" fill="none">
-                    <line x1="10" y1="58" x2="210" y2="58" stroke="rgba(255,255,255,0.08)" strokeWidth="2" strokeDasharray="4 4"/>
+                    <line x1="10" y1="58" x2="210" y2="58" stroke="var(--border-subtle)" strokeWidth="2" strokeDasharray="4 4"/>
                     <rect x="20" y="15" width="180" height="36" rx="6" fill="rgba(30, 41, 59, 0.4)" stroke="#00b894" strokeWidth="2"/>
                     <path d="M20,20 L30,20 L30,35 L20,35 Z" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8" strokeWidth="1"/>
                     <path d="M200,20 L190,20 L190,35 L200,35 Z" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8" strokeWidth="1"/>
@@ -505,15 +461,15 @@ export const TramPopup: React.FC<TramPopupProps> = ({
               {/* Speedometer Radial Gauge */}
               <div style={{
                 flex: 1, background: 'var(--bg-card)', padding: '12px', borderRadius: '12px',
-                border: '1px solid rgba(255,255,255,0.03)', display: 'flex', flexDirection: 'column',
+                border: '1px solid var(--border-faint)', display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center'
               }}>
-                <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '8px' }}>
                   Speedometer
                 </span>
                 <div style={{ position: 'relative', width: '64px', height: '64px' }}>
                   <svg width="64" height="64" viewBox="0 0 64 64" style={{ transform: 'rotate(-90deg)' }}>
-                    <circle cx="32" cy="32" r="26" stroke="rgba(255,255,255,0.04)" strokeWidth="4.5" fill="none"/>
+                    <circle cx="32" cy="32" r="26" stroke="var(--border-faint)" strokeWidth="4.5" fill="none"/>
                     <circle cx="32" cy="32" r="26" stroke={tram.mode === 'bus' ? '#0984e3' : '#00b894'} strokeWidth="4.5" fill="none"
                             strokeDasharray={speedometerCircumference}
                             strokeDashoffset={speedometerOffset}
@@ -524,8 +480,8 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                     position: 'absolute', top: 0, left: 0, width: '64px', height: '64px',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
                   }}>
-                    <span style={{ fontSize: '1rem', fontWeight: 800, color: '#f8fafc' }}>{speedKmh}</span>
-                    <span style={{ fontSize: '0.45rem', color: '#94a3b8', marginTop: '-3px', textTransform: 'uppercase' }}>km/h</span>
+                    <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>{speedKmh}</span>
+                    <span style={{ fontSize: '0.45rem', color: 'var(--text-secondary)', marginTop: '-3px', textTransform: 'uppercase' }}>km/h</span>
                   </div>
                 </div>
               </div>
@@ -533,15 +489,15 @@ export const TramPopup: React.FC<TramPopupProps> = ({
               {/* Delay deviation Radial Gauge */}
               <div style={{
                 flex: 1, background: 'var(--bg-card)', padding: '12px', borderRadius: '12px',
-                border: '1px solid rgba(255,255,255,0.03)', display: 'flex', flexDirection: 'column',
+                border: '1px solid var(--border-faint)', display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center'
               }}>
-                <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '8px' }}>
                   Schedule Deviation
                 </span>
                 <div style={{ position: 'relative', width: '64px', height: '64px' }}>
                   <svg width="64" height="64" viewBox="0 0 64 64" style={{ transform: 'rotate(-90deg)' }}>
-                    <circle cx="32" cy="32" r="26" stroke="rgba(255,255,255,0.04)" strokeWidth="4.5" fill="none"/>
+                    <circle cx="32" cy="32" r="26" stroke="var(--border-faint)" strokeWidth="4.5" fill="none"/>
                     <circle cx="32" cy="32" r="26" stroke={getDelayColor(tram.dl)} strokeWidth="4.5" fill="none"
                             strokeDasharray={speedometerCircumference}
                             strokeDashoffset={speedometerCircumference - (Math.min(300, Math.abs(tram.dl)) / 300) * speedometerCircumference}
@@ -555,7 +511,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                     <span style={{ fontSize: '0.75rem', fontWeight: 800, color: getDelayColor(tram.dl) }}>
                       {tram.dl === 0 ? '±0' : (tram.dl < 0 ? '-' : '+') + Math.round(Math.abs(tram.dl) / 60)}m
                     </span>
-                    <span style={{ fontSize: '0.45rem', color: '#94a3b8', marginTop: '-1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: '0.45rem', color: 'var(--text-secondary)', marginTop: '-1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
                       {tram.dl < 0 ? 'early' : (tram.dl > 0 ? 'late' : 'on-time')}
                     </span>
                   </div>
@@ -567,18 +523,18 @@ export const TramPopup: React.FC<TramPopupProps> = ({
             {/* Bidirectional G-Force/Accelerometer indicator */}
             <div style={{
               background: 'var(--bg-card)', padding: '12px 14px', borderRadius: '12px',
-              border: '1px solid rgba(255,255,255,0.03)'
+              border: '1px solid var(--border-faint)'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.55rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '8px' }}>
                 <span>Braking Force</span>
-                <span style={{ color: accVal > 0.05 ? '#34d399' : (accVal < -0.05 ? '#f87171' : '#cbd5e1') }}>
+                <span style={{ color: accVal > 0.05 ? '#34d399' : (accVal < -0.05 ? '#f87171' : 'var(--text-body)') }}>
                   Accelerometer: {accVal > 0 ? '+' : ''}{accVal.toFixed(2)} m/s²
                 </span>
                 <span>Acceleration</span>
               </div>
-              <div style={{ height: '6px', width: '100%', background: 'rgba(255,255,255,0.04)', borderRadius: '3px', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ height: '6px', width: '100%', background: 'var(--border-faint)', borderRadius: '3px', position: 'relative', overflow: 'hidden' }}>
                 {/* Center marker */}
-                <div style={{ position: 'absolute', left: '50%', top: 0, width: '2px', height: '100%', backgroundColor: 'rgba(255,255,255,0.15)', zIndex: 3 }}/>
+                <div style={{ position: 'absolute', left: '50%', top: 0, width: '2px', height: '100%', backgroundColor: 'var(--text-muted)', zIndex: 3 }}/>
                 
                 {/* Deceleration side */}
                 {accVal < 0 && (
@@ -626,7 +582,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                   )}
 
                   {nextStop && (
-                    <div className={isStopped ? 'next-stop-sub' : 'callout-main'} style={{ borderTop: isStopped ? '1px solid rgba(255,255,255,0.04)' : 'none', paddingTop: isStopped ? '6px' : 0 }}>
+                    <div className={isStopped ? 'next-stop-sub' : 'callout-main'} style={{ borderTop: isStopped ? '1px solid var(--border-faint)' : 'none', paddingTop: isStopped ? '6px' : 0 }}>
                       <div>
                         <span style={{ fontSize: '0.55rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--accent-green)', display: 'block', letterSpacing: '0.05em' }}>
                           Next stop
@@ -634,7 +590,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                         <span className="callout-val next-name" style={{ fontSize: '0.8rem' }}>{nextStop.name}</span>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <span style={{ fontSize: '0.55rem', textTransform: 'uppercase', fontWeight: 700, color: '#64748b', display: 'block' }}>ETA</span>
+                        <span style={{ fontSize: '0.55rem', textTransform: 'uppercase', fontWeight: 700, color: 'var(--text-muted)', display: 'block' }}>ETA</span>
                         <span className="callout-val next-eta" style={{ fontSize: '0.85rem' }}>{nextStop.realtimeArrival}</span>
                       </div>
                     </div>
@@ -651,7 +607,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
           <div>
             {/* Loading */}
             {loading && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '36px 0', gap: '12px', color: '#94a3b8' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '36px 0', gap: '12px', color: 'var(--text-secondary)' }}>
                 <Loader2 className="animate-spin" style={{ color: '#34d399' }} size={22} />
                 <span style={{ fontSize: '0.7rem' }}>Loading schedule…</span>
               </div>
@@ -680,7 +636,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
 
               if (upcomingStops.length === 0) {
                 return (
-                  <div style={{ fontSize: '0.75rem', color: '#64748b', textAlign: 'center', padding: '12px 0' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>
                     End of line
                   </div>
                 );
@@ -761,23 +717,23 @@ export const TramPopup: React.FC<TramPopupProps> = ({
             {/* Operator registry & Vehicle ID */}
             <div style={{
               background: 'var(--bg-card)', padding: '10px 12px', borderRadius: '10px',
-              border: '1px solid rgba(255,255,255,0.02)', fontSize: '0.7rem', color: '#cbd5e1'
+              border: '1px solid var(--surface-faint)', fontSize: '0.7rem', color: 'var(--text-body)'
             }}>
-              <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+              <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
                 Registry Metadata
               </span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><ShieldCheck size={11} /> Operator</span>
+                  <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}><ShieldCheck size={11} /> Operator</span>
                   <span style={{ fontWeight: 600 }}>{resolveOperatorName(tram.oper)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Database size={11} /> Vehicle Chassis</span>
+                  <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}><Database size={11} /> Vehicle Chassis</span>
                   <span style={{ fontFamily: 'monospace' }}>{tram.veh}</span>
                 </div>
                 {tram.occu !== undefined && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Users size={11} /> Occupancy</span>
+                    <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}><Users size={11} /> Occupancy</span>
                     <span style={{ fontWeight: 600 }}>{tram.occu}%</span>
                   </div>
                 )}
@@ -787,27 +743,27 @@ export const TramPopup: React.FC<TramPopupProps> = ({
             {/* GPS Telemetry Grid */}
             <div style={{
               background: 'var(--bg-card)', padding: '10px 12px', borderRadius: '10px',
-              border: '1px solid rgba(255,255,255,0.02)', fontSize: '0.7rem', color: '#cbd5e1'
+              border: '1px solid var(--surface-faint)', fontSize: '0.7rem', color: 'var(--text-body)'
             }}>
-              <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+              <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
                 GPS Telemetry & Mapping
               </span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Compass size={11} /> Coordinates</span>
+                  <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}><Compass size={11} /> Coordinates</span>
                   <span>{tram.lat.toFixed(5)}°, {tram.lng.toFixed(5)}°</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Compass size={11} /> Heading (Bearing)</span>
+                  <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}><Compass size={11} /> Heading (Bearing)</span>
                   <span>{tram.hdg}° ({tram.hdg}deg)</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Database size={11} /> Location Source</span>
+                  <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}><Database size={11} /> Location Source</span>
                   <span style={{ fontWeight: 600, color: 'var(--accent-green)' }}>{tram.loc === 'GPS' ? 'Satellite GPS' : (tram.loc || 'GPS')}</span>
                 </div>
                 {tram.odo !== undefined && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Database size={11} /> Odometer Reading</span>
+                    <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}><Database size={11} /> Odometer Reading</span>
                     <span>{(tram.odo / 1000).toFixed(2)} km</span>
                   </div>
                 )}
@@ -817,24 +773,24 @@ export const TramPopup: React.FC<TramPopupProps> = ({
             {/* Stream Sync Analytics */}
             <div style={{
               background: 'var(--bg-card)', padding: '10px 12px', borderRadius: '10px',
-              border: '1px solid rgba(255,255,255,0.02)', fontSize: '0.7rem', color: '#cbd5e1'
+              border: '1px solid var(--surface-faint)', fontSize: '0.7rem', color: 'var(--text-body)'
             }}>
-              <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+              <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
                 WebSocket Signal Quality
               </span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={11} /> HFP Update Drift</span>
+                  <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={11} /> HFP Update Drift</span>
                   <span style={{ color: Math.abs(latency) < 5000 ? '#34d399' : '#f87171', fontWeight: 600 }}>
                     {Math.abs(latency) < 100000 ? `${latency} ms` : 'Out of sync'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={11} /> Broadcast Frequency</span>
+                  <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={11} /> Broadcast Frequency</span>
                   <span>1.0 Hz (MQTT)</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Cpu size={11} /> Telemetry Epoch</span>
+                  <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}><Cpu size={11} /> Telemetry Epoch</span>
                   <span style={{ fontFamily: 'monospace' }}>{tram.ts}</span>
                 </div>
               </div>
@@ -843,30 +799,30 @@ export const TramPopup: React.FC<TramPopupProps> = ({
             {/* Trip Route Metadata */}
             <div style={{
               background: 'var(--bg-card)', padding: '10px 12px', borderRadius: '10px',
-              border: '1px solid rgba(255,255,255,0.02)', fontSize: '0.7rem', color: '#cbd5e1'
+              border: '1px solid var(--surface-faint)', fontSize: '0.7rem', color: 'var(--text-body)'
             }}>
-              <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+              <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
                 GTFS Transit Schedule Info
               </span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8' }}>Route GTFS ID</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>Route GTFS ID</span>
                   <span style={{ fontFamily: 'monospace' }}>{tram.route}</span>
                 </div>
                 {tram.dir && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8' }}>Direction ID</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>Direction ID</span>
                     <span>{tram.dir}</span>
                   </div>
                 )}
                 {tram.start && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8' }}>Scheduled Start</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>Scheduled Start</span>
                     <span>{tram.start} {tram.oday ? `(${tram.oday})` : ''}</span>
                   </div>
                 )}
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8' }}>Trip GTFS ID</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>Trip GTFS ID</span>
                   <span style={{ fontFamily: 'monospace', fontSize: '0.62rem', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tram.tripId}>
                     {tram.tripId}
                   </span>

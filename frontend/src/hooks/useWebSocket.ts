@@ -13,6 +13,13 @@ export function useWebSocket({ onMessage }: UseWebSocketOptions) {
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectDelayRef = useRef<number>(1000); // Start reconnect delay at 1s
 
+  // The socket is opened once, so the handler must be read through a ref — capturing
+  // `onMessage` directly would pin the first render's closure forever.
+  const onMessageRef = useRef(onMessage);
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
+
   const connect = () => {
     if (socketRef.current) return;
 
@@ -33,7 +40,7 @@ export function useWebSocket({ onMessage }: UseWebSocketOptions) {
       try {
         const data = JSON.parse(event.data) as PositionsMessage;
         if (data && data.type === 'positions') {
-          onMessage(data);
+          onMessageRef.current(data);
         }
       } catch (err) {
         console.error('Error parsing WebSocket message:', err);
@@ -65,6 +72,8 @@ export function useWebSocket({ onMessage }: UseWebSocketOptions) {
     }, delay);
   };
 
+  // Connect once for the component's lifetime; `connect` is intentionally not a dep,
+  // since re-running this effect would tear down and rebuild a healthy socket.
   useEffect(() => {
     connect();
 
@@ -79,6 +88,7 @@ export function useWebSocket({ onMessage }: UseWebSocketOptions) {
         window.clearTimeout(reconnectTimeoutRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return { status };

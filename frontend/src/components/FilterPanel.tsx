@@ -1,9 +1,15 @@
-import React, { useState } from 'react';
-import type { VehiclePosition, Alert } from '../types';
-import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Route, Train, Bus, AlertTriangle, ExternalLink } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import type { Alert } from '../types';
+import { useCollapsiblePanel } from '../hooks/useCollapsiblePanel';
+import { ChevronLeft, ChevronDown, Sun, Moon, Box, Route, Train, Bus, AlertTriangle, ExternalLink } from 'lucide-react';
 
 interface FilterPanelProps {
-  trams: Record<string, VehiclePosition>;
+  /**
+   * Distinct line designators currently on the map, pre-sorted by App.
+   * Deliberately not the full vehicle map — that changes identity on every position
+   * frame and would re-render this whole panel several times a second.
+   */
+  activeLines: string[];
   selectedLines: string[];
   onToggleLine: (line: string) => void;
   onClearFilters: () => void;
@@ -21,13 +27,16 @@ interface FilterPanelProps {
   showBuses: boolean;
   setShowBuses: (show: boolean) => void;
   alerts: Alert[];
-  selectedTram: VehiclePosition | null;
+  /** Line designator of the selected vehicle, if any — used only for alert filtering. */
+  selectedTramDesi: string | null;
+  /** GTFS route id of the selected vehicle, if any — used only for alert filtering. */
+  selectedTramRoute: string | null;
   selectedStop: { id: string; name: string; code: string; } | null;
   selectedStopRoutes: string[];
 }
 
-export const FilterPanel: React.FC<FilterPanelProps> = ({
-  trams,
+const FilterPanelComponent: React.FC<FilterPanelProps> = ({
+  activeLines,
   selectedLines,
   onToggleLine,
   onClearFilters,
@@ -45,47 +54,24 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   showBuses,
   setShowBuses,
   alerts = [],
-  selectedTram = null,
+  selectedTramDesi = null,
+  selectedTramRoute = null,
   selectedStop = null,
   selectedStopRoutes = [],
 }) => {
   const [isAlertsExpanded, setIsAlertsExpanded] = useState(false);
-  const [touchStart, setTouchStart] = useState<number | null>(null);
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStart(e.touches[0].clientX);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStart === null) return;
-    const currentX = e.touches[0].clientX;
-    const diff = currentX - touchStart;
-
-    // Swipe left (at least 45px) to collapse
-    if (diff < -45 && !isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-    // Swipe right (at least 45px) to expand
-    else if (diff > 45 && isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setTouchStart(null);
-  };
+  const collapseProps = useCollapsiblePanel(isCollapsed, onToggleCollapse, 'Show filters');
 
   // Filter alerts contextually
-  const filteredAlerts = alerts.filter(alert => {
+  const filteredAlerts = useMemo(() => alerts.filter(alert => {
     // 1. Vehicle selected: show alerts affecting that vehicle's line
-    if (selectedTram) {
+    if (selectedTramDesi) {
       return alert.entities?.some(entity =>
-        entity.type === 'Route' && (entity.gtfsId === selectedTram.route || entity.shortName === selectedTram.desi)
+        entity.type === 'Route' && (entity.gtfsId === selectedTramRoute || entity.shortName === selectedTramDesi)
       );
     }
-    
+
     // 2. Stop selected: show alerts affecting the stop or serving lines
     if (selectedStop) {
       return alert.entities?.some(entity =>
@@ -106,18 +92,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       entity => entity.type === 'Route' || entity.type === 'Stop'
     );
     return !hasSpecificRouteOrStop;
-  });
+  }), [alerts, selectedTramDesi, selectedTramRoute, selectedStop, selectedStopRoutes, selectedLines]);
 
   const severeAlerts = filteredAlerts.filter((a) => a.severityLevel === 'SEVERE');
   const warningAlerts = filteredAlerts.filter((a) => a.severityLevel === 'WARNING');
   const filteredCount = filteredAlerts.length;
 
   // Determine widget text and badge label context
-  let widgetLabel = 'All services normal';
-  let badgeText = '';
+  let widgetLabel: string;
+  let badgeText: string;
 
-  if (selectedTram) {
-    widgetLabel = filteredCount > 0 ? `Alerts for Line ${selectedTram.desi}` : `Line ${selectedTram.desi} is clear`;
+  if (selectedTramDesi) {
+    widgetLabel = filteredCount > 0 ? `Alerts for Line ${selectedTramDesi}` : `Line ${selectedTramDesi} is clear`;
     badgeText = filteredCount > 0 ? 'ALERT' : 'OK';
   } else if (selectedStop) {
     widgetLabel = filteredCount > 0 ? `Alerts for ${selectedStop.name}` : `${selectedStop.name} is clear`;
@@ -145,53 +131,14 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     if (warningAlerts.length > 0) return '#fbbf24';
     return '#60a5fa';
   };
-  const activeLines = Array.from(
-    new Set(
-      Object.values(trams)
-        .filter((t) => {
-          if (t.mode === 'tram' && !showTrams) return false;
-          if (t.mode === 'bus' && !showBuses) return false;
-          return true;
-        })
-        .map((t) => t.desi)
-    )
-  ).sort((a, b) => {
-    const numA = parseInt(a);
-    const numB = parseInt(b);
-    if (isNaN(numA) && isNaN(numB)) return a.localeCompare(b);
-    if (isNaN(numA)) return 1;
-    if (isNaN(numB)) return -1;
-    return numA - numB;
-  });
-
   return (
     <div
-      className={`glass-panel filter-panel ${isCollapsed ? 'collapsed' : ''}`}
+      {...collapseProps}
+      className={`glass-panel filter-panel ${collapseProps.className}`}
       style={{
         pointerEvents: 'auto',
       }}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onClick={() => {
-        if (isCollapsed) {
-          onToggleCollapse();
-        }
-      }}
     >
-      {/* Collapse/Expand Toggle Tab */}
-      <button
-        className="filter-toggle-tab"
-        onClick={onToggleCollapse}
-        aria-label={isCollapsed ? 'Show Filters' : 'Hide Filters'}
-      >
-        <span className="icon-desktop">
-          {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </span>
-        <span className="icon-mobile">
-          {isCollapsed ? <SlidersHorizontal size={14} /> : <ChevronDown size={14} />}
-        </span>
-      </button>
 
       {/* Header */}
       <div className="panel-header" style={{ paddingBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -206,6 +153,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 : 'disconnected'
             }`}
             title={`WebSocket: ${connectionStatus}`}
+            role="status"
+            aria-label={`Live feed ${connectionStatus}`}
             style={{ width: '8px', height: '8px', borderRadius: '50%', display: 'inline-block' }}
           />
         </h1>
@@ -232,7 +181,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
       {/* Service Alerts Widget */}
       {filteredCount > 0 && (
-        <div className="settings-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px', marginTop: '4px' }}>
+        <div className="settings-section" style={{ borderBottom: '1px solid var(--border-faint)', paddingBottom: '12px', marginTop: '4px' }}>
           <button
             onClick={() => filteredCount > 0 && setIsAlertsExpanded(!isAlertsExpanded)}
             style={{
@@ -240,12 +189,12 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              background: 'rgba(255, 255, 255, 0.02)',
-              border: '1px solid rgba(255, 255, 255, 0.06)',
+              background: 'var(--surface-faint)',
+              border: '1px solid var(--border-faint)',
               padding: filteredCount > 0 ? '8px 10px' : '5px 8px',
               borderRadius: '8px',
               cursor: filteredCount > 0 ? 'pointer' : 'default',
-              color: '#f8fafc',
+              color: 'var(--text-primary)',
               textAlign: 'left',
               outline: 'none',
             }}
@@ -308,8 +257,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                   <div
                     key={idx}
                     style={{
-                      background: 'rgba(255, 255, 255, 0.01)',
-                      border: `1px solid rgba(255, 255, 255, 0.03)`,
+                      background: 'var(--surface-faint)',
+                      border: `1px solid var(--border-faint)`,
                       borderLeft: `3px solid ${severityColor}`,
                       padding: '8px',
                       borderRadius: '4px',
@@ -317,18 +266,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '4px' }}>
-                      <h4 style={{ margin: 0, fontWeight: 700, color: '#f1f5f9', fontSize: '0.65rem' }}>
+                      <h4 style={{ margin: 0, fontWeight: 700, color: 'var(--text-strong)', fontSize: '0.65rem' }}>
                         {alert.headerText}
                       </h4>
                     </div>
-                    <p style={{ margin: '4px 0', color: '#94a3b8', lineHeight: 1.3 }}>
+                    <p style={{ margin: '4px 0', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
                       {alert.descriptionText}
                     </p>
                     
                     {/* Affected lines */}
                     {alert.entities && alert.entities.some(e => e.type === 'Route') && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                        <span style={{ color: '#64748b', fontSize: '0.55rem', alignSelf: 'center' }}>Lines:</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.55rem', alignSelf: 'center' }}>Lines:</span>
                         {alert.entities
                           .filter(e => e.type === 'Route' && e.shortName)
                           .map((e, eIdx) => (
@@ -352,7 +301,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     {/* Affected stops */}
                     {alert.entities && alert.entities.some(e => e.type === 'Stop') && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
-                        <span style={{ color: '#64748b', fontSize: '0.55rem', alignSelf: 'center' }}>Stops:</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.55rem', alignSelf: 'center' }}>Stops:</span>
                         {alert.entities
                           .filter(e => e.type === 'Stop' && e.name)
                           .slice(0, 3)
@@ -361,8 +310,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                               key={eIdx}
                               style={{
                                 fontSize: '0.55rem',
-                                backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                                color: '#cbd5e1',
+                                backgroundColor: 'var(--border-faint)',
+                                color: 'var(--text-body)',
                                 padding: '1px 4px',
                                 borderRadius: '3px',
                                 maxWidth: '80px',
@@ -376,7 +325,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                             </span>
                           ))}
                         {alert.entities.filter(e => e.type === 'Stop').length > 3 && (
-                          <span style={{ color: '#64748b', fontSize: '0.55rem', alignSelf: 'center' }}>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.55rem', alignSelf: 'center' }}>
                             +{alert.entities.filter(e => e.type === 'Stop').length - 3} more
                           </span>
                         )}
@@ -422,7 +371,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         )}
 
         {activeLines.length === 0 ? (
-          <div style={{ fontSize: '0.75rem', color: '#64748b', padding: '16px 0', textAlign: 'center' }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '16px 0', textAlign: 'center' }}>
             Waiting for live vehicle stream...
           </div>
         ) : (
@@ -434,6 +383,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                   key={line}
                   onClick={() => onToggleLine(line)}
                   className={`line-btn ${isSelected ? 'active' : ''}`}
+                  aria-pressed={isSelected}
+                  aria-label={`Line ${line}`}
                 >
                   <span className="line-btn-label">{line}</span>
                 </button>
@@ -452,7 +403,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             <span>Moving</span>
           </div>
           <div className="legend-item">
-            <span className="legend-color" style={{ backgroundColor: '#e17055' }} />
+            <span className="legend-color is-stopped" style={{ backgroundColor: '#e17055' }} />
             <span>Stopped</span>
           </div>
         </div>
@@ -465,6 +416,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           {/* Theme Toggle */}
           <button
             className={`settings-btn ${mapTheme === 'dark' ? 'active' : ''}`}
+            aria-pressed={mapTheme === 'dark'}
             onClick={() => setMapTheme(mapTheme === 'light' ? 'dark' : 'light')}
             title="Toggle light/dark theme"
           >
@@ -477,6 +429,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           {/* 3D Map Toggle */}
           <button
             className={`settings-btn ${is3D ? 'active' : ''}`}
+            aria-pressed={is3D}
             onClick={() => setIs3D(!is3D)}
             title="Toggle 3D map mode"
           >
@@ -489,6 +442,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           {/* Route Network Toggle */}
           <button
             className={`settings-btn ${showRouteNetwork ? 'active' : ''}`}
+            aria-pressed={showRouteNetwork}
             onClick={() => setShowRouteNetwork(!showRouteNetwork)}
             title="Toggle background route network"
           >
@@ -501,6 +455,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           {/* Trams Toggle */}
           <button
             className={`settings-btn ${showTrams ? 'active' : ''}`}
+            aria-pressed={showTrams}
             onClick={() => setShowTrams(!showTrams)}
             title="Toggle Trams"
           >
@@ -513,6 +468,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           {/* Buses Toggle */}
           <button
             className={`settings-btn ${showBuses ? 'active' : ''}`}
+            aria-pressed={showBuses}
             onClick={() => setShowBuses(!showBuses)}
             title="Toggle Buses"
           >
@@ -526,3 +482,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     </div>
   );
 };
+
+/**
+ * Memoised: the panel's props are all scalars, stable callbacks or content-stable arrays,
+ * so it no longer re-renders on every vehicle position frame.
+ */
+export const FilterPanel = React.memo(FilterPanelComponent);

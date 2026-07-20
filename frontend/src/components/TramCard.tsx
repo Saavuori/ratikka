@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import type { VehiclePosition, TripDetailsResponse } from '../types';
 import { Navigation, Clock, X, Target, ChevronsUp, ChevronUp, ChevronDown, ChevronsDown } from 'lucide-react';
 
@@ -13,13 +13,14 @@ interface TramCardProps {
 
 export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, isFollowing, onToggleFollow, tripDetails }) => {
   const speedKmh = Math.round(tram.spd * 3.6);
-  const [lastStopId, setLastStopId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (tram.stop) {
-      setLastStopId(tram.stop);
-    }
-  }, [tram.stop]);
+  // The feed drops `stop` while the vehicle is between stops, so remember the last one
+  // we saw. Adjusted during render rather than in an effect — an effect here would
+  // cascade an extra render on every position frame that carries a stop id.
+  const [lastStopId, setLastStopId] = useState<string | null>(null);
+  if (tram.stop && tram.stop !== lastStopId) {
+    setLastStopId(tram.stop);
+  }
 
   const getDelayColor = (seconds: number): string => {
     if (seconds > 60) return '#f87171';
@@ -163,7 +164,7 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
           </div>
           <div className="tram-card-divider" style={{ height: '10px' }} />
           <div className="tram-card-metric">
-            <Clock size={12} style={{ color: '#94a3b8' }} />
+            <Clock size={12} style={{ color: 'var(--text-secondary)' }} />
             <span className="tram-card-metric-val" style={{ color: getDelayColor(tram.dl), fontSize: '0.75rem' }}>
               {formatDelay(tram.dl)}
             </span>
@@ -216,8 +217,10 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
 
       {/* Follow toggle button */}
       <button 
-        className={`tram-card-follow-btn ${isFollowing ? 'active' : ''}`} 
+        className={`tram-card-follow-btn ${isFollowing ? 'active' : ''}`}
         onClick={onToggleFollow}
+        aria-pressed={isFollowing}
+        aria-label={isFollowing ? 'Stop following vehicle' : 'Follow vehicle from behind'}
         title={isFollowing ? "Stop following tram" : "Follow tram from behind"}
         style={{
           background: isFollowing ? 'rgba(0, 184, 148, 0.15)' : 'transparent',
@@ -228,16 +231,16 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: isFollowing ? '#20bf6b' : '#94a3b8',
+          color: isFollowing ? '#20bf6b' : 'var(--text-secondary)',
           cursor: 'pointer',
           padding: 0,
           transition: 'all 0.2s ease',
         }}
         onMouseEnter={(e) => {
-          if (!isFollowing) e.currentTarget.style.color = '#e2e8f0';
+          if (!isFollowing) e.currentTarget.style.color = 'var(--text-strong)';
         }}
         onMouseLeave={(e) => {
-          if (!isFollowing) e.currentTarget.style.color = '#94a3b8';
+          if (!isFollowing) e.currentTarget.style.color = 'var(--text-secondary)';
         }}
       >
         <Target size={13} className={isFollowing ? 'animate-pulse' : ''} />

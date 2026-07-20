@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import type { BikeStationDetailsResponse } from '../types';
+import { useCollapsiblePanel } from '../hooks/useCollapsiblePanel';
 import { fetchBikeStationDetails } from '../lib/api';
-import { X, Bike, Navigation, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, Bike, Navigation, AlertTriangle, Loader2, ChevronRight, CheckCircle, AlertCircle } from 'lucide-react';
 
 interface BikePopupProps {
   stationId: string;
@@ -21,83 +22,61 @@ export const BikePopup: React.FC<BikePopupProps> = ({
   const [details, setDetails] = useState<BikeStationDetailsResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [touchStart, setTouchStart] = useState<number | null>(null);
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStart(e.touches[0].clientX);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStart === null) return;
-    const currentX = e.touches[0].clientX;
-    const diff = currentX - touchStart;
-
-    // Swipe left (at least 45px) to expand (on the right panel)
-    if (diff < -45 && isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-    // Swipe right (at least 45px) to collapse (on the right panel)
-    else if (diff > 45 && !isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setTouchStart(null);
-  };
+  const collapseProps = useCollapsiblePanel(isCollapsed, onToggleCollapse, 'Show bike station details');
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
+    let active = true;
 
-    fetchBikeStationDetails(stationId)
-      .then((data) => {
-        setDetails(data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setError('Failed to load bike station data');
-        setLoading(false);
-      });
+    // Only the first load shows the spinner; refreshes swap the counts in place.
+    const load = (isInitial: boolean) => {
+      if (isInitial) {
+        setLoading(true);
+        setError(null);
+      }
+
+      fetchBikeStationDetails(stationId)
+        .then((data) => {
+          if (!active) return;
+          setDetails(data);
+          setLoading(false);
+          setError(null);
+        })
+        .catch((err) => {
+          if (!active) return;
+          console.error(err);
+          // A failed refresh keeps the last good counts on screen.
+          if (isInitial) {
+            setError('Failed to load bike station data');
+          }
+          setLoading(false);
+        });
+    };
+
+    load(true);
+    // Bike and dock counts turn over quickly at busy stations.
+    const interval = setInterval(() => load(false), 30000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [stationId]);
 
   return (
     <div
-      className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}
+      {...collapseProps}
+      className={`glass-panel detail-popup ${collapseProps.className}`}
       style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onClick={() => {
-        if (isCollapsed) {
-          onToggleCollapse();
-        }
-      }}
     >
-      {/* Collapse/Expand Toggle Tab */}
-      <button
-        className="detail-toggle-tab"
-        onClick={onToggleCollapse}
-        aria-label={isCollapsed ? 'Show Bike Station' : 'Hide Bike Station'}
-      >
-        <span className="icon-desktop">
-          {isCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-        </span>
-        <span className="icon-mobile">
-          {isCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </span>
-      </button>
 
       {/* Header */}
-      <div className="panel-header" style={{ padding: '0 0 16px 0', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="panel-header" style={{ padding: '0 0 16px 0', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h2 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>{stationName}</h2>
           </div>
-          <p className="panel-subtitle" style={{ fontFamily: 'monospace', marginTop: '4px', fontSize: '0.65rem', color: '#94a3b8' }}>
+          <p className="panel-subtitle" style={{ fontFamily: 'monospace', marginTop: '4px', fontSize: '0.65rem', color: 'var(--text-secondary)' }}>
             {stationId}
           </p>
         </div>
@@ -130,7 +109,7 @@ export const BikePopup: React.FC<BikePopupProps> = ({
       <div className="timeline-container" style={{ flex: 1, marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {/* Loading Spinner */}
         {loading && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 0', gap: '12px', color: '#94a3b8' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 0', gap: '12px', color: 'var(--text-secondary)' }}>
             <Loader2 className="animate-spin" style={{ color: '#fcbc19' }} size={24} />
             <span style={{ fontSize: '0.75rem' }}>Loading station status...</span>
           </div>
@@ -197,14 +176,14 @@ export const BikePopup: React.FC<BikePopupProps> = ({
                 boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
               }}>
                 <Bike size={24} style={{ color: '#fcbc19' }} />
-                <span style={{ fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>Bikes</span>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>Bikes</span>
                 <span style={{ fontSize: '1.75rem', fontWeight: 800, color: '#fcbc19', lineHeight: 1 }}>{details.bikesAvailable}</span>
               </div>
 
               {/* Available Docks/Spaces Card */}
               <div style={{
-                background: 'rgba(255, 255, 255, 0.04)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
+                background: 'var(--border-faint)',
+                border: '1px solid var(--border-subtle)',
                 borderRadius: '12px',
                 padding: '16px',
                 display: 'flex',
@@ -214,20 +193,20 @@ export const BikePopup: React.FC<BikePopupProps> = ({
                 gap: '8px',
                 boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
               }}>
-                <Navigation size={22} style={{ color: '#94a3b8', transform: 'rotate(45deg)' }} />
-                <span style={{ fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>Free Docks</span>
-                <span style={{ fontSize: '1.75rem', fontWeight: 800, color: '#e2e8f0', lineHeight: 1 }}>{details.spacesAvailable}</span>
+                <Navigation size={22} style={{ color: 'var(--text-secondary)', transform: 'rotate(45deg)' }} />
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>Free Docks</span>
+                <span style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-strong)', lineHeight: 1 }}>{details.spacesAvailable}</span>
               </div>
             </div>
 
             {/* Graphic or visual progress bar of filling status */}
             {details.bikesAvailable + details.spacesAvailable > 0 && (
               <div style={{ marginTop: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#94a3b8', marginBottom: '4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
                   <span>Filling status</span>
                   <span>{Math.round((details.bikesAvailable / (details.bikesAvailable + details.spacesAvailable)) * 100)}%</span>
                 </div>
-                <div style={{ height: '6px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
+                <div style={{ height: '6px', background: 'var(--border-subtle)', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
                   <div style={{
                     width: `${(details.bikesAvailable / (details.bikesAvailable + details.spacesAvailable)) * 100}%`,
                     background: '#fcbc19',
