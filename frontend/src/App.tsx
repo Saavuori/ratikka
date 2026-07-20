@@ -328,6 +328,15 @@ function App() {
     }
   };
 
+  // Lines used by the currently selected journey's transit legs. When a route is
+  // picked in the destination search, we filter the map down to just these lines —
+  // the same way selecting a line filter does.
+  const journeyLines = journey
+    ? journey.itinerary.legs
+        .filter((leg) => leg.transit && leg.route?.shortName)
+        .map((leg) => leg.route!.shortName)
+    : [];
+
   // Stop route filter: only filter after routes are loaded.
   // While loading (selectedStop set but selectedStopRoutes not yet arrived) keep all trams visible.
   const displayedTrams = Object.fromEntries(
@@ -340,6 +349,11 @@ function App() {
       }
       // Filter by stop routes if a stop is selected
       if (selectedStop && selectedStopRoutes.length > 0 && !selectedStopRoutes.includes(tram.desi)) {
+        return false;
+      }
+      // Filter by the selected journey's lines so only vehicles running the
+      // planned route(s) stay visible on the map.
+      if (journeyLines.length > 0 && !journeyLines.includes(tram.desi)) {
         return false;
       }
       return true;
