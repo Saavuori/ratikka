@@ -9,6 +9,12 @@ import { getRouteColor, ROUTE_COLORS, TRAM_GREEN } from '../lib/routeColors';
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection } from '../types';
 
+// The gold route segment drawn from a selected vehicle to its next stop relies
+// on closest-point matching against the trip polyline, which produced unreliable
+// (jumping/back-tracking) paths. Disabled until the matching is made robust. The
+// next-stop signpost highlight itself is unaffected and remains enabled.
+const HIGHLIGHT_NEXT_STOP_ROUTE = false;
+
 interface MapProps {
   trams: Record<string, VehiclePosition>;
   selectedTramId: string | null;
@@ -630,7 +636,7 @@ export const Map: React.FC<MapProps> = ({
             const matchedStop = tripStops[nextStopIndex];
             nextStopCoords = [matchedStop.lon, matchedStop.lat];
 
-            if (selectedVehiclePos && selectedTripDetailsRef.current.geometry) {
+            if (HIGHLIGHT_NEXT_STOP_ROUTE && selectedVehiclePos && selectedTripDetailsRef.current.geometry) {
               const polylineCoords = decodePolyline(selectedTripDetailsRef.current.geometry);
 
               if (polylineCoords.length > 0) {
@@ -1484,7 +1490,7 @@ export const Map: React.FC<MapProps> = ({
     }
 
     // Route segment to next stop layer (rendered under trams-circles)
-    if (!map.getLayer('next-stop-route-layer')) {
+    if (HIGHLIGHT_NEXT_STOP_ROUTE && !map.getLayer('next-stop-route-layer')) {
       map.addLayer({
         id: 'next-stop-route-layer',
         type: 'line',

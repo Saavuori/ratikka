@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Disabled the next-stop route highlight**: the gold line segment drawn from a selected vehicle to its next stop (`next-stop-route-layer`) is turned off behind the `HIGHLIGHT_NEXT_STOP_ROUTE` flag in `Map.tsx`. It relied on closest-point matching against the trip polyline, which produced unreliable back-tracking/jumping paths. The next-stop signpost highlight itself is unchanged and still shown.
+
+---
+
 ## [v0.44.1] - 2026-07-21
 
 ### Changed
