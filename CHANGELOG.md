@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.40.1] - 2026-07-21
+
+### Fixed
+- **City Bike Free Docks Always Zero**: The station panel always showed "0 Free Docks" for every city bike station. The backend counted only `availableSpaces` entries whose vehicle form factor was `BICYCLE`, but HSL reports empty docks without a per-type breakdown (only a station-wide total), so the filter never matched and the count collapsed to zero. The backend now reads the authoritative `total` field, counts untyped docks alongside `BICYCLE` ones, and falls back to `total` when the per-type breakdown is absent. Available bikes used the same resilient path now.
+
+---
+
 ## [v0.40.0] - 2026-07-21
 
 ### Added
