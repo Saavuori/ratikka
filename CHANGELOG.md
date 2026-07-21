@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.42.1] - 2026-07-21
+
+### Changed
+- **Larger On-Map Vehicle Icons**: The redesigned tram/bus carriage markers rendered a touch small and were easy to lose against the basemap. Bumped the vehicle body's zoom-based `icon-size` (~30% larger across zooms) and scaled the upright line-number label and the selection ring to match, so vehicles read clearly at a glance without crowding each other.
+
+---
+
 ## [v0.42.0] - 2026-07-21
 
 ### Changed
