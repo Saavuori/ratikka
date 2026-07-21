@@ -517,6 +517,135 @@ func TestHandlers_BikeStationDetails(t *testing.T) {
 	}
 }
 
+// TestHandlers_BikeStationDetails_SpacesFromTotal covers the real-world HSL
+// response where empty docks are not broken down by vehicle type: byType is
+// empty for availableSpaces, so free docks must come from the total field.
+func TestHandlers_BikeStationDetails_SpacesFromTotal(t *testing.T) {
+	mockGraphQLResponse := `{
+		"data": {
+			"vehicleRentalStation": {
+				"stationId": "smoove:625",
+				"name": "Suomenlahdentie",
+				"allowPickup": true,
+				"allowDropoff": true,
+				"availableVehicles": {
+					"total": 21,
+					"byType": [
+						{
+							"count": 21,
+							"vehicleType": {
+								"formFactor": "BICYCLE"
+							}
+						}
+					]
+				},
+				"availableSpaces": {
+					"total": 8,
+					"byType": []
+				}
+			}
+		}
+	}`
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(mockGraphQLResponse))
+	}))
+	defer ts.Close()
+
+	oldEndpoint := DigitransitURLEndpoint
+	DigitransitURLEndpoint = ts.URL
+	defer func() { DigitransitURLEndpoint = oldEndpoint }()
+
+	memCache := cache.NewMemoryCache()
+	mqtt := &mockMqttWorker{connected: true}
+	gql := NewGraphQLClient("test-api-key")
+	handlers := NewHandlers(memCache, gql, mqtt)
+
+	req := httptest.NewRequest("GET", "/api/v1/bike-station/smoove:625", nil)
+	req.SetPathValue("stationId", "smoove:625")
+
+	rr := httptest.NewRecorder()
+	handlers.BikeStationDetails(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+
+	var resp BikeStationDetailsResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.BikesAvailable != 21 {
+		t.Errorf("expected BikesAvailable 21, got %d", resp.BikesAvailable)
+	}
+	if resp.SpacesAvailable != 8 {
+		t.Errorf("expected SpacesAvailable 8 (from total), got %d", resp.SpacesAvailable)
+	}
+}
+
+// TestHandlers_BikeStationDetails_UntypedDocks covers docks reported in byType
+// but without a form factor (empty string), which must still be counted.
+func TestHandlers_BikeStationDetails_UntypedDocks(t *testing.T) {
+	mockGraphQLResponse := `{
+		"data": {
+			"vehicleRentalStation": {
+				"stationId": "smoove:625",
+				"name": "Suomenlahdentie",
+				"allowPickup": true,
+				"allowDropoff": true,
+				"availableVehicles": {
+					"total": 3,
+					"byType": [
+						{ "count": 3, "vehicleType": { "formFactor": "BICYCLE" } }
+					]
+				},
+				"availableSpaces": {
+					"total": 6,
+					"byType": [
+						{ "count": 6, "vehicleType": { "formFactor": "" } }
+					]
+				}
+			}
+		}
+	}`
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(mockGraphQLResponse))
+	}))
+	defer ts.Close()
+
+	oldEndpoint := DigitransitURLEndpoint
+	DigitransitURLEndpoint = ts.URL
+	defer func() { DigitransitURLEndpoint = oldEndpoint }()
+
+	memCache := cache.NewMemoryCache()
+	mqtt := &mockMqttWorker{connected: true}
+	gql := NewGraphQLClient("test-api-key")
+	handlers := NewHandlers(memCache, gql, mqtt)
+
+	req := httptest.NewRequest("GET", "/api/v1/bike-station/smoove:625", nil)
+	req.SetPathValue("stationId", "smoove:625")
+
+	rr := httptest.NewRecorder()
+	handlers.BikeStationDetails(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+
+	var resp BikeStationDetailsResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.SpacesAvailable != 6 {
+		t.Errorf("expected SpacesAvailable 6 (untyped docks counted), got %d", resp.SpacesAvailable)
+	}
+}
+
 func TestHandlers_Alerts(t *testing.T) {
 	mockGraphQLResponse := `{
 		"data": {
