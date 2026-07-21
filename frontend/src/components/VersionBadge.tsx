@@ -18,7 +18,13 @@ export const VersionBadge: React.FC = () => {
     : null;
 
   return (
-    <div className="version-badge">
+    <a
+      className="version-badge"
+      href="https://saavuori.github.io/ratikka/"
+      target="_blank"
+      rel="noopener noreferrer"
+      title="View changelog"
+    >
       <span className="version-badge__tag">{info.version}</span>
       <span className="version-badge__sep">·</span>
       <span className="version-badge__sha">{info.git_sha.substring(0, 7)}</span>
@@ -28,6 +34,6 @@ export const VersionBadge: React.FC = () => {
           <span className="version-badge__date">{buildDate}</span>
         </>
       )}
-    </div>
+    </a>
   );
 };
