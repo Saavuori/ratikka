@@ -1043,6 +1043,30 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
+    // 6c. Stopped-state ring — a static coral ring under a vehicle that has come
+    //     to a standstill (`stopped`: doors open or `spd === 0`). The motion aura
+    //     fades to nothing at a standstill, so without this a halted tram — one
+    //     waiting at a light, stuck in traffic, or sitting at a terminus with its
+    //     doors shut — carries no positive "I'm stopped" cue and reads the same as
+    //     one crawling slowly. This supplies that cue and matches the coral
+    //     "Stopped" swatch in the filter-panel legend. Collapses to nothing the
+    //     moment the vehicle starts moving.
+    if (!map.getLayer('trams-stopped')) {
+      map.addLayer({
+        id: 'trams-stopped',
+        type: 'circle',
+        source: 'trams',
+        paint: {
+          'circle-radius': ['case', ['get', 'stopped'], 13, 0],
+          'circle-color': 'rgba(225, 112, 85, 0.14)',
+          'circle-stroke-color': '#e17055',
+          'circle-stroke-width': ['case', ['get', 'stopped'], 2, 0],
+          'circle-stroke-opacity': ['case', ['get', 'stopped'], 0.9, 0],
+          'circle-opacity': ['case', ['get', 'stopped'], 1, 0],
+        },
+      });
+    }
+
     // 7. Directional vehicle body (on top of the aura + pulse). Rotates to `hdg`
     //    and swaps to the doors-open art while the doors are open.
     if (!map.getLayer('trams-body')) {
