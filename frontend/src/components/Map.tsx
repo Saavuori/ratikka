@@ -1,10 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { Feature } from 'geojson';
+import type { Feature, FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
 import { lerp, lerpAngle } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
+import { fetchBikeStations } from '../lib/api';
+import type { BikeStationsFeatureCollection } from '../types';
 
 interface MapProps {
   trams: Record<string, VehiclePosition>;
@@ -106,6 +108,10 @@ export const Map: React.FC<MapProps> = ({
   const mapThemeRef = useRef<'light' | 'dark'>(mapTheme);
   const isFollowingRef = useRef<boolean>(isFollowing);
   const isInteractingRef = useRef<boolean>(false);
+  // Latest live city-bike station GeoJSON, refreshed on an interval. Kept in a
+  // ref so a theme/style reload can re-seed the recreated source without
+  // waiting for the next fetch.
+  const bikeStationsDataRef = useRef<BikeStationsFeatureCollection | null>(null);
 
   const journeyLegsRef = useRef<JourneyLeg[] | null>(journeyLegs);
   const journeyEndpointsRef = useRef<{ from: JourneyEndpoint; to: JourneyEndpoint } | null>(journeyEndpoints);
@@ -783,25 +789,6 @@ export const Map: React.FC<MapProps> = ({
       };
     }
 
-    // Create Sign Bike Image if missing
-    if (!map.hasImage('sign-bike')) {
-      const bikeSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
-          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
-          <circle cx="16" cy="14" r="11" fill="#fcbc19" stroke="#ffffff" stroke-width="2"/>
-          <circle cx="11.5" cy="15.5" r="2.2" stroke="#1e293b" stroke-width="1" fill="none"/>
-          <circle cx="20.5" cy="15.5" r="2.2" stroke="#1e293b" stroke-width="1" fill="none"/>
-          <path d="M11.5,15.5 L15,12.2 L19,15.5 L15,12.2 L14.5,9.5 L18,9.5" stroke="#1e293b" stroke-width="0.8" fill="none"/>
-          <path d="M15,12.2 L13.5,15.5 M19,15.5 L19.8,12.2 L18,12.2" stroke="#1e293b" stroke-width="0.8" fill="none"/>
-        </svg>
-      `;
-      const bikeImg = new Image(32, 42);
-      bikeImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(bikeSvg);
-      bikeImg.onload = () => {
-        if (!map.hasImage('sign-bike')) map.addImage('sign-bike', bikeImg);
-      };
-    }
-
     // 3. Add Live Trams Source (GeoJSON)
     if (!map.getSource('trams')) {
       map.addSource('trams', {
@@ -1031,154 +1018,117 @@ export const Map: React.FC<MapProps> = ({
       }, 'trams-circles');
     }
 
-    // 12. Add Citybike Source
+    // 12. Add Citybike Source (live availability, served by our own backend).
+    //
+    // The Digitransit vector tiles carry no live bike/dock counts, so the map is
+    // driven from GET /api/v1/bike-stations instead. `bikeStationsDataRef` holds
+    // the most recent payload so a style/theme reload can re-seed the source
+    // immediately rather than blanking until the next refresh.
     if (!map.getSource('citybike')) {
       map.addSource('citybike', {
-        type: 'vector',
-        tiles: [
-          `https://api.digitransit.fi/map/v3/hsl/fi/rentalStations/{z}/{x}/{y}.pbf?digitransit-subscription-key=${apiKey}`,
-        ],
-        minzoom: 13,
-        maxzoom: 16,
+        type: 'geojson',
+        data: bikeStationsDataRef.current || { type: 'FeatureCollection', features: [] },
       });
     }
 
-    // 13. Add Citybike stops case
-    if (!map.getLayer('citybike_stops_case')) {
-      map.addLayer({
-        id: 'citybike_stops_case',
-        type: 'circle',
-        source: 'citybike',
-        'source-layer': 'rentalStations',
-        minzoom: 13,
-        maxzoom: 15.5,
-        paint: {
-          'circle-color': '#ffffff',
-          'circle-radius': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            13, 3,
-            14, 8.5,
-            15.5, 15
-          ]
-        }
-      });
+    // 13. Availability gauge images: a donut whose coloured arc shows how full
+    // the station is (bikes / total docks) and whose colour flags scarcity —
+    // grey empty, red almost gone, amber middling, green plenty. Rendered once
+    // per fill bucket and picked per-station via a data expression below, so the
+    // marker reads as an at-a-glance gauge rather than a bare number.
+    const gaugeBuckets: Array<{ name: string; fill: number; color: string }> = [
+      { name: 'bike-gauge-0', fill: 0, color: '#9ca3af' },   // no bikes left
+      { name: 'bike-gauge-1', fill: 0.2, color: '#ef4444' }, // critically low
+      { name: 'bike-gauge-2', fill: 0.4, color: '#fcbc19' }, // getting low
+      { name: 'bike-gauge-3', fill: 0.6, color: '#fcbc19' }, // moderate
+      { name: 'bike-gauge-4', fill: 0.8, color: '#20bf6b' }, // healthy
+      { name: 'bike-gauge-5', fill: 1, color: '#20bf6b' },   // plenty / full
+    ];
+    const gaugeR = 15;
+    const gaugeC = 2 * Math.PI * gaugeR;
+    for (const b of gaugeBuckets) {
+      if (map.hasImage(b.name)) continue;
+      const arc = b.fill > 0
+        ? `<circle cx="22" cy="22" r="${gaugeR}" fill="none" stroke="${b.color}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${b.fill * gaugeC} ${gaugeC}" transform="rotate(-90 22 22)"/>`
+        : '';
+      const gaugeSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44" fill="none">
+          <circle cx="22" cy="22" r="${gaugeR}" fill="none" stroke="#e5e7eb" stroke-width="5"/>
+          ${arc}
+          <circle cx="22" cy="22" r="11" fill="#ffffff" stroke="${b.color}" stroke-width="1.5"/>
+        </svg>
+      `;
+      const gaugeImg = new Image(44, 44);
+      gaugeImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(gaugeSvg);
+      // pixelRatio 2 keeps the donut crisp; the 44px art displays at ~22 CSS px.
+      gaugeImg.onload = ((name: string, img: HTMLImageElement) => () => {
+        if (!map.hasImage(name)) map.addImage(name, img, { pixelRatio: 2 });
+      })(b.name, gaugeImg);
     }
 
-    // 14. Add Citybike stops circle
-    if (!map.getLayer('citybike_stops')) {
+    // 14. Citybike gauge layer — one marker per station across all zooms, with
+    // the available-bike count in the centre once zoomed in enough to read it.
+    if (!map.getLayer('citybike_gauge')) {
       map.addLayer({
-        id: 'citybike_stops',
-        type: 'circle',
-        source: 'citybike',
-        'source-layer': 'rentalStations',
-        minzoom: 13,
-        maxzoom: 15.5,
-        paint: {
-          // Grey out stations with no bikes so "none left" reads at a glance,
-          // even at low zoom where the count label is hidden.
-          'circle-color': [
-            'case',
-            ['<=', ['to-number', ['coalesce', ['get', 'bikesAvailable'], ['get', 'bikes'], 0]], 0],
-            '#9ca3af',
-            '#fcbc19'
-          ],
-          'circle-radius': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            13, 2,
-            14, 7,
-            15.5, 13
-          ]
-        }
-      });
-    }
-
-    // 14b. Add Citybike available-bikes count label (mid-zoom circle range)
-    if (!map.getLayer('citybike_stops_count')) {
-      map.addLayer({
-        id: 'citybike_stops_count',
+        id: 'citybike_gauge',
         type: 'symbol',
         source: 'citybike',
-        'source-layer': 'rentalStations',
-        minzoom: 13.5,
-        maxzoom: 15.5,
+        minzoom: 13,
         layout: {
-          'text-field': ['to-string', ['coalesce', ['get', 'bikesAvailable'], ['get', 'bikes'], '0']],
+          'icon-image': [
+            'let',
+            'bikes', ['to-number', ['coalesce', ['get', 'bikesAvailable'], 0]],
+            'spaces', ['to-number', ['coalesce', ['get', 'spacesAvailable'], 0]],
+            [
+              'case',
+              ['<=', ['var', 'bikes'], 0], 'bike-gauge-0',
+              [
+                'step',
+                ['/', ['var', 'bikes'], ['max', ['+', ['var', 'bikes'], ['var', 'spaces']], 1]],
+                'bike-gauge-1',
+                0.2, 'bike-gauge-2',
+                0.4, 'bike-gauge-3',
+                0.6, 'bike-gauge-4',
+                0.8, 'bike-gauge-5'
+              ]
+            ]
+          ],
+          'icon-anchor': 'center',
+          // Declutter the overview; show every station once markers are legible.
+          'icon-allow-overlap': ['step', ['zoom'], false, 15, true],
+          'icon-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            13, 0.45,
+            14, 0.6,
+            15.5, 0.85,
+            17, 1.05
+          ],
+          'text-field': ['to-string', ['coalesce', ['get', 'bikesAvailable'], 0]],
           'text-font': ['Gotham Rounded Medium'],
           'text-size': [
             'interpolate',
             ['linear'],
             ['zoom'],
-            13.5, 8,
-            15.5, 12
+            13, 0,
+            13.8, 9,
+            16, 12.5
           ],
-          'text-allow-overlap': true,
-          'text-ignore-placement': true,
+          'text-allow-overlap': ['step', ['zoom'], false, 15, true],
         },
         paint: {
           'text-color': '#1e293b',
           'text-halo-color': '#ffffff',
-          'text-halo-width': 1,
-          // Fade the numbers in so the zoom-13 overview stays clean.
+          'text-halo-width': 1.2,
+          // Fade the numbers in so the wide overview stays clean.
           'text-opacity': [
             'interpolate',
             ['linear'],
             ['zoom'],
-            13.5, 0,
-            14, 1
+            13, 0,
+            13.8, 1
           ]
-        }
-      });
-    }
-
-    // 15. Create Citybike Icon Image if missing
-    if (!map.hasImage('icon-citybike-station')) {
-      const bikeSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30" fill="none">
-          <circle cx="15" cy="15" r="12" fill="#fcbc19" stroke="#ffffff" stroke-width="2"/>
-          <path d="M19.5 17.5a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm-9 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM10.5 17.5h5m-2.5 0v-4.5h4.5m-4.5 2L15 11h2.5" stroke="#1e293b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      `;
-      const bikeImg = new Image(30, 30);
-      bikeImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(bikeSvg);
-      bikeImg.onload = () => {
-        if (!map.hasImage('icon-citybike-station')) map.addImage('icon-citybike-station', bikeImg);
-      };
-    }
-
-    // 16. Add Citybike Icon layer
-    if (!map.getLayer('citybike_icon')) {
-      map.addLayer({
-        id: 'citybike_icon',
-        type: 'symbol',
-        source: 'citybike',
-        'source-layer': 'rentalStations',
-        minzoom: 15.5,
-        layout: {
-          'icon-image': 'sign-bike',
-          'icon-anchor': 'bottom',
-          'icon-allow-overlap': true,
-          'icon-size': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            15, 0.8,
-            20, 1.2
-          ],
-          'text-field': ['to-string', ['coalesce', ['get', 'bikesAvailable'], ['get', 'bikes'], '0']],
-          'text-font': ['Gotham Rounded Medium'],
-          'text-size': 9.5,
-          'text-offset': [1.1, -2.4],
-          'text-allow-overlap': true,
-          'text-ignore-placement': true,
-        },
-        paint: {
-          'text-color': '#ffffff',
-          'text-halo-color': '#00985f',
-          'text-halo-width': 3.5,
         }
       });
     }
@@ -1248,34 +1198,27 @@ export const Map: React.FC<MapProps> = ({
     }
 
 
-    // Selected bike station highlight halo layer
+    // Selected bike station highlight halo layer. Sits directly under the gauge
+    // marker (which is centre-anchored), so the halo is centred on it too.
     if (!map.getLayer('citybike-selected-highlight')) {
       map.addLayer({
         id: 'citybike-selected-highlight',
         type: 'circle',
         source: 'citybike',
-        'source-layer': 'rentalStations',
         paint: {
           'circle-radius': [
             'interpolate',
             ['exponential', 1.15],
             ['zoom'],
-            12, 14,
-            22, 48
+            12, 12,
+            22, 42
           ],
           'circle-color': 'rgba(253, 203, 110, 0.25)', // glowing gold halo
           'circle-stroke-color': '#fdcb6e',
           'circle-stroke-width': 3.5,
-          'circle-translate': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            15, ['literal', [0, 0]],
-            16, ['literal', [0, -28]]
-          ] as any
         },
         filter: ['==', ['to-string', ['coalesce', ['get', 'stationId'], ['get', 'id'], '']], '']
-      }, 'citybike_icon');
+      }, 'citybike_gauge');
     }
 
     // Next stop highlight symbol layer (follows same highlight practice as selected stop)
@@ -1571,9 +1514,7 @@ export const Map: React.FC<MapProps> = ({
       }
     };
 
-    map.on('click', 'citybike_icon', handleBikeClick);
-    map.on('click', 'citybike_stops', handleBikeClick);
-    map.on('click', 'citybike_stops_count', handleBikeClick);
+    map.on('click', 'citybike_gauge', handleBikeClick);
 
     // Mouse Hover Effects
     const setCursorPointer = () => (map.getCanvas().style.cursor = 'pointer');
@@ -1589,12 +1530,8 @@ export const Map: React.FC<MapProps> = ({
     map.on('mouseleave', 'stops_trunk', resetCursor);
     map.on('mouseenter', 'stops_signs', setCursorPointer);
     map.on('mouseleave', 'stops_signs', resetCursor);
-    map.on('mouseenter', 'citybike_icon', setCursorPointer);
-    map.on('mouseleave', 'citybike_icon', resetCursor);
-    map.on('mouseenter', 'citybike_stops', setCursorPointer);
-    map.on('mouseleave', 'citybike_stops', resetCursor);
-    map.on('mouseenter', 'citybike_stops_count', setCursorPointer);
-    map.on('mouseleave', 'citybike_stops_count', resetCursor);
+    map.on('mouseenter', 'citybike_gauge', setCursorPointer);
+    map.on('mouseleave', 'citybike_gauge', resetCursor);
   };
 
   // Initial Map Setup
@@ -1712,6 +1649,38 @@ export const Map: React.FC<MapProps> = ({
       : 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
     map.setStyle(styleUrl);
   }, [mapTheme]);
+
+  // Poll live city-bike availability and feed it into the 'citybike' source.
+  // Cached ~20s server-side, so a 30s client refresh keeps counts fresh without
+  // hammering the upstream API. The latest payload is stashed in a ref so a
+  // theme/style reload can re-seed the recreated source right away.
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const data = await fetchBikeStations();
+        if (cancelled) return;
+        bikeStationsDataRef.current = data;
+        const map = mapRef.current;
+        const src = map?.getSource('citybike') as maplibregl.GeoJSONSource | undefined;
+        if (src && typeof src.setData === 'function') {
+          src.setData(data as unknown as FeatureCollection);
+        }
+      } catch (err) {
+        // Transient upstream/network failures just leave the last good data in
+        // place; the next tick retries.
+        console.error('Failed to refresh bike station availability', err);
+      }
+    };
+
+    load();
+    const timer = setInterval(load, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   // Update selection ring filter
   useEffect(() => {

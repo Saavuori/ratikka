@@ -986,6 +986,143 @@ func (h *Handlers) BikeStationDetails(w http.ResponseWriter, r *http.Request) {
 	w.Write(dataInterface.([]byte))
 }
 
+// GeoJSON output for the full set of city-bike stations, consumed by the map
+// to draw live availability markers. Keeping the payload as GeoJSON lets the
+// frontend feed it straight into a MapLibre source without reshaping.
+type bikeStationsFeatureCollection struct {
+	Type     string               `json:"type"`
+	Features []bikeStationFeature `json:"features"`
+}
+
+type bikeStationFeature struct {
+	Type       string                `json:"type"`
+	Geometry   bikeStationGeometry   `json:"geometry"`
+	Properties bikeStationProperties `json:"properties"`
+}
+
+type bikeStationGeometry struct {
+	Type        string     `json:"type"`
+	Coordinates [2]float64 `json:"coordinates"`
+}
+
+type bikeStationProperties struct {
+	StationId       string `json:"stationId"`
+	Name            string `json:"name"`
+	BikesAvailable  int    `json:"bikesAvailable"`
+	SpacesAvailable int    `json:"spacesAvailable"`
+	AllowPickup     bool   `json:"allowPickup"`
+	AllowDropoff    bool   `json:"allowDropoff"`
+}
+
+type rawBikeStationsResponse struct {
+	VehicleRentalStations []struct {
+		StationId         string                 `json:"stationId"`
+		Name              string                 `json:"name"`
+		Lat               float64                `json:"lat"`
+		Lon               float64                `json:"lon"`
+		AllowPickup       bool                   `json:"allowPickup"`
+		AllowDropoff      bool                   `json:"allowDropoff"`
+		AvailableVehicles *rawRentalEntityCounts `json:"availableVehicles"`
+		AvailableSpaces   *rawRentalEntityCounts `json:"availableSpaces"`
+	} `json:"vehicleRentalStations"`
+}
+
+// BikeStations returns every HSL city-bike station as a GeoJSON FeatureCollection
+// with live bike/dock counts. The map renders availability markers from this so
+// the on-map counts come from the authoritative realtime API rather than the
+// static vector tiles (which carry no live availability).
+func (h *Handlers) BikeStations(w http.ResponseWriter, r *http.Request) {
+	const key = "bike:stations:all"
+
+	if cached, ok := h.apiCache.Get(key); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(cached)
+		return
+	}
+
+	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
+		if cached, ok := h.apiCache.Get(key); ok {
+			return cached, nil
+		}
+
+		queryStr := `
+			query GetBikeStations {
+				vehicleRentalStations {
+					stationId
+					name
+					lat
+					lon
+					allowPickup
+					allowDropoff
+					availableVehicles {
+						total
+						byType {
+							count
+							vehicleType {
+								formFactor
+							}
+						}
+					}
+					availableSpaces {
+						total
+						byType {
+							count
+							vehicleType {
+								formFactor
+							}
+						}
+					}
+				}
+			}
+		`
+
+		var raw rawBikeStationsResponse
+		if err := h.gql.query(r.Context(), queryStr, nil, &raw); err != nil {
+			log.Printf("GraphQL query error for bike stations: %v\n", err)
+			return nil, fmt.Errorf("upstream api error")
+		}
+
+		fc := bikeStationsFeatureCollection{
+			Type:     "FeatureCollection",
+			Features: make([]bikeStationFeature, 0, len(raw.VehicleRentalStations)),
+		}
+		for _, s := range raw.VehicleRentalStations {
+			// Stations without coordinates can't be placed on the map.
+			if s.Lat == 0 && s.Lon == 0 {
+				continue
+			}
+			fc.Features = append(fc.Features, bikeStationFeature{
+				Type:     "Feature",
+				Geometry: bikeStationGeometry{Type: "Point", Coordinates: [2]float64{s.Lon, s.Lat}},
+				Properties: bikeStationProperties{
+					StationId:       s.StationId,
+					Name:            s.Name,
+					BikesAvailable:  countBicycles(s.AvailableVehicles),
+					SpacesAvailable: countBicycles(s.AvailableSpaces),
+					AllowPickup:     s.AllowPickup,
+					AllowDropoff:    s.AllowDropoff,
+				},
+			})
+		}
+
+		jsonBytes, err := json.Marshal(fc)
+		if err != nil {
+			return nil, err
+		}
+
+		h.apiCache.Set(key, jsonBytes, 20*time.Second)
+		return jsonBytes, nil
+	})
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(dataInterface.([]byte))
+}
+
 // Disruption Alert Output Structs
 type AlertsListResponse struct {
 	Alerts []AlertResponse `json:"alerts"`

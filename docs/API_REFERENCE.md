@@ -17,6 +17,7 @@
   - [REST — Stop Details](#rest--stop-details)
   - [REST — Route Details](#rest--route-details)
   - [REST — Bike Station Details](#rest--bike-station-details)
+  - [REST — Bike Stations (All)](#rest--bike-stations-all)
   - [REST — Destination Search (Geocode)](#rest--destination-search-geocode)
   - [REST — Journey Plan](#rest--journey-plan)
   - [REST — Health Check](#rest--health-check)
@@ -501,6 +502,46 @@ Get live capacity and rental status for a specific city bike station.
   "spacesAvailable": 8
 }
 ```
+
+---
+
+### REST — Bike Stations (All)
+
+Get every HSL city bike station with live bike/dock counts as a GeoJSON
+`FeatureCollection`, ready to feed straight into a MapLibre source. The map uses
+this to draw availability markers, since the Digitransit vector tiles carry no
+live availability. Cached for 20 seconds server-side.
+
+| Property | Value |
+|---|---|
+| **Method** | `GET` |
+| **Path** | `/api/v1/bike-stations` |
+| **Auth** | None (backend adds Digitransit key) |
+
+**Response** `200 OK`:
+
+```json
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [24.9384, 60.1699] },
+      "properties": {
+        "stationId": "1203420",
+        "name": "Välimerenkatu",
+        "bikesAvailable": 12,
+        "spacesAvailable": 8,
+        "allowPickup": true,
+        "allowDropoff": true
+      }
+    }
+  ]
+}
+```
+
+Stations without coordinates are omitted. `coordinates` are `[lon, lat]` per the
+GeoJSON spec.
 
 ---
 

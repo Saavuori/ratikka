@@ -47,10 +47,6 @@
       "url": "https://kartat.hsl.fi/jore/tiles/stops-by-routes/index.json",
       "type": "vector"
     },
-    "citybike": {
-      "url": "https://api.digitransit.fi/map/v3/hsl/fi/rentalStations/tilejson.json",
-      "type": "vector"
-    },
     "terminals": {
       "url": "https://kartat.hsl.fi/jore/tiles/terminals/index.json",
       "type": "vector"
@@ -3256,64 +3252,6 @@
         "icon-anchor": "bottom",
         "icon-allow-overlap": true,
         "visibility": "none"
-      }
-    },
-    {
-      "id": "citybike_stops_case",
-      "type": "circle",
-      "source": "citybike",
-      "source-layer": "rentalStations",
-      "minzoom": 13,
-      "maxzoom": 14,
-      "paint": {
-        "circle-color": "#fff",
-        "circle-radius": [
-          "interpolate",
-          ["exponential", 1.15],
-          ["zoom"],
-          12,
-          1.5,
-          22,
-          26
-        ]
-      }
-    },
-    {
-      "id": "citybike_stops",
-      "type": "circle",
-      "source": "citybike",
-      "source-layer": "rentalStations",
-      "minzoom": 13,
-      "maxzoom": 14,
-      "paint": {
-        "circle-color": "#fcbc19",
-        "circle-radius": [
-          "interpolate",
-          ["exponential", 1.15],
-          ["zoom"],
-          12,
-          1,
-          22,
-          24
-        ]
-      }
-    },
-    {
-      "id": "citybike_icon",
-      "type": "symbol",
-      "source": "citybike",
-      "source-layer": "rentalStations",
-      "minzoom": 14,
-      "layout": {
-        "icon-offset": [0, -6],
-        "icon-image": "icon-citybike-station",
-        "icon-allow-overlap": false,
-        "icon-size": {
-          "stops": [
-            [13, 0.8],
-            [20, 1.2]
-          ]
-        }
       }
     }
   ]
