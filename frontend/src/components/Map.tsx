@@ -1056,10 +1056,11 @@ export const Map: React.FC<MapProps> = ({
           'circle-color': '#ffffff',
           'circle-radius': [
             'interpolate',
-            ['exponential', 1.15],
+            ['linear'],
             ['zoom'],
-            12, 1.5,
-            22, 26
+            13, 3,
+            14, 8.5,
+            15.5, 15
           ]
         }
       });
@@ -1075,13 +1076,59 @@ export const Map: React.FC<MapProps> = ({
         minzoom: 13,
         maxzoom: 15.5,
         paint: {
-          'circle-color': '#fcbc19',
+          // Grey out stations with no bikes so "none left" reads at a glance,
+          // even at low zoom where the count label is hidden.
+          'circle-color': [
+            'case',
+            ['<=', ['to-number', ['coalesce', ['get', 'bikesAvailable'], ['get', 'bikes'], 0]], 0],
+            '#9ca3af',
+            '#fcbc19'
+          ],
           'circle-radius': [
             'interpolate',
-            ['exponential', 1.15],
+            ['linear'],
             ['zoom'],
-            12, 1,
-            22, 24
+            13, 2,
+            14, 7,
+            15.5, 13
+          ]
+        }
+      });
+    }
+
+    // 14b. Add Citybike available-bikes count label (mid-zoom circle range)
+    if (!map.getLayer('citybike_stops_count')) {
+      map.addLayer({
+        id: 'citybike_stops_count',
+        type: 'symbol',
+        source: 'citybike',
+        'source-layer': 'rentalStations',
+        minzoom: 13.5,
+        maxzoom: 15.5,
+        layout: {
+          'text-field': ['to-string', ['coalesce', ['get', 'bikesAvailable'], ['get', 'bikes'], '0']],
+          'text-font': ['Gotham Rounded Medium'],
+          'text-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            13.5, 8,
+            15.5, 12
+          ],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#1e293b',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1,
+          // Fade the numbers in so the zoom-13 overview stays clean.
+          'text-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            13.5, 0,
+            14, 1
           ]
         }
       });
@@ -1526,6 +1573,7 @@ export const Map: React.FC<MapProps> = ({
 
     map.on('click', 'citybike_icon', handleBikeClick);
     map.on('click', 'citybike_stops', handleBikeClick);
+    map.on('click', 'citybike_stops_count', handleBikeClick);
 
     // Mouse Hover Effects
     const setCursorPointer = () => (map.getCanvas().style.cursor = 'pointer');
@@ -1545,6 +1593,8 @@ export const Map: React.FC<MapProps> = ({
     map.on('mouseleave', 'citybike_icon', resetCursor);
     map.on('mouseenter', 'citybike_stops', setCursorPointer);
     map.on('mouseleave', 'citybike_stops', resetCursor);
+    map.on('mouseenter', 'citybike_stops_count', setCursorPointer);
+    map.on('mouseleave', 'citybike_stops_count', resetCursor);
   };
 
   // Initial Map Setup
