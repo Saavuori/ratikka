@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.41.0] - 2026-07-21
+
+### Added
+- **Changelog Link in Version Badge**: The version badge in the map's bottom-left corner is now a clickable link that opens the live changelog (GitHub Pages) in a new tab, so riders can jump straight from the running version to its release history. The badge keeps its existing appearance and hover affordance.
+
+---
+
 ## [v0.40.1] - 2026-07-21
 
 ### Fixed
