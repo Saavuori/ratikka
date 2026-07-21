@@ -34,7 +34,7 @@ A premium, high-performance web application mapping **all active Helsinki trams,
 ### Telemetry & Diagnostics
 
 * **Three-Tab Vehicle Panel**: Selecting a vehicle opens a `Telemetry` / `Schedule` / `Diagnostics` sidebar sourced from raw HSL HFP v2 fields.
-* **Animated 2D Vehicle Schematic**: Mode-accurate vector layouts (3 door pairs for trams, 2 for buses) that open doors live from the `drst` flag, blink boarding indicators, and spin wheels at a rate proportional to velocity.
+* **Animated 2D Vehicle Schematic**: Mode-accurate vector layouts (3 door pairs for trams, 2 for buses) that open doors live from the `drst` flag, blink boarding indicators, and spin wheels at a rate proportional to velocity. See [docs/ICONS_AND_ANIMATIONS.md](docs/ICONS_AND_ANIMATIONS.md) for a full catalogue of every tram/bus icon and animation with source examples.
 * **Arc Speedometer & Acceleration Gauges**: Custom SVG speedometer and schedule-deviation dials plus a bidirectional accelerometer bar showing cruising, acceleration, or active braking.
 * **Deep Diagnostics**: Operator registry name, chassis ID, occupancy %, GPS source, odometer, HFP update drift in ms, and the underlying GTFS route/direction/trip identifiers.
 
@@ -97,6 +97,7 @@ ratikka/
 │   └── package.json
 ├── docs/                     # Detailed architectural documents
 │   ├── API_REFERENCE.md      # REST/WS/external endpoint specs
+│   ├── ICONS_AND_ANIMATIONS.md # Tram/bus marker icons and animation reference
 │   ├── LOCAL_DEVELOPMENT.md  # How to run and test locally
 │   ├── MONITORING.md         # Metrics pipeline and dashboard import
 │   ├── PLAN.md               # Feature lists and mermaid architecture
