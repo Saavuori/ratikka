@@ -1,6 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72" fill="none">
   <rect x="0" y="0" width="72" height="72" rx="10" fill="#0f172a"/>
-  <circle cx="36" cy="36" r="17" fill="rgba(225,112,85,0.14)" stroke="#e17055" stroke-width="2.4" stroke-opacity="0.9"/>
+  <defs><filter id="s" x="-120%" y="-120%" width="340%" height="340%"><feGaussianBlur stdDeviation="7"/></filter></defs>
+  <circle cx="36" cy="36" r="12" fill="#e17055" opacity="0.5" filter="url(#s)"/>
   <g transform="translate(16,16)">
   <path d="M20 3.2 L24 8.4 L16 8.4 Z" fill="#00985F" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
   <rect x="12.5" y="7.5" width="15" height="26" rx="6.5" fill="#00985F" stroke="#ffffff" stroke-width="2"/>

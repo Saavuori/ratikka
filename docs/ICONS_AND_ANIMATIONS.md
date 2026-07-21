@@ -67,20 +67,30 @@ one loop with no per-marker timers.
 
 ### Motion aura
 
-A soft blurred glow under each vehicle that grows with speed and is tinted by
-acceleration — **green** pulling away, **red** braking, **teal** cruising. It fades to
-nothing at a standstill.
+A coloured glow under each vehicle that grows with speed and is tinted by
+acceleration — **green** pulling away, **red** braking, **teal** cruising. It reaches
+full size at ordinary city-tram speeds and fades to nothing at a standstill, so a
+moving vehicle reads at a glance.
 
 | Accelerating | Cruising | Braking |
 |:--:|:--:|:--:|
 | <img src="screenshots/icons/aura-accelerating.svg" height="72"> | <img src="screenshots/icons/aura-cruising.svg" height="72"> | <img src="screenshots/icons/aura-braking.svg" height="72"> |
 
-### Doors-open pulse & stopped ring
+### Stopped glow
 
-| Boarding pulse (animated) | Stopped ring |
-|:--:|:--:|
-| <img src="screenshots/icons/door-pulse.svg" height="72"> | <img src="screenshots/icons/stopped-ring.svg" height="72"> |
-| An **amber** ring expands and fades on a ~1.5 s loop while the doors are open. | A static **coral** ring marks a halted vehicle (red light, traffic, terminus) — the positive "I'm stopped" cue once the motion aura has faded away. |
+<img src="screenshots/icons/stopped-glow.svg" height="72" align="left" hspace="14">
+
+A halted vehicle (waiting at a light, stuck in traffic, sitting at a terminus) gets a
+**subtle, borderless coral halo** — the positive "I'm stopped" cue once the motion
+aura has faded away. It is deliberately understated and soft-edged so it can't be
+mistaken for the crisp gold selection ring. There is no separate boarding animation:
+the amber door gaps in the doors-open body art already signal boarding.
+
+<br clear="left">
+
+> **Design note:** an earlier version wrapped stopped vehicles in a hard coral ring
+> and pulsed an amber ring while boarding. Both were dropped — the ring read too much
+> like the selection highlight, and the doors-open icon already conveys boarding.
 
 ### Smooth movement
 
