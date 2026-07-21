@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { VehiclePosition, Alert } from '../types';
-import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Route, Train, Bus, AlertTriangle, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Train, Bus, AlertTriangle, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { getRouteColor } from '../lib/routeColors';
 
@@ -14,8 +14,6 @@ interface FilterPanelProps {
   onToggleCollapse: () => void;
   mapTheme: 'light' | 'dark';
   setMapTheme: (theme: 'light' | 'dark') => void;
-  showRouteNetwork: boolean;
-  setShowRouteNetwork: (show: boolean) => void;
   is3D: boolean;
   setIs3D: (is3D: boolean) => void;
   showTrams: boolean;
@@ -38,8 +36,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   onToggleCollapse,
   mapTheme,
   setMapTheme,
-  showRouteNetwork,
-  setShowRouteNetwork,
   is3D,
   setIs3D,
   showTrams,
@@ -503,18 +499,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
               <Box size={12} />
             </span>
             <span>3D Map</span>
-          </button>
-
-          {/* Route Network Toggle */}
-          <button
-            className={`settings-btn ${showRouteNetwork ? 'active' : ''}`}
-            onClick={() => setShowRouteNetwork(!showRouteNetwork)}
-            title="Toggle background route network"
-          >
-            <span className="settings-btn-icon">
-              <Route size={12} />
-            </span>
-            <span>Routes</span>
           </button>
 
           {/* Trams Toggle */}

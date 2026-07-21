@@ -31,7 +31,6 @@ interface MapProps {
   lineFilters: string[];
   routeGeometries: Record<string, { geometries: string[]; color?: string; stops?: string[] }>;
   mapTheme: 'light' | 'dark';
-  showRouteNetwork: boolean;
   is3D: boolean;
   isFollowing: boolean;
   onDisableFollowing: () => void;
@@ -63,7 +62,6 @@ export const Map: React.FC<MapProps> = ({
   lineFilters,
   routeGeometries,
   mapTheme,
-  showRouteNetwork,
   is3D,
   isFollowing,
   onDisableFollowing,
@@ -104,7 +102,7 @@ export const Map: React.FC<MapProps> = ({
   const selectedTramIdRef = useRef<string | null>(selectedTramId);
   const selectedStopIdRef = useRef<string | null>(selectedStopId);
   const selectedBikeStationIdRef = useRef<string | null>(selectedBikeStationId);
-  const showRouteNetworkRef = useRef<boolean>(showRouteNetwork);
+  const lineFiltersRef = useRef<string[]>(lineFilters);
   const showTramsRef = useRef<boolean>(showTrams);
   const showBusesRef = useRef<boolean>(showBuses);
   const is3DRef = useRef<boolean>(is3D);
@@ -151,8 +149,8 @@ export const Map: React.FC<MapProps> = ({
   }, [selectedBikeStationId]);
 
   useEffect(() => {
-    showRouteNetworkRef.current = showRouteNetwork;
-  }, [showRouteNetwork]);
+    lineFiltersRef.current = lineFilters;
+  }, [lineFilters]);
 
   useEffect(() => {
     showTramsRef.current = showTrams;
@@ -178,8 +176,11 @@ export const Map: React.FC<MapProps> = ({
   // uses HSL's mode colours (green trams, blue buses) rather than our per-line
   // palette, and is scoped to just the tram and bus modes: tram routes follow the
   // Trams toggle, bus/trunk routes follow the Buses toggle, and other modes
-  // (rail, subway, ferry) are never drawn here. When the network is off nothing
-  // shows regardless of the mode toggles.
+  // (rail, subway, ferry) are never drawn here. The whole network is the
+  // "show all" state: it is drawn whenever no line filter is active (`show`),
+  // and hidden as soon as the user selects specific lines — at which point only
+  // those lines' highlighted per-line route paths remain. When `show` is off
+  // nothing shows regardless of the mode toggles.
   const tramRouteLayers = [
     'route_tram_case',
     'route_tram',
@@ -204,6 +205,85 @@ export const Map: React.FC<MapProps> = ({
     'route_rail_case',
     'route_rail',
   ];
+
+  // The HSL background route network (the `routes` vector source + its per-mode
+  // line layers) ships only in the light `style.json`. The dark theme loads
+  // Carto's dark-matter basemap, which has neither, so the Settings "Routes"
+  // toggle used to do nothing there — the route lines never appeared. This
+  // recreates that source and the tram/bus/light-rail/trunk layers (matching the
+  // style.json definitions, case → main → inner) whenever they are missing, so
+  // the network — and its mode colours — show in both themes. Guarded by
+  // `getSource`/`getLayer`, it is a no-op in light mode where the style already
+  // provides them.
+  const backgroundRouteNetworkLayers: maplibregl.LayerSpecification[] = [
+    // Trams (green)
+    { id: 'route_tram_case', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'TRAM'], layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 4], [22, 8]] } } },
+    { id: 'route_tram', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'TRAM'], layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
+      paint: { 'line-color': '#00985F', 'line-width': { stops: [[10, 2], [22, 6]] } } },
+    { id: 'route_tram_inner', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'TRAM'],
+      paint: { 'line-color': '#00bb75', 'line-width': { stops: [[10, 0.5], [22, 2]] } } },
+    // Light rail / Raide-Jokeri (teal)
+    { id: 'route_lrail_case', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'L_RAIL'], layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 4], [22, 8]] } } },
+    { id: 'route_lrail', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'L_RAIL'], layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
+      paint: { 'line-color': '#0098A1', 'line-width': { stops: [[10, 2], [22, 6]] } } },
+    { id: 'route_lrail_inner', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'L_RAIL'],
+      paint: { 'line-color': '#19a2aa', 'line-width': { stops: [[10, 0.5], [22, 2]] } } },
+    // Buses (blue)
+    { id: 'route_bus_case', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 4], [22, 8]] } } },
+    { id: 'route_bus', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+      layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
+      paint: { 'line-color': '#007ac9', 'line-width': { stops: [[10, 2], [22, 6]] } } },
+    { id: 'route_bus_inner', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+      paint: { 'line-color': '#3395d4', 'line-width': { stops: [[10, 0.5], [22, 2]] } } },
+    // Trunk buses (orange)
+    { id: 'route_trunk_case', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 4], [22, 8]] } } },
+    { id: 'route_trunk', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+      layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
+      paint: { 'line-color': '#CA4300', 'line-width': { stops: [[10, 2], [22, 6]] } } },
+    { id: 'route_trunk_inner', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+      paint: { 'line-color': '#FF6319', 'line-width': { stops: [[10, 1], [22, 4]] } } },
+  ] as unknown as maplibregl.LayerSpecification[];
+
+  const ensureBackgroundRouteNetwork = (map: maplibregl.Map) => {
+    // Add the JORE routes vector source if the base style doesn't provide it.
+    if (!map.getSource('routes')) {
+      map.addSource('routes', {
+        type: 'vector',
+        url: 'https://kartat.hsl.fi/jore/tiles/routes/index.json',
+      });
+    }
+
+    // Keep the network beneath the highlighted route path and the vehicles.
+    const beforeId = map.getLayer('route-lines-layer')
+      ? 'route-lines-layer'
+      : map.getLayer('trams-circles')
+      ? 'trams-circles'
+      : undefined;
+
+    backgroundRouteNetworkLayers.forEach((layer) => {
+      if (!map.getLayer(layer.id)) {
+        map.addLayer(layer, beforeId);
+      }
+    });
+  };
 
   const updateRouteVisibility = (
     map: maplibregl.Map,
@@ -1011,6 +1091,12 @@ export const Map: React.FC<MapProps> = ({
       }, 'trams-circles');
     }
 
+    // 8b. Recreate the HSL background route network when the base style lacks it
+    //     (the dark-matter theme has no `routes` source/layers), so the Settings
+    //     "Routes" toggle draws the route lines — and their mode colours — in
+    //     both themes. No-op in light mode where style.json already supplies them.
+    ensureBackgroundRouteNetwork(map);
+
     // 9. Add Tram Text Label Layer (on top of arrows/circles)
     if (!map.getLayer('trams-labels')) {
       map.addLayer({
@@ -1569,8 +1655,10 @@ export const Map: React.FC<MapProps> = ({
       }
     }
 
-    // Apply active route visibility and 3D mode setting
-    updateRouteVisibility(map, showRouteNetworkRef.current, showTramsRef.current, showBusesRef.current);
+    // Apply active route visibility and 3D mode setting. The all-routes network
+    // shows only while no line filter is active; selecting lines hides it and
+    // leaves just those lines' highlighted paths.
+    updateRouteVisibility(map, lineFiltersRef.current.length === 0, showTramsRef.current, showBusesRef.current);
     update3DMode(map, is3DRef.current, mapThemeRef.current);
 
     // Hide white casing layers
@@ -1966,14 +2054,16 @@ export const Map: React.FC<MapProps> = ({
     }
   }, [is3D, mapTheme]);
 
-  // Dynamic Route visibility changes: the background network respects the
-  // Routes toggle plus the per-mode Trams/Buses toggles.
+  // Dynamic Route visibility changes: the all-routes background network is drawn
+  // whenever no line filter is active (and respects the per-mode Trams/Buses
+  // toggles); selecting specific lines hides it so only those lines' highlighted
+  // paths remain.
   useEffect(() => {
     const map = mapRef.current;
     if (map && map.getStyle()) {
-      updateRouteVisibility(map, showRouteNetwork, showTrams, showBuses);
+      updateRouteVisibility(map, lineFilters.length === 0, showTrams, showBuses);
     }
-  }, [showRouteNetwork, showTrams, showBuses]);
+  }, [lineFilters, showTrams, showBuses]);
 
   // Dynamic Stop Route Filtering
   useEffect(() => {
