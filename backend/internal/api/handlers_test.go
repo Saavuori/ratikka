@@ -646,6 +646,88 @@ func TestHandlers_BikeStationDetails_UntypedDocks(t *testing.T) {
 	}
 }
 
+// TestHandlers_BikeStations verifies the all-stations GeoJSON endpoint: live
+// counts are resolved via countBicycles, coordinates are emitted as [lon, lat],
+// and stations without coordinates are dropped.
+func TestHandlers_BikeStations(t *testing.T) {
+	mockGraphQLResponse := `{
+		"data": {
+			"vehicleRentalStations": [
+				{
+					"stationId": "smoove:625",
+					"name": "Suomenlahdentie",
+					"lat": 60.1699,
+					"lon": 24.9384,
+					"allowPickup": true,
+					"allowDropoff": true,
+					"availableVehicles": { "total": 12, "byType": [ { "count": 12, "vehicleType": { "formFactor": "BICYCLE" } } ] },
+					"availableSpaces": { "total": 8, "byType": [] }
+				},
+				{
+					"stationId": "smoove:000",
+					"name": "No coordinates",
+					"lat": 0,
+					"lon": 0,
+					"allowPickup": true,
+					"allowDropoff": true,
+					"availableVehicles": { "total": 3, "byType": [] },
+					"availableSpaces": { "total": 5, "byType": [] }
+				}
+			]
+		}
+	}`
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(mockGraphQLResponse))
+	}))
+	defer ts.Close()
+
+	oldEndpoint := DigitransitURLEndpoint
+	DigitransitURLEndpoint = ts.URL
+	defer func() { DigitransitURLEndpoint = oldEndpoint }()
+
+	memCache := cache.NewMemoryCache()
+	mqtt := &mockMqttWorker{connected: true}
+	gql := NewGraphQLClient("test-api-key")
+	handlers := NewHandlers(memCache, gql, mqtt)
+
+	req := httptest.NewRequest("GET", "/api/v1/bike-stations", nil)
+	rr := httptest.NewRecorder()
+	handlers.BikeStations(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+
+	var fc bikeStationsFeatureCollection
+	if err := json.Unmarshal(rr.Body.Bytes(), &fc); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if fc.Type != "FeatureCollection" {
+		t.Errorf("expected FeatureCollection, got %s", fc.Type)
+	}
+	// The zero-coordinate station must be filtered out.
+	if len(fc.Features) != 1 {
+		t.Fatalf("expected 1 feature (zero-coord dropped), got %d", len(fc.Features))
+	}
+
+	f := fc.Features[0]
+	if f.Geometry.Coordinates != [2]float64{24.9384, 60.1699} {
+		t.Errorf("expected [lon, lat] = [24.9384, 60.1699], got %v", f.Geometry.Coordinates)
+	}
+	if f.Properties.StationId != "smoove:625" {
+		t.Errorf("expected stationId smoove:625, got %s", f.Properties.StationId)
+	}
+	if f.Properties.BikesAvailable != 12 {
+		t.Errorf("expected BikesAvailable 12, got %d", f.Properties.BikesAvailable)
+	}
+	if f.Properties.SpacesAvailable != 8 {
+		t.Errorf("expected SpacesAvailable 8 (from total), got %d", f.Properties.SpacesAvailable)
+	}
+}
+
 func TestHandlers_Alerts(t *testing.T) {
 	mockGraphQLResponse := `{
 		"data": {

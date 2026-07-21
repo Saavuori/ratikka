@@ -1,4 +1,4 @@
-import type { TripDetailsResponse, StopDetailsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyEndpoint } from '../types';
+import type { TripDetailsResponse, StopDetailsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyEndpoint } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -38,6 +38,19 @@ export async function fetchBikeStationDetails(stationId: string): Promise<BikeSt
   const res = await fetch(`${API_BASE}/bike-station/${encodeURIComponent(stationId)}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch bike station details: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/**
+ * Fetch every city-bike station with live bike/dock counts as a GeoJSON
+ * FeatureCollection, ready to feed straight into a MapLibre source. The counts
+ * come from the realtime API (the map's vector tiles carry no availability).
+ */
+export async function fetchBikeStations(): Promise<BikeStationsFeatureCollection> {
+  const res = await fetch(`${API_BASE}/bike-stations`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch bike stations: ${res.statusText}`);
   }
   return res.json();
 }

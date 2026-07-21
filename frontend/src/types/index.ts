@@ -102,6 +102,27 @@ export interface BikeStationDetailsResponse {
   spacesAvailable: number;
 }
 
+export interface BikeStationFeature {
+  type: 'Feature';
+  geometry: {
+    type: 'Point';
+    coordinates: [number, number]; // [lon, lat]
+  };
+  properties: {
+    stationId: string;
+    name: string;
+    bikesAvailable: number;
+    spacesAvailable: number;
+    allowPickup: boolean;
+    allowDropoff: boolean;
+  };
+}
+
+export interface BikeStationsFeatureCollection {
+  type: 'FeatureCollection';
+  features: BikeStationFeature[];
+}
+
 export interface AlertEntity {
   type: string; // "Route" or "Stop"
   gtfsId: string;

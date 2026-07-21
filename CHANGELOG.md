@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.42.0] - 2026-07-21
+
+### Fixed
+- **On-Map Bike Availability Always Zero**: The city-bike markers read `bikesAvailable` straight from the Digitransit rental-station **vector tiles**, but those tiles carry no live availability — only station id, name and location. The count therefore always fell back to `0`, so every station showed "0" and was greyed out as if empty. The map now sources live counts from the realtime API instead of the tiles (see below), so availability is accurate again.
+
+### Added
+- **Live Bike Availability Gauge**: Replaced the plain gold dot + bare number with an at-a-glance availability gauge. Each station is a small donut whose coloured arc shows how full it is (bikes ÷ total docks) and whose colour flags scarcity — grey when empty, red when critically low, amber when middling, green when there are plenty — with the available-bike count in the centre once you're zoomed in enough to read it. Empty stations still read instantly from colour alone, even at the wide overview zoom where the number is hidden.
+- **`GET /api/v1/bike-stations` Endpoint**: New backend proxy returning every HSL city-bike station with live bike/dock counts as a GeoJSON `FeatureCollection` (Digitransit key stays server-side, coalesced via `singleflight`, cached 20s). The map polls it every 30s and feeds it straight into a MapLibre source. Counts reuse the same resilient `total`/`byType` resolution as the station panel, so map and panel agree.
+
+---
+
 ## [v0.41.0] - 2026-07-21
 
 ### Added

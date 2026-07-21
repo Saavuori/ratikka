@@ -75,6 +75,7 @@ All endpoints are served by the Go backend under `/api/v1`. See [docs/API_REFERE
 | `GET` | `/api/v1/stop/{stopId}` | Stop details and upcoming departures (`?departures=N`) |
 | `GET` | `/api/v1/route/{shortName}` | Route geometry and colour by short name |
 | `GET` | `/api/v1/bike-station/{stationId}` | Live City Bike capacity |
+| `GET` | `/api/v1/bike-stations` | All City Bike stations with live counts (GeoJSON) |
 | `GET` | `/api/v1/geocode` | Destination search (Digitransit geocoding, `?text=&lat=&lon=`) |
 | `GET` | `/api/v1/plan` | Journey planning between two points (`?fromLat=&fromLon=&toLat=&toLon=`) |
 | `GET` | `/api/v1/stream` | WebSocket stream of live vehicle positions |
