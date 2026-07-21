@@ -82,5 +82,5 @@ Stops have two distinct representation modes depending on the camera zoom:
   * `trams-labels` — line number (`desi`), upright, with a dark halo for legibility over the body.
 * When a vehicle is selected:
   1. A route path segment connecting the vehicle's position to its next upcoming stop is calculated.
-  2. The path is rendered in yellow/gold (`#fdcb6e`) via `next-stop-route-layer` to match selected stop highlights (avoiding red warning colors).
-  3. The next stop is highlighted in gold-bordered signpost style (layer: `next-stop-icon`) at all zoom levels, mirroring the selected stop practice.
+  2. The path is rendered in yellow/gold (`#fdcb6e`) via `next-stop-route-layer` to match selected stop highlights (avoiding red warning colors). **Currently disabled** behind the `HIGHLIGHT_NEXT_STOP_ROUTE` flag: the closest-point matching against the trip polyline produced unreliable back-tracking/jumping paths, so the segment is neither computed nor drawn until that matching is made robust.
+  3. The next stop is highlighted in gold-bordered signpost style (layer: `next-stop-icon`) at all zoom levels, mirroring the selected stop practice. This highlight is unaffected by the flag above and remains enabled.
