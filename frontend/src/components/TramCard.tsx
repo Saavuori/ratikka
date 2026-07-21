@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import type { VehiclePosition, TripDetailsResponse } from '../types';
 import { Navigation, Clock, X, Target, ChevronsUp, ChevronUp, ChevronDown, ChevronsDown } from 'lucide-react';
 import { getRouteColor } from '../lib/routeColors';
@@ -16,11 +16,12 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
   const speedKmh = Math.round(tram.spd * 3.6);
   const [lastStopId, setLastStopId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (tram.stop) {
-      setLastStopId(tram.stop);
-    }
-  }, [tram.stop]);
+  // Remember the most recent stop the vehicle reported, so the card can keep
+  // showing progress while `tram.stop` is empty between stops (state adjusted
+  // during render per React's derived-state guidance).
+  if (tram.stop && tram.stop !== lastStopId) {
+    setLastStopId(tram.stop);
+  }
 
   const getDelayColor = (seconds: number): string => {
     if (seconds > 60) return '#f87171';

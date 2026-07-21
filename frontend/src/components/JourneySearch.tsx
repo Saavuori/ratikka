@@ -178,7 +178,11 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         setItineraries([]);
         onSelectionChange(null);
       })
-      .finally(() => setPlanLoading(false));
+      .finally(() => {
+        // An aborted plan must not clear the loading state of the newer
+        // request that superseded it.
+        if (planAbortRef.current === controller) setPlanLoading(false);
+      });
   }, [onSelectionChange]);
 
   useEffect(() => {

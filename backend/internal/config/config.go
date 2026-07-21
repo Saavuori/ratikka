@@ -59,11 +59,12 @@ func loadDotEnv() {
 		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
 			val = val[1 : len(val)-1]
 		}
+		// Never log the values: .env entries include API keys and tokens.
 		if os.Getenv(key) == "" {
 			os.Setenv(key, val)
 			log.Printf("Set env: %s\n", key)
 		} else {
-			log.Printf("Env %s already set to %s, skipping .env value\n", key, os.Getenv(key))
+			log.Printf("Env %s already set, skipping .env value\n", key)
 		}
 	}
 }

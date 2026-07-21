@@ -31,11 +31,9 @@ type Client struct {
 }
 
 type Hub struct {
-	cache      cache.Cache
-	clients    map[*Client]bool
-	clientsMu  sync.RWMutex
-	register   chan *Client
-	unregister chan *Client
+	cache     cache.Cache
+	clients   map[*Client]bool
+	clientsMu sync.RWMutex
 }
 
 type PositionsMessage struct {
@@ -47,10 +45,8 @@ type PositionsMessage struct {
 
 func NewHub(c cache.Cache) *Hub {
 	return &Hub{
-		cache:      c,
-		clients:    make(map[*Client]bool),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
+		cache:   c,
+		clients: make(map[*Client]bool),
 	}
 }
 
@@ -62,23 +58,29 @@ func (h *Hub) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case client := <-h.register:
-			h.clientsMu.Lock()
-			h.clients[client] = true
-			ActiveClientsGauge.Set(float64(len(h.clients)))
-			h.clientsMu.Unlock()
-		case client := <-h.unregister:
-			h.clientsMu.Lock()
-			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
-				close(client.send)
-			}
-			ActiveClientsGauge.Set(float64(len(h.clients)))
-			h.clientsMu.Unlock()
 		case <-ticker.C:
 			h.broadcastSnapshot(ctx)
 		}
 	}
+}
+
+func (h *Hub) addClient(client *Client) {
+	h.clientsMu.Lock()
+	h.clients[client] = true
+	ActiveClientsGauge.Set(float64(len(h.clients)))
+	h.clientsMu.Unlock()
+}
+
+// removeClient deletes the client and closes its send channel exactly once.
+// Safe to call from both the connection handler and the broadcast loop.
+func (h *Hub) removeClient(client *Client) {
+	h.clientsMu.Lock()
+	if _, ok := h.clients[client]; ok {
+		delete(h.clients, client)
+		close(client.send)
+	}
+	ActiveClientsGauge.Set(float64(len(h.clients)))
+	h.clientsMu.Unlock()
 }
 
 func (h *Hub) broadcastSnapshot(ctx context.Context) {
@@ -115,15 +117,24 @@ func (h *Hub) broadcastSnapshot(ctx context.Context) {
 		return
 	}
 
+	var stuck []*Client
 	h.clientsMu.RLock()
-	defer h.clientsMu.RUnlock()
-
 	for client := range h.clients {
 		select {
 		case client.send <- payload:
 		default:
-			// Client channel full, skip or trigger unregister
-			log.Println("WS Hub: client send channel full, skipping client")
+			stuck = append(stuck, client)
+		}
+	}
+	h.clientsMu.RUnlock()
+
+	// A full send buffer means the client is ~16s behind; disconnect it
+	// rather than letting it linger while receiving nothing.
+	for _, client := range stuck {
+		log.Println("WS Hub: dropping client with full send buffer")
+		h.removeClient(client)
+		if client.conn != nil {
+			client.conn.Close(websocket.StatusPolicyViolation, "slow consumer")
 		}
 	}
 }
@@ -144,13 +155,13 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		send: make(chan []byte, 16),
 	}
 
-	h.register <- client
+	h.addClient(client)
 
 	// Background writer for client
 	ctx, cancel := context.WithCancel(r.Context())
 	defer func() {
 		cancel()
-		h.unregister <- client
+		h.removeClient(client)
 		client.conn.Close(websocket.StatusGoingAway, "closing")
 	}()
 

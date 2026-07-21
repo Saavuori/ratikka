@@ -130,6 +130,7 @@ Set the following in `.env` or in your environment. The backend auto-loads a `.e
 | Variable | Description | Default |
 |---|---|---|
 | `DIGITRANSIT_API_KEY` | Subscription key for the Digitransit GraphQL and Map APIs | *(Required)* |
+| `DIGITRANSIT_MAP_API_KEY` | Optional separate key served to browsers for map tiles (`/api/v1/config`). Use a dedicated rate-limited key here so the server-side routing key stays private | Falls back to `DIGITRANSIT_API_KEY` |
 | `REDIS_URL` | Redis cache connection string | `redis://ratikka-cache:6379` |
 | `MQTT_BROKER` | HSL public MQTT endpoint | `tls://mqtt.hsl.fi:8883` |
 | `PORT` | Go backend server port | `8080` |

@@ -389,9 +389,20 @@ export const Map: React.FC<MapProps> = ({
   // Interpolation and GeoJSON updates loop
   function startAnimationLoop() {
     const tick = () => {
+      // This loop is the sole driver of vehicle movement: an uncaught throw
+      // (e.g. malformed trip data) must not stop the next frame from being
+      // scheduled, or every vehicle would freeze for the rest of the session.
+      try {
+        tickFrame();
+      } catch (err) {
+        console.error('Vehicle animation frame failed', err);
+      }
+      animationFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    const tickFrame = () => {
       const map = mapRef.current;
       if (!map || !map.getSource('trams')) {
-        animationFrameRef.current = requestAnimationFrame(tick);
         return;
       }
 
@@ -480,26 +491,18 @@ export const Map: React.FC<MapProps> = ({
             lastKnownIndex = tripStops.findIndex(s => s.gtfsId === stopIdToMatch || s.gtfsId?.replace(/^HSL:/, '') === cleanToMatch);
           }
 
-          let nextStopIndex = -1;
+          let nextStopIndex: number;
 
           if (lastKnownIndex === -1) {
             // Fallback: Estimate position based on arrival times
             const now = new Date();
             const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-            const nextIndex = tripStops.findIndex(stop => {
+            nextStopIndex = tripStops.findIndex(stop => {
               const [h, m] = stop.realtimeArrival.split(':').map(Number);
               const stopMinutes = h * 60 + m;
               return stopMinutes >= currentMinutes;
             });
-
-            if (nextIndex !== -1) {
-              nextStopIndex = nextIndex;
-              lastKnownIndex = nextIndex > 0 ? nextIndex - 1 : 0;
-            } else {
-              nextStopIndex = -1;
-              lastKnownIndex = tripStops.length - 1;
-            }
           } else {
             if (hasExplicitStop) {
               if (isStopped) {
@@ -605,8 +608,6 @@ export const Map: React.FC<MapProps> = ({
           });
         }
       }
-
-      animationFrameRef.current = requestAnimationFrame(tick);
     };
 
     animationFrameRef.current = requestAnimationFrame(tick);
@@ -642,6 +643,7 @@ export const Map: React.FC<MapProps> = ({
   }, [trams, lineFilters]);
 
   // Setup programmatically created sources, layers, and images
+  const interactionsBoundMapRef = useRef<maplibregl.Map | null>(null);
   const setupCustomMapElements = (map: maplibregl.Map) => {
     if (!apiKey) return;
 
@@ -658,6 +660,8 @@ export const Map: React.FC<MapProps> = ({
       // pixelRatio 2 keeps the body crisp on retina; the 40px art shows at ~20 CSS px
       // before the layer's zoom-based icon-size scaling.
       img.onload = () => {
+        // The image decodes async; the map may have been removed meanwhile.
+        if (mapRef.current !== map) return;
         if (!map.hasImage(name)) map.addImage(name, img, { pixelRatio: 2 });
       };
     };
@@ -713,6 +717,7 @@ export const Map: React.FC<MapProps> = ({
       const selectedImg = new Image(44, 44);
       selectedImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(selectedSvg);
       selectedImg.onload = () => {
+        if (mapRef.current !== map) return;
         if (!map.hasImage('tram-selected')) map.addImage('tram-selected', selectedImg);
       };
     }
@@ -733,6 +738,7 @@ export const Map: React.FC<MapProps> = ({
       const tramImg = new Image(32, 42);
       tramImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(tramSvg);
       tramImg.onload = () => {
+        if (mapRef.current !== map) return;
         if (!map.hasImage('sign-tram')) map.addImage('sign-tram', tramImg);
       };
     }
@@ -752,6 +758,7 @@ export const Map: React.FC<MapProps> = ({
       const busImg = new Image(32, 42);
       busImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(busSvg);
       busImg.onload = () => {
+        if (mapRef.current !== map) return;
         if (!map.hasImage('sign-bus')) map.addImage('sign-bus', busImg);
       };
     }
@@ -1036,10 +1043,10 @@ export const Map: React.FC<MapProps> = ({
         minzoom: 13,
         maxzoom: 15.5,
         filter: [
-          'and',
+          'all',
           ['!', ['get', 'isTrunkStop']],
           ['match', ['get', 'mode'], 'BUS', true, false]
-        ] as any,
+        ] as maplibregl.FilterSpecification,
         paint: {
           'circle-color': '#007ac9',
           'circle-radius': [
@@ -1061,7 +1068,7 @@ export const Map: React.FC<MapProps> = ({
         'source-layer': 'stops',
         minzoom: 13,
         maxzoom: 15.5,
-        filter: ['and', ['get', 'isTrunkStop'], ['match', ['get', 'mode'], 'BUS', true, false]] as any,
+        filter: ['all', ['get', 'isTrunkStop'], ['match', ['get', 'mode'], 'BUS', true, false]] as maplibregl.FilterSpecification,
         paint: {
           'circle-color': '#007ac9',
           'circle-radius': [
@@ -1172,6 +1179,7 @@ export const Map: React.FC<MapProps> = ({
       gaugeImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(gaugeSvg);
       // pixelRatio 2 keeps the donut crisp; the 44px art displays at ~22 CSS px.
       gaugeImg.onload = ((name: string, img: HTMLImageElement) => () => {
+        if (mapRef.current !== map) return;
         if (!map.hasImage(name)) map.addImage(name, img, { pixelRatio: 2 });
       })(b.name, gaugeImg);
     }
@@ -1528,7 +1536,7 @@ export const Map: React.FC<MapProps> = ({
             'all',
             ['==', ['get', 'mode'], 'TRAM'],
             ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]]
-          ] as any);
+          ] as maplibregl.FilterSpecification);
         }
       }
     }
@@ -1574,7 +1582,12 @@ export const Map: React.FC<MapProps> = ({
     });
 
 
-    // Register all layer-specific interactions here so they persist style/theme changes
+    // Register all layer-specific interactions once per map instance. MapLibre
+    // layer events are delegated by layer id, so they survive style/theme
+    // swaps — re-binding on every style.load would stack duplicate handlers.
+    if (interactionsBoundMapRef.current === map) return;
+    interactionsBoundMapRef.current = map;
+
     const handleTramClick = (e: maplibregl.MapLayerMouseEvent) => {
       if (!e.features || e.features.length === 0) return;
       const feat = e.features[0];
@@ -1589,7 +1602,7 @@ export const Map: React.FC<MapProps> = ({
     map.on('click', 'trams-body', handleTramClick);
     map.on('click', 'trams-circles', handleTramClick);
 
-    const handleStopClick = (e: any) => {
+    const handleStopClick = (e: maplibregl.MapLayerMouseEvent) => {
       if (!e.features || e.features.length === 0) return;
       const feat = e.features[0];
       // Support both Digitransit tile properties (gtfsId, name, code)
@@ -1597,8 +1610,8 @@ export const Map: React.FC<MapProps> = ({
       const rawId = feat.properties?.gtfsId || feat.properties?.stopId || feat.properties?.id || feat.id;
       const name = feat.properties?.name || feat.properties?.nameFi || 'Unknown Stop';
       const code = feat.properties?.code || feat.properties?.shortId || '';
-      
-      const coordinates = feat.geometry?.coordinates;
+
+      const coordinates = feat.geometry.type === 'Point' ? feat.geometry.coordinates : undefined;
       const lng = coordinates ? coordinates[0] : undefined;
       const lat = coordinates ? coordinates[1] : undefined;
       const mode = feat.properties?.mode || 'TRAM';
@@ -1618,7 +1631,7 @@ export const Map: React.FC<MapProps> = ({
     map.on('click', 'stops_trunk', handleStopClick);
     map.on('click', 'stops_signs', handleStopClick);
 
-    const handleBikeClick = (e: any) => {
+    const handleBikeClick = (e: maplibregl.MapLayerMouseEvent) => {
       if (!e.features || e.features.length === 0) return;
       const feat = e.features[0];
       const stationId = feat.properties?.id || feat.properties?.stationId;
@@ -1703,7 +1716,7 @@ export const Map: React.FC<MapProps> = ({
     // Handle zoom, rotate, and pitch start/end events via direct DOM events on the container.
     // This immediately stops the 60fps centering loop from fighting with user interaction.
     const mapContainer = mapContainerRef.current;
-    let wheelTimeout: any = null;
+    let wheelTimeout: ReturnType<typeof setTimeout> | null = null;
 
     const handleWheel = () => {
       isInteractingRef.current = true;
@@ -1752,6 +1765,8 @@ export const Map: React.FC<MapProps> = ({
       }
       window.removeEventListener('mouseup', handleInteractionEnd);
       window.removeEventListener('touchend', handleInteractionEnd);
+      if (mapRef.current === map) mapRef.current = null;
+      if (interactionsBoundMapRef.current === map) interactionsBoundMapRef.current = null;
       map.remove();
     };
   }, [apiKey]);
@@ -1803,7 +1818,6 @@ export const Map: React.FC<MapProps> = ({
     const map = mapRef.current;
     if (!map) return;
 
-    console.log('[Map] Selection ring filter update — selectedTramId:', selectedTramId);
     if (map.getStyle() && map.getLayer('trams-selected-layer')) {
       map.setFilter('trams-selected-layer', ['==', ['get', 'veh'], selectedTramId || '']);
     } else {
@@ -1874,7 +1888,6 @@ export const Map: React.FC<MapProps> = ({
     if (!map || !selectedTramId) return;
 
     const selectedTram = latestTramsRef.current[selectedTramId];
-    console.log('[Map] Center on tram — selectedTramId:', selectedTramId, 'found:', !!selectedTram, 'latestTramsRef keys sample:', Object.keys(latestTramsRef.current).slice(0, 5));
     if (selectedTram) {
       const easeOptions: maplibregl.EaseToOptions = {
         center: [selectedTram.lng, selectedTram.lat],
@@ -1958,7 +1971,7 @@ export const Map: React.FC<MapProps> = ({
     const allowedStopIds = Array.from(allowedStopIdsSet);
 
     const cleanStopId = selectedStopId ? selectedStopId.replace(/^HSL:/, '') : '';
-    const excludeSelectedStopFilter = selectedStopId
+    const excludeSelectedStopFilter: maplibregl.ExpressionSpecification = selectedStopId
       ? [
           '!',
           [
@@ -1980,7 +1993,7 @@ export const Map: React.FC<MapProps> = ({
           'all',
           ['==', ['get', 'mode'], 'TRAM'],
           excludeSelectedStopFilter
-        ] as any);
+        ]);
       } else if (allowedStopIds.length === 0) {
         map.setFilter('stops_tram', ['==', '1', '2']);
       } else {
@@ -1989,7 +2002,7 @@ export const Map: React.FC<MapProps> = ({
           ['==', ['get', 'mode'], 'TRAM'],
           ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]],
           excludeSelectedStopFilter
-        ] as any);
+        ]);
       }
     }
 
@@ -2005,7 +2018,7 @@ export const Map: React.FC<MapProps> = ({
             'all',
             ['==', ['get', 'mode'], 'BUS'],
             excludeSelectedStopFilter
-          ] as any);
+          ]);
         } else if (allowedStopIds.length === 0) {
           map.setLayoutProperty(layerId, 'visibility', 'none');
         } else {
@@ -2015,7 +2028,7 @@ export const Map: React.FC<MapProps> = ({
             ['==', ['get', 'mode'], 'BUS'],
             ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]],
             excludeSelectedStopFilter
-          ] as any);
+          ]);
         }
       }
     });
@@ -2033,7 +2046,7 @@ export const Map: React.FC<MapProps> = ({
           'all',
           ['in', ['get', 'mode'], ['literal', signModes]],
           excludeSelectedStopFilter
-        ] as any);
+        ]);
       } else if (allowedStopIds.length === 0) {
         map.setFilter('stops_signs', ['==', '1', '2']);
       } else {
@@ -2042,7 +2055,7 @@ export const Map: React.FC<MapProps> = ({
           ['in', ['get', 'mode'], ['literal', signModes]],
           ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]],
           excludeSelectedStopFilter
-        ] as any);
+        ]);
       }
     }
   }, [lineFilters, selectedTramId, trams, routeGeometries, showTrams, showBuses, selectedStopId]);

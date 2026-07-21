@@ -29,10 +29,7 @@ func TestHub_RegisterAndBroadcast(t *testing.T) {
 		send: make(chan []byte, 10),
 	}
 
-	hub.register <- client
-
-	// Let the register process
-	time.Sleep(100 * time.Millisecond)
+	hub.addClient(client)
 
 	// Force a broadcast manually
 	hub.broadcastSnapshot(ctx)
@@ -73,7 +70,7 @@ func TestHub_RegisterAndBroadcast(t *testing.T) {
 	}
 
 	// Test unregister
-	hub.unregister <- client
+	hub.removeClient(client)
 
 	// Verify client send is closed
 	select {
