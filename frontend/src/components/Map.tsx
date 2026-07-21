@@ -5,6 +5,7 @@ import type { Feature, FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
+import { getRouteColor, ROUTE_COLORS, TRAM_GREEN } from '../lib/routeColors';
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection } from '../types';
 
@@ -257,9 +258,9 @@ export const Map: React.FC<MapProps> = ({
 
     const features: { type: 'Feature'; geometry: { type: 'LineString'; coordinates: [number, number][] }; properties: { line: string; color: string } }[] = [];
     Object.entries(geometries).forEach(([line, data]) => {
-      const colorHex = data.color
-        ? (data.color.startsWith('#') ? data.color : `#${data.color}`)
-        : '#10b981'; // HSL Green fallback
+      // Colour the highlighted route path by our per-line palette rather than
+      // HSL's mode green (which is identical for every tram line).
+      const colorHex = getRouteColor(line);
 
       data.geometries.forEach((poly) => {
         const coords = decodePolyline(poly);
@@ -312,7 +313,7 @@ export const Map: React.FC<MapProps> = ({
       coords.forEach((c) => allCoords.push(c));
       if (coords.length >= 2) {
         const color = leg.transit
-          ? (leg.route?.color ? (leg.route.color.startsWith('#') ? leg.route.color : `#${leg.route.color}`) : '#00985f')
+          ? getRouteColor(leg.route?.shortName)
           : '#94a3b8';
         lineFeatures.push({
           type: 'Feature',
@@ -661,17 +662,19 @@ export const Map: React.FC<MapProps> = ({
       };
     };
 
-    const tramBody = (open: boolean) => `
+    // The tram carriage is tinted by its line colour (see lib/routeColors).
+    // Window/door/shadow accents use neutral tones so any hue reads cleanly.
+    const tramBody = (open: boolean, color: string = TRAM_GREEN) => `
       <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
-        <path d="M20 3.2 L24 8.4 L16 8.4 Z" fill="#00985f" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
-        <rect x="12.5" y="7.5" width="15" height="26" rx="6.5" fill="#00985f" stroke="#ffffff" stroke-width="2"/>
-        <rect x="15" y="10" width="10" height="4.6" rx="2" fill="#d7fff0"/>
+        <path d="M20 3.2 L24 8.4 L16 8.4 Z" fill="${color}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+        <rect x="12.5" y="7.5" width="15" height="26" rx="6.5" fill="${color}" stroke="#ffffff" stroke-width="2"/>
+        <rect x="15" y="10" width="10" height="4.6" rx="2" fill="rgba(255,255,255,0.9)"/>
         ${open
           ? `<rect x="11.9" y="18.4" width="4.4" height="7.6" rx="1.3" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
              <rect x="23.7" y="18.4" width="4.4" height="7.6" rx="1.3" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>`
-          : `<rect x="14.7" y="17.5" width="4" height="9" rx="1.2" fill="#0b3d2e" opacity="0.5"/>
-             <rect x="21.3" y="17.5" width="4" height="9" rx="1.2" fill="#0b3d2e" opacity="0.5"/>`}
-        <rect x="15" y="29" width="10" height="3" rx="1.5" fill="#0b3d2e" opacity="0.35"/>
+          : `<rect x="14.7" y="17.5" width="4" height="9" rx="1.2" fill="rgba(0,0,0,0.4)"/>
+             <rect x="21.3" y="17.5" width="4" height="9" rx="1.2" fill="rgba(0,0,0,0.4)"/>`}
+        <rect x="15" y="29" width="10" height="3" rx="1.5" fill="rgba(0,0,0,0.3)"/>
       </svg>
     `;
 
@@ -689,8 +692,14 @@ export const Map: React.FC<MapProps> = ({
       </svg>
     `;
 
+    // Generic (unknown-line) tram bodies fall back to HSL green.
     registerVehicleImage('tram-body', tramBody(false));
     registerVehicleImage('tram-body-open', tramBody(true));
+    // One tinted body per known line so each route is distinguishable on the map.
+    Object.entries(ROUTE_COLORS).forEach(([line, color]) => {
+      registerVehicleImage(`tram-body-${line}`, tramBody(false, color));
+      registerVehicleImage(`tram-body-${line}-open`, tramBody(true, color));
+    });
     registerVehicleImage('bus-body', busBody(false));
     registerVehicleImage('bus-body-open', busBody(true));
 
@@ -921,12 +930,20 @@ export const Map: React.FC<MapProps> = ({
         type: 'symbol',
         source: 'trams',
         layout: {
+          // Trams: pick the line-tinted body (open/closed variants), falling
+          // back to the generic green body for lines outside the palette.
           'icon-image': [
             'case',
             ['==', ['get', 'mode'], 'bus'],
             ['case', ['get', 'doorsOpen'], 'bus-body-open', 'bus-body'],
-            ['case', ['get', 'doorsOpen'], 'tram-body-open', 'tram-body'],
-          ],
+            ['get', 'doorsOpen'],
+            ['match', ['get', 'desi'],
+              ...Object.keys(ROUTE_COLORS).flatMap((l) => [l, `tram-body-${l}-open`]),
+              'tram-body-open'],
+            ['match', ['get', 'desi'],
+              ...Object.keys(ROUTE_COLORS).flatMap((l) => [l, `tram-body-${l}`]),
+              'tram-body'],
+          ] as unknown as maplibregl.DataDrivenPropertyValueSpecification<string>,
           'icon-rotate': ['get', 'hdg'],
           'icon-rotation-alignment': 'map',
           'icon-allow-overlap': true,

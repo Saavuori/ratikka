@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.43.0] - 2026-07-21
+
+### Added
+- **Per-Route Colour Palette**: Every tram rendered in the same HSL green because HSL colours vehicles by *mode*, not by line — both the GTFS `route.color` field and the JORE vector tiles return one shared green for the whole tram network, so line 4 was indistinguishable from line 9 at a glance. Introduced a curated palette (`lib/routeColors.ts`) that assigns each Helsinki tram line (incl. the line 15 Raide-Jokeri light rail) its own visually distinct colour, with a deterministic hash fallback so any unlisted or new line still gets a stable, unique hue instead of the ambiguous mode green.
+  - **On the map**: each moving tram's carriage is now tinted by its line colour (line-specific body images, open/closed door variants), and a highlighted/selected route's path is drawn in that same colour instead of green.
+  - **In the UI**: line-number badges are tinted per route across the vehicle card, the detail popup header, the stop popup's "lines serving" chips and departure badges, the filter panel's line chips, and route badges in service alerts — turning the filter grid into a colour legend for the network.
+  - Buses keep their mode blue; the palette is documented and centralised so colours stay consistent everywhere a line number appears.
+
+---
+
 ## [v0.42.1] - 2026-07-21
 
 ### Changed

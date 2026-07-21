@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { VehiclePosition, Alert } from '../types';
 import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Route, Train, Bus, AlertTriangle, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { getRouteColor } from '../lib/routeColors';
 
 interface FilterPanelProps {
   trams: Record<string, VehiclePosition>;
@@ -341,7 +342,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                               key={eIdx}
                               style={{
                                 fontSize: '0.55rem',
-                                backgroundColor: e.mode === 'BUS' ? '#0984e3' : '#00b894',
+                                backgroundColor: e.mode === 'BUS' ? '#0984e3' : getRouteColor(e.shortName),
                                 color: '#fff',
                                 padding: '1px 4px',
                                 borderRadius: '3px',
@@ -434,13 +435,26 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           <div className="line-grid" style={{ marginTop: '8px' }}>
             {activeLines.map((line) => {
               const isSelected = selectedLines.includes(line);
+              const routeColor = getRouteColor(line);
               return (
                 <button
                   key={line}
                   onClick={() => onToggleLine(line)}
                   className={`line-btn ${isSelected ? 'active' : ''}`}
+                  style={{
+                    // Tint each chip by its route colour: filled when active,
+                    // a colour accent (left bar + border) when idle.
+                    backgroundColor: isSelected ? routeColor : undefined,
+                    borderColor: routeColor,
+                    boxShadow: isSelected ? 'none' : `inset 3px 0 0 ${routeColor}`,
+                  }}
                 >
-                  <span className="line-btn-label">{line}</span>
+                  <span
+                    className="line-btn-label"
+                    style={{ color: isSelected ? '#ffffff' : undefined }}
+                  >
+                    {line}
+                  </span>
                 </button>
               );
             })}
