@@ -840,29 +840,53 @@ type BikeStationDetailsResponse struct {
 	SpacesAvailable int    `json:"spacesAvailable"`
 }
 
+// rawRentalEntityCounts mirrors Digitransit's RentalVehicleEntityCounts type,
+// used for both availableVehicles and availableSpaces.
+type rawRentalEntityCounts struct {
+	Total  int `json:"total"`
+	ByType []struct {
+		Count       int `json:"count"`
+		VehicleType struct {
+			FormFactor string `json:"formFactor"`
+		} `json:"vehicleType"`
+	} `json:"byType"`
+}
+
 type rawBikeStationResponse struct {
 	VehicleRentalStation *struct {
-		StationId         string `json:"stationId"`
-		Name              string `json:"name"`
-		AllowPickup       bool   `json:"allowPickup"`
-		AllowDropoff      bool   `json:"allowDropoff"`
-		AvailableVehicles *struct {
-			ByType []struct {
-				Count       int `json:"count"`
-				VehicleType struct {
-					FormFactor string `json:"formFactor"`
-				} `json:"vehicleType"`
-			} `json:"byType"`
-		} `json:"availableVehicles"`
-		AvailableSpaces *struct {
-			ByType []struct {
-				Count       int `json:"count"`
-				VehicleType struct {
-					FormFactor string `json:"formFactor"`
-				} `json:"vehicleType"`
-			} `json:"byType"`
-		} `json:"availableSpaces"`
+		StationId         string                 `json:"stationId"`
+		Name              string                 `json:"name"`
+		AllowPickup       bool                   `json:"allowPickup"`
+		AllowDropoff      bool                   `json:"allowDropoff"`
+		AvailableVehicles *rawRentalEntityCounts `json:"availableVehicles"`
+		AvailableSpaces   *rawRentalEntityCounts `json:"availableSpaces"`
 	} `json:"vehicleRentalStation"`
+}
+
+// countBicycles resolves the number of bikes (or free docks) at a station.
+//
+// The per-type breakdown is preferred, counting BICYCLE entries as well as
+// untyped entries — empty docks in HSL's GBFS feed frequently carry no form
+// factor. When the breakdown is absent entirely (HSL reports only a station
+// total for docks), it falls back to the authoritative total so free docks
+// don't incorrectly read as 0.
+func countBicycles(counts *rawRentalEntityCounts) int {
+	if counts == nil {
+		return 0
+	}
+
+	sum := 0
+	for _, bt := range counts.ByType {
+		ff := strings.ToUpper(bt.VehicleType.FormFactor)
+		if ff == "BICYCLE" || ff == "" {
+			sum += bt.Count
+		}
+	}
+
+	if sum == 0 {
+		return counts.Total
+	}
+	return sum
 }
 
 func (h *Handlers) BikeStationDetails(w http.ResponseWriter, r *http.Request) {
@@ -894,6 +918,7 @@ func (h *Handlers) BikeStationDetails(w http.ResponseWriter, r *http.Request) {
 					allowPickup
 					allowDropoff
 					availableVehicles {
+						total
 						byType {
 							count
 							vehicleType {
@@ -902,6 +927,7 @@ func (h *Handlers) BikeStationDetails(w http.ResponseWriter, r *http.Request) {
 						}
 					}
 					availableSpaces {
+						total
 						byType {
 							count
 							vehicleType {
@@ -926,23 +952,8 @@ func (h *Handlers) BikeStationDetails(w http.ResponseWriter, r *http.Request) {
 		}
 
 		s := raw.VehicleRentalStation
-		bikes := 0
-		if s.AvailableVehicles != nil {
-			for _, bt := range s.AvailableVehicles.ByType {
-				if strings.ToUpper(bt.VehicleType.FormFactor) == "BICYCLE" {
-					bikes += bt.Count
-				}
-			}
-		}
-
-		spaces := 0
-		if s.AvailableSpaces != nil {
-			for _, bt := range s.AvailableSpaces.ByType {
-				if strings.ToUpper(bt.VehicleType.FormFactor) == "BICYCLE" {
-					spaces += bt.Count
-				}
-			}
-		}
+		bikes := countBicycles(s.AvailableVehicles)
+		spaces := countBicycles(s.AvailableSpaces)
 
 		resp := BikeStationDetailsResponse{
 			StationId:       s.StationId,
