@@ -44,7 +44,8 @@ function App() {
     return readStorage('mapTheme') === 'dark' ? 'dark' : 'light';
   });
   const [showRouteNetwork, setShowRouteNetwork] = useState<boolean>(() => {
-    return readStorage('showRouteNetwork') === 'true';
+    // Default on so the (tram) route network is visible on first load.
+    return readStorage('showRouteNetwork') !== 'false';
   });
   const [is3D, setIs3D] = useState<boolean>(() => {
     return readStorage('is3D') === 'true';
