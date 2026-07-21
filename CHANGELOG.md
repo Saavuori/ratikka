@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.44.2] - 2026-07-21
+
+### Fixed
+- **Tram icon did not indicate when it was stopped**: the per-frame vehicle features carried a computed `stopped` flag (doors open or speed 0) and the filter-panel legend advertised a coral "Stopped" state, but no map layer ever consumed it. The only stop-related cues were the amber door-pulse (doors open) and the motion aura *fading to nothing* at a standstill — so a tram halted with its doors shut (waiting at a light, stuck in traffic, sitting at a terminus) had no positive indicator and read the same as one crawling slowly. Added a `trams-stopped` layer that draws a static coral (`#e17055`) ring under any stopped vehicle, matching the legend swatch, and collapses to nothing the moment it starts moving.
+
+---
+
 ## [v0.44.1] - 2026-07-21
 
 ### Changed
