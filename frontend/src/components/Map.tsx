@@ -3,7 +3,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Feature, FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
-import { lerp, lerpAngle } from '../lib/lerp';
+import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection } from '../types';
@@ -399,15 +399,29 @@ export const Map: React.FC<MapProps> = ({
       const elapsed = now - lastUpdateRef.current;
       const t = Math.min(elapsed / 1000, 1.0);
 
+      // Shared boarding-pulse phase (0..1, ~1.5s loop). Written onto every
+      // feature so the door-pulse layer's data-driven paint animates off this
+      // single rAF loop without any per-marker timers.
+      const doorPulse = 0.5 + 0.5 * Math.sin(now / 430);
+
       const features = Object.entries(targetPositionsRef.current).map(([id, target]) => {
         const prev = prevPositionsRef.current[id] || target;
-        
-        // Lerp position coordinates
-        const lat = lerp(prev.lat, target.lat, t);
-        const lng = lerp(prev.lng, target.lng, t);
-        const hdg = lerpAngle(prev.hdg, target.hdg, t);
 
         const tramInfo = latestTramsRef.current[id];
+        const spd = tramInfo?.spd ?? 0;
+        const acc = tramInfo?.acc ?? 0;
+
+        // Shape position interpolation by acceleration so the on-screen motion
+        // mirrors the physical vehicle: ease-in while accelerating away from a
+        // stop, ease-out while braking into one. Heading eases smoothly.
+        const tPos = easeByAccel(t, acc);
+        const lat = lerp(prev.lat, target.lat, tPos);
+        const lng = lerp(prev.lng, target.lng, tPos);
+        const hdg = lerpAngle(prev.hdg, target.hdg, smoothstep(t));
+
+        const doorsOpen = tramInfo?.drst === 1;
+        // Normalise speed to 0..1 for the aura sizing (~13 m/s ≈ 47 km/h caps it).
+        const speedNorm = clamp(spd / 13, 0, 1);
 
         return {
           type: 'Feature' as const,
@@ -419,8 +433,13 @@ export const Map: React.FC<MapProps> = ({
             veh: id,
             desi: tramInfo?.desi || '',
             hdg: hdg,
-            stopped: tramInfo?.drst === 1 || tramInfo?.spd === 0,
+            stopped: doorsOpen || spd === 0,
             mode: tramInfo?.mode || 'tram',
+            spd: spd,
+            acc: acc,
+            speedNorm: speedNorm,
+            doorsOpen: doorsOpen,
+            pulse: doorPulse,
           },
         };
       });
@@ -625,39 +644,55 @@ export const Map: React.FC<MapProps> = ({
   const setupCustomMapElements = (map: maplibregl.Map) => {
     if (!apiKey) return;
 
-    // 1. Create Arrow Symbol Image for Heading (Tram: sleek circle with thin sharp pointer)
-    if (!map.hasImage('tram-arrow')) {
-      const arrowSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36" fill="none">
-          <path d="M18,0 L24.5,10.5 L11.5,10.5 Z" fill="#00b894" stroke="#1e293b" stroke-width="3.5" stroke-linejoin="round"/>
-          <path d="M18,0 L24.5,10.5 L11.5,10.5 Z" fill="#00b894" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
-          <circle cx="18" cy="18" r="12.5" stroke="#00b894" stroke-width="2.5" fill="none"/>
-          <circle cx="18" cy="18" r="12.5" stroke="#ffffff" stroke-width="0.8" fill="none"/>
-        </svg>
-      `;
-      const arrowImg = new Image(36, 36);
-      arrowImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arrowSvg);
-      arrowImg.onload = () => {
-        if (!map.hasImage('tram-arrow')) map.addImage('tram-arrow', arrowImg);
+    // 1. Directional vehicle-body markers. Instead of a bare dot + arrow, each
+    //    vehicle is a little top-down carriage: a rounded body with a windshield
+    //    and a nose nub so heading reads at a glance (the icon rotates to `hdg`).
+    //    Trams are sleek (large corner radius, HSL green); buses are boxier (HSL
+    //    blue). A "-open" variant swaps the flush side windows for amber door
+    //    gaps, shown while the real doors are open (`drst === 1`).
+    const registerVehicleImage = (name: string, svg: string) => {
+      if (map.hasImage(name)) return;
+      const img = new Image(40, 40);
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      // pixelRatio 2 keeps the body crisp on retina; the 40px art shows at ~20 CSS px
+      // before the layer's zoom-based icon-size scaling.
+      img.onload = () => {
+        if (!map.hasImage(name)) map.addImage(name, img, { pixelRatio: 2 });
       };
-    }
+    };
 
-    // 1b. Create Bus Arrow Symbol Image for Heading (Bus: boxy rounded-square with wide pointer)
-    if (!map.hasImage('bus-arrow')) {
-      const arrowSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36" fill="none">
-          <path d="M18,0 L25.5,10.5 L10.5,10.5 Z" fill="#0984e3" stroke="#1e293b" stroke-width="3.5" stroke-linejoin="round"/>
-          <path d="M18,0 L25.5,10.5 L10.5,10.5 Z" fill="#0984e3" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
-          <rect x="5.5" y="5.5" width="25" height="25" rx="5" stroke="#0984e3" stroke-width="2.5" fill="none"/>
-          <rect x="5.5" y="5.5" width="25" height="25" rx="5" stroke="#ffffff" stroke-width="0.8" fill="none"/>
-        </svg>
-      `;
-      const arrowImg = new Image(36, 36);
-      arrowImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arrowSvg);
-      arrowImg.onload = () => {
-        if (!map.hasImage('bus-arrow')) map.addImage('bus-arrow', arrowImg);
-      };
-    }
+    const tramBody = (open: boolean) => `
+      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
+        <path d="M20 3.2 L24 8.4 L16 8.4 Z" fill="#00985f" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+        <rect x="12.5" y="7.5" width="15" height="26" rx="6.5" fill="#00985f" stroke="#ffffff" stroke-width="2"/>
+        <rect x="15" y="10" width="10" height="4.6" rx="2" fill="#d7fff0"/>
+        ${open
+          ? `<rect x="11.9" y="18.4" width="4.4" height="7.6" rx="1.3" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
+             <rect x="23.7" y="18.4" width="4.4" height="7.6" rx="1.3" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>`
+          : `<rect x="14.7" y="17.5" width="4" height="9" rx="1.2" fill="#0b3d2e" opacity="0.5"/>
+             <rect x="21.3" y="17.5" width="4" height="9" rx="1.2" fill="#0b3d2e" opacity="0.5"/>`}
+        <rect x="15" y="29" width="10" height="3" rx="1.5" fill="#0b3d2e" opacity="0.35"/>
+      </svg>
+    `;
+
+    const busBody = (open: boolean) => `
+      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
+        <path d="M20 3.2 L24.6 8.4 L15.4 8.4 Z" fill="#0984e3" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+        <rect x="12" y="7.5" width="16" height="26" rx="4" fill="#0984e3" stroke="#ffffff" stroke-width="2"/>
+        <rect x="14.5" y="10" width="11" height="4.6" rx="1.5" fill="#dbeeff"/>
+        ${open
+          ? `<rect x="11.4" y="18.4" width="4.4" height="7.6" rx="1.1" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
+             <rect x="24.2" y="18.4" width="4.4" height="7.6" rx="1.1" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>`
+          : `<rect x="14.3" y="17.5" width="4.2" height="9" rx="1.1" fill="#08355c" opacity="0.5"/>
+             <rect x="21.5" y="17.5" width="4.2" height="9" rx="1.1" fill="#08355c" opacity="0.5"/>`}
+        <rect x="14.5" y="29" width="11" height="3" rx="1.2" fill="#08355c" opacity="0.35"/>
+      </svg>
+    `;
+
+    registerVehicleImage('tram-body', tramBody(false));
+    registerVehicleImage('tram-body-open', tramBody(true));
+    registerVehicleImage('bus-body', busBody(false));
+    registerVehicleImage('bus-body-open', busBody(true));
 
     // 2. Create Selected Tram Highlight Image
     if (!map.hasImage('tram-selected')) {
@@ -811,43 +846,97 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
-    // 6. Add Tram Text Circle Layer (Line labels) - ADDED FIRST so it renders underneath the pointers/arrows
+    // 6. Motion aura — the floor of the vehicle stack (kept as `trams-circles`
+    //    so every other layer's `beforeId` anchor still resolves). A soft glow
+    //    under each vehicle that visualises how it is moving: it grows with
+    //    speed (`speedNorm`) and is tinted by acceleration — green while pulling
+    //    away, red while braking, mode-neutral while cruising. At a standstill it
+    //    fades to nothing, so a stationary tram is just its body + door pulse.
     if (!map.getLayer('trams-circles')) {
       map.addLayer({
         id: 'trams-circles',
         type: 'circle',
         source: 'trams',
         paint: {
-          'circle-radius': 11,
+          'circle-radius': ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 8, 1, 19],
           'circle-color': [
             'case',
-            ['get', 'stopped'],
-            '#e17055', // stopped/door open -> coral red
-            '#0984e3', // moving -> blue
+            ['>', ['get', 'acc'], 0.35], '#22c55e',  // accelerating -> green
+            ['<', ['get', 'acc'], -0.35], '#ef4444', // braking -> red
+            ['==', ['get', 'mode'], 'bus'], '#38bdf8',
+            '#2dd4a7', // tram cruising
           ],
-          'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 2.5,
+          'circle-blur': 0.55,
+          'circle-opacity': [
+            'interpolate', ['linear'], ['get', 'speedNorm'],
+            0, 0.0,
+            0.12, 0.22,
+            1, 0.34,
+          ],
         },
       });
     }
 
-    // 7. Add Tram Arrow Direction Layer (on top of circles)
-    if (!map.getLayer('trams-arrows')) {
+    // 6b. Doors-open boarding pulse — an amber ring that expands and fades on a
+    //     ~1.5s loop while the doors are open (`drst === 1`). Driven by a shared
+    //     `pulse` phase (0..1) the tick loop writes onto every feature each frame,
+    //     so the animation runs off the existing rAF loop with no timers. Collapses
+    //     to radius/opacity 0 when the doors are shut.
+    if (!map.getLayer('trams-door-pulse')) {
       map.addLayer({
-        id: 'trams-arrows',
+        id: 'trams-door-pulse',
+        type: 'circle',
+        source: 'trams',
+        paint: {
+          'circle-radius': [
+            'case',
+            ['get', 'doorsOpen'],
+            ['interpolate', ['linear'], ['get', 'pulse'], 0, 12, 1, 21],
+            0,
+          ],
+          'circle-color': '#ffb020',
+          'circle-opacity': [
+            'case',
+            ['get', 'doorsOpen'],
+            ['interpolate', ['linear'], ['get', 'pulse'], 0, 0.3, 1, 0.03],
+            0,
+          ],
+          'circle-stroke-color': '#ffb020',
+          'circle-stroke-width': ['case', ['get', 'doorsOpen'], 1.6, 0],
+          'circle-stroke-opacity': [
+            'case',
+            ['get', 'doorsOpen'],
+            ['interpolate', ['linear'], ['get', 'pulse'], 0, 0.65, 1, 0.08],
+            0,
+          ],
+        },
+      });
+    }
+
+    // 7. Directional vehicle body (on top of the aura + pulse). Rotates to `hdg`
+    //    and swaps to the doors-open art while the doors are open.
+    if (!map.getLayer('trams-body')) {
+      map.addLayer({
+        id: 'trams-body',
         type: 'symbol',
         source: 'trams',
         layout: {
           'icon-image': [
             'case',
             ['==', ['get', 'mode'], 'bus'],
-            'bus-arrow',
-            'tram-arrow'
+            ['case', ['get', 'doorsOpen'], 'bus-body-open', 'bus-body'],
+            ['case', ['get', 'doorsOpen'], 'tram-body-open', 'tram-body'],
           ],
           'icon-rotate': ['get', 'hdg'],
           'icon-rotation-alignment': 'map',
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
+          'icon-size': [
+            'interpolate', ['linear'], ['zoom'],
+            12, 1.0,
+            14, 1.2,
+            17, 1.55,
+          ],
         },
       });
     }
@@ -885,6 +974,10 @@ export const Map: React.FC<MapProps> = ({
         },
         paint: {
           'text-color': '#ffffff',
+          // Dark halo keeps the line number legible over the body's windows
+          // and the lighter windshield band.
+          'text-halo-color': 'rgba(15, 23, 42, 0.65)',
+          'text-halo-width': 1.1,
         },
       });
     }
@@ -1465,7 +1558,7 @@ export const Map: React.FC<MapProps> = ({
 
 
     // Register all layer-specific interactions here so they persist style/theme changes
-    map.on('click', 'trams-circles', (e) => {
+    const handleTramClick = (e: maplibregl.MapLayerMouseEvent) => {
       if (!e.features || e.features.length === 0) return;
       const feat = e.features[0];
       const vehId = feat.properties?.veh;
@@ -1473,7 +1566,11 @@ export const Map: React.FC<MapProps> = ({
       if (matchingTram) {
         callbacksRef.current.onSelectTram(matchingTram);
       }
-    });
+    };
+    // The body symbol is the primary hit target; the aura circle is often
+    // faint/zero-opacity for stationary vehicles, so bind both.
+    map.on('click', 'trams-body', handleTramClick);
+    map.on('click', 'trams-circles', handleTramClick);
 
     const handleStopClick = (e: any) => {
       if (!e.features || e.features.length === 0) return;
@@ -1520,6 +1617,8 @@ export const Map: React.FC<MapProps> = ({
     const setCursorPointer = () => (map.getCanvas().style.cursor = 'pointer');
     const resetCursor = () => (map.getCanvas().style.cursor = '');
 
+    map.on('mouseenter', 'trams-body', setCursorPointer);
+    map.on('mouseleave', 'trams-body', resetCursor);
     map.on('mouseenter', 'trams-circles', setCursorPointer);
     map.on('mouseleave', 'trams-circles', resetCursor);
     map.on('mouseenter', 'stops_tram', setCursorPointer);
