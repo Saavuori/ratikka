@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.44.5] - 2026-07-21
+
+### Changed
+- **Clearer moving/stopped vehicle cues on the map**: reworked the live-vehicle visual language so movement reads at a glance and a stopped vehicle no longer looks selected.
+  - **Motion aura made noticeable**: the coloured glow under each vehicle (green accelerating, red braking, mode-neutral cruising) was easy to miss. It now caps its speed normalisation lower (`spd / 8` ≈ 29 km/h) so it fills at ordinary city-tram speeds instead of only when racing, snaps its opacity up as soon as a vehicle moves (~0.45 → 0.62, was 0.34), and uses a tighter blur (0.55 → 0.4) so the coloured disc stays defined rather than washing out.
+  - **Stopped ring softened to a glow**: the static coral "stopped" indicator added in v0.44.3 was a crisp ring that read too much like the gold selection highlight. It is now a subtle, borderless coral glow (high blur, no stroke) that can't be mistaken for the selection ring while still marking a vehicle halted at a light, in traffic, or at a terminus.
+  - **Doors-open boarding pulse removed**: dropped the amber pulsing ring (`trams-door-pulse`) and its per-frame pulse phase. The doors-open carriage art (amber door gaps) already signals boarding, so the extra animation was redundant.
+- **New icon & animation reference docs**: added `docs/ICONS_AND_ANIMATIONS.md`, a visual catalogue of every tram/bus map icon, stop sign, vehicle-state animation, and panel schematic, with rendered picture examples (linked from the README).
+
+---
+
 ## [v0.44.4] - 2026-07-21
 
 ### Changed
