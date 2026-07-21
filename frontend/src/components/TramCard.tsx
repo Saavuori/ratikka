@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { VehiclePosition, TripDetailsResponse } from '../types';
 import { Navigation, Clock, X, Target, ChevronsUp, ChevronUp, ChevronDown, ChevronsDown } from 'lucide-react';
+import { getRouteColor } from '../lib/routeColors';
 
 interface TramCardProps {
   tram: VehiclePosition;
@@ -106,8 +107,13 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
         gap: '10px'
       } : {}}
     >
-      {/* Line number badge */}
-      <div className="tram-card-desi">{tram.desi}</div>
+      {/* Line number badge, tinted by the route's palette colour */}
+      <div
+        className="tram-card-desi"
+        style={{ backgroundColor: getRouteColor(tram.desi), borderColor: getRouteColor(tram.desi), color: '#ffffff' }}
+      >
+        {tram.desi}
+      </div>
 
       <div className="tram-card-divider" />
 

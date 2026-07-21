@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import type { VehiclePosition, TripDetailsResponse, Alert } from '../types';
 import { AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Activity, Gauge, Compass, Cpu, Database, Users, ShieldCheck, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { getRouteColor } from '../lib/routeColors';
 
 interface TramPopupProps {
   tram: VehiclePosition;
@@ -255,7 +256,12 @@ export const TramPopup: React.FC<TramPopupProps> = ({
       {/* Header */}
       <div className="panel-header" style={{ padding: '0 0 10px 0', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div className="desi-circle">{tram.desi}</div>
+          <div
+            className="desi-circle"
+            style={{ backgroundColor: getRouteColor(tram.desi), borderColor: getRouteColor(tram.desi), color: '#ffffff' }}
+          >
+            {tram.desi}
+          </div>
           <div>
             <h2 style={{ fontSize: '0.8rem', fontWeight: 700, margin: 0, color: '#e2e8f0' }}>
               {tripDetails?.headsign ? `→ ${tripDetails.headsign}` : `Line ${tram.desi}`}

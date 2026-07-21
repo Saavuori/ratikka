@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import type { StopDetailsResponse, Alert } from '../types';
 import { fetchStopDetails } from '../lib/api';
+import { getRouteColor } from '../lib/routeColors';
 import { X, Clock, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
 
@@ -247,7 +248,11 @@ export const StopPopup: React.FC<StopPopupProps> = ({
             <div className="legend-title">Lines serving this stop</div>
             <div className="routes-chips">
               {details.routes.map((route) => (
-                <span key={route} className="route-chip">
+                <span
+                  key={route}
+                  className="route-chip"
+                  style={{ backgroundColor: getRouteColor(route), borderColor: getRouteColor(route), color: '#ffffff' }}
+                >
                   {route}
                 </span>
               ))}
@@ -291,7 +296,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
                     className="departure-item"
                   >
                     <div className="departure-left">
-                      <div className="departure-badge">
+                      <div className="departure-badge" style={{ backgroundColor: getRouteColor(dep.line), color: '#ffffff' }}>
                         {dep.line}
                       </div>
                       <div className="departure-dest-container">
