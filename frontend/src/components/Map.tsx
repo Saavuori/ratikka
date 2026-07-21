@@ -933,9 +933,9 @@ export const Map: React.FC<MapProps> = ({
           'icon-ignore-placement': true,
           'icon-size': [
             'interpolate', ['linear'], ['zoom'],
-            12, 1.0,
-            14, 1.2,
-            17, 1.55,
+            12, 1.3,
+            14, 1.55,
+            17, 2.0,
           ],
         },
       });
@@ -968,7 +968,7 @@ export const Map: React.FC<MapProps> = ({
         layout: {
           'text-field': '{desi}',
           'text-font': ['Gotham Rounded Medium'],
-          'text-size': 10,
+          'text-size': 12,
           'text-allow-overlap': true,
           'text-ignore-placement': true,
         },
@@ -989,7 +989,7 @@ export const Map: React.FC<MapProps> = ({
         type: 'circle',
         source: 'trams',
         paint: {
-          'circle-radius': 16,
+          'circle-radius': 20,
           'circle-color': 'rgba(253, 203, 110, 0.15)',
           'circle-stroke-color': '#fdcb6e',
           'circle-stroke-width': 3,
