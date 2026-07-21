@@ -43,6 +43,8 @@ Pushing to `main` triggers the full CI/CD pipeline (derive version from CHANGELO
 1. Document the changes under the appropriate section (e.g. `### Added`, `### Fixed`, `### Changed`).
 2. Add a new version heading `## [vX.Y.Z] - YYYY-MM-DD`, bumping from the current top entry per the conventional-commit rule (`fix:` → patch, `feat:` → minor, `feat!:` → major). This heading **is** the released version — the git tag will match it verbatim, so make sure the number is right before merging. See `/versioning`.
 3. Bump the changelog version **once per release**. Follow-up commits that don't change the top heading (docs tweaks, review fixes on an unmerged branch) reuse it — CI only cuts a release when the heading is a version with no existing tag, so unchanged headings never mint spurious tags.
+
+**Never** add an `## [Unreleased]` (or any non-version) heading to `CHANGELOG.md`. CI derives the release version by parsing the **top** `## [vX.Y.Z]` heading, so a placeholder heading at the top breaks version derivation. Every changelog section must be headed by a concrete `## [vX.Y.Z] - YYYY-MM-DD` version from the moment it is written — put in-progress work under its intended version heading directly.
 4. The `CHANGELOG.md` file is automatically parsed and deployed to GitHub Pages on every push to `main`.
 
 If the running app's version (`GET /api/v1/version`) ever disagrees with the changelog's top heading, the heading is wrong: correct it to the tag that actually shipped rather than inventing a new number.
