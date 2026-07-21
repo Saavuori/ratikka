@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [v0.44.0] - 2026-07-21
 
 ### Changed
 - **Routes network follows the mode toggles**: the settings "Routes" toggle now draws only the tram and bus route network — tram routes appear when **Trams** is enabled and bus/trunk routes appear when **Buses** is enabled, instead of always showing every mode (rail, subway, ferry are no longer drawn as background routes). The network keeps HSL's mode colours (green trams, blue buses) rather than the per-line palette. The toggle now also defaults to **on**, so the tram route network is visible on first load.
