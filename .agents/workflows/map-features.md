@@ -72,7 +72,13 @@ Stops have two distinct representation modes depending on the camera zoom:
 ---
 
 ## 4. Vehicles & Next-Stop Routing
-* Live vehicle positions are animated at 60fps in `startAnimationLoop()` by linear-interpolating (lerp) coordinates and heading (hdg) between update ticks.
+* Live vehicle positions are animated at 60fps in `startAnimationLoop()` by interpolating coordinates and heading (hdg) between the ~1s update ticks.
+  * Position interpolation is **acceleration-shaped** via `easeByAccel(t, acc)` (`lib/lerp.ts`): the marker eases *in* while the vehicle accelerates away from a stop and eases *out* while braking into one, so the on-screen motion mirrors the reported `spd`/`acc`. Heading uses `smoothstep(t)`.
+* Each vehicle is drawn as a small stack of layers, all reading the `trams` GeoJSON source (properties written per-frame in the tick loop: `hdg`, `mode`, `spd`, `acc`, `speedNorm`, `doorsOpen`, `pulse`):
+  * `trams-circles` — the **motion aura** (kept under this id because many other layers use it as their `beforeId` anchor). A blurred circle that grows with `speedNorm` and is tinted by `acc`: green accelerating, red braking, mode-neutral cruising; fades to nothing at a standstill.
+  * `trams-door-pulse` — an amber ring that expands + fades on a ~1.5s loop while `doorsOpen` (`drst === 1`), driven by the shared `pulse` phase (0..1); collapses to 0 when doors are shut.
+  * `trams-body` — the directional carriage icon. Rotates to `hdg`; swaps between `tram-body`/`bus-body` and their `-open` variants (amber door gaps) based on `mode` + `doorsOpen`. This is the primary click/hover target (the aura is often zero-opacity for stationary vehicles).
+  * `trams-labels` — line number (`desi`), upright, with a dark halo for legibility over the body.
 * When a vehicle is selected:
   1. A route path segment connecting the vehicle's position to its next upcoming stop is calculated.
   2. The path is rendered in yellow/gold (`#fdcb6e`) via `next-stop-route-layer` to match selected stop highlights (avoiding red warning colors).

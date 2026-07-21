@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.42.0] - 2026-07-21
+
+### Changed
+- **Redesigned Vehicle Markers with Motion & Door Animation**: Live trams and buses were a plain coloured dot with a separate rotating arrow, and the only motion cue was a linear slide between the ~1s position updates — nothing conveyed how fast a vehicle was going, whether it was speeding up or braking, or that it was letting passengers on. Each vehicle is now a small directional carriage: a rounded body with a windshield and nose nub that rotates to its heading (sleek green for trams, boxier blue for buses), with the line number sitting upright on top.
+  - **Speed & acceleration**: a soft aura beneath each vehicle grows with its speed and is tinted by acceleration — green while pulling away, red while braking, mode-neutral while cruising — fading to nothing at a standstill. Position interpolation is now acceleration-shaped (`easeByAccel`), so a marker visibly eases out as it rolls into a stop and eases in as it pulls away, instead of gliding at a constant rate.
+  - **Doors opening**: while a vehicle's doors are open (`drst === 1`) the body swaps to a variant with amber door gaps and an amber "boarding" ring expands and fades on a ~1.5s loop. Both the door pulse and the aura animate off the existing 60fps interpolation loop via data-driven paint (no extra timers).
+  - Added tested `clamp`, `smoothstep` and `easeByAccel` easing helpers to `lib/lerp.ts`.
+
+---
+
 ## [v0.41.2] - 2026-07-21
 
 ### Changed
