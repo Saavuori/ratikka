@@ -547,11 +547,6 @@ export const Map: React.FC<MapProps> = ({
       const elapsed = now - lastUpdateRef.current;
       const t = Math.min(elapsed / 1000, 1.0);
 
-      // Shared boarding-pulse phase (0..1, ~1.5s loop). Written onto every
-      // feature so the door-pulse layer's data-driven paint animates off this
-      // single rAF loop without any per-marker timers.
-      const doorPulse = 0.5 + 0.5 * Math.sin(now / 430);
-
       const features = Object.entries(targetPositionsRef.current).map(([id, target]) => {
         const prev = prevPositionsRef.current[id] || target;
 
@@ -568,8 +563,10 @@ export const Map: React.FC<MapProps> = ({
         const hdg = lerpAngle(prev.hdg, target.hdg, smoothstep(t));
 
         const doorsOpen = tramInfo?.drst === 1;
-        // Normalise speed to 0..1 for the aura sizing (~13 m/s ≈ 47 km/h caps it).
-        const speedNorm = clamp(spd / 13, 0, 1);
+        // Normalise speed to 0..1 for the aura sizing. Capped low (~8 m/s ≈ 29 km/h)
+        // so the aura reaches its full, clearly-visible size at ordinary city-tram
+        // cruising speeds rather than only when a vehicle is racing.
+        const speedNorm = clamp(spd / 8, 0, 1);
 
         return {
           type: 'Feature' as const,
@@ -587,7 +584,6 @@ export const Map: React.FC<MapProps> = ({
             acc: acc,
             speedNorm: speedNorm,
             doorsOpen: doorsOpen,
-            pulse: doorPulse,
           },
         };
       });
@@ -999,18 +995,20 @@ export const Map: React.FC<MapProps> = ({
     }
 
     // 6. Motion aura — the floor of the vehicle stack (kept as `trams-circles`
-    //    so every other layer's `beforeId` anchor still resolves). A soft glow
-    //    under each vehicle that visualises how it is moving: it grows with
-    //    speed (`speedNorm`) and is tinted by acceleration — green while pulling
-    //    away, red while braking, mode-neutral while cruising. At a standstill it
-    //    fades to nothing, so a stationary tram is just its body + door pulse.
+    //    so every other layer's `beforeId` anchor still resolves). A coloured glow
+    //    under each vehicle that visualises how it is moving: it grows with speed
+    //    (`speedNorm`) and is tinted by acceleration — green while pulling away, red
+    //    while braking, mode-neutral while cruising. At a standstill it fades to
+    //    nothing (the subtle stopped glow takes over). Tuned to read at a glance:
+    //    it snaps to a clearly-visible opacity as soon as a vehicle is moving and a
+    //    tighter blur keeps the coloured disc defined rather than washed out.
     if (!map.getLayer('trams-circles')) {
       map.addLayer({
         id: 'trams-circles',
         type: 'circle',
         source: 'trams',
         paint: {
-          'circle-radius': ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 8, 1, 19],
+          'circle-radius': ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 11, 1, 23],
           'circle-color': [
             'case',
             ['>', ['get', 'acc'], 0.35], '#22c55e',  // accelerating -> green
@@ -1018,73 +1016,36 @@ export const Map: React.FC<MapProps> = ({
             ['==', ['get', 'mode'], 'bus'], '#38bdf8',
             '#2dd4a7', // tram cruising
           ],
-          'circle-blur': 0.55,
+          'circle-blur': 0.4,
           'circle-opacity': [
             'interpolate', ['linear'], ['get', 'speedNorm'],
             0, 0.0,
-            0.12, 0.22,
-            1, 0.34,
+            0.06, 0.45,
+            1, 0.62,
           ],
         },
       });
     }
 
-    // 6b. Doors-open boarding pulse — an amber ring that expands and fades on a
-    //     ~1.5s loop while the doors are open (`drst === 1`). Driven by a shared
-    //     `pulse` phase (0..1) the tick loop writes onto every feature each frame,
-    //     so the animation runs off the existing rAF loop with no timers. Collapses
-    //     to radius/opacity 0 when the doors are shut.
-    if (!map.getLayer('trams-door-pulse')) {
-      map.addLayer({
-        id: 'trams-door-pulse',
-        type: 'circle',
-        source: 'trams',
-        paint: {
-          'circle-radius': [
-            'case',
-            ['get', 'doorsOpen'],
-            ['interpolate', ['linear'], ['get', 'pulse'], 0, 12, 1, 21],
-            0,
-          ],
-          'circle-color': '#ffb020',
-          'circle-opacity': [
-            'case',
-            ['get', 'doorsOpen'],
-            ['interpolate', ['linear'], ['get', 'pulse'], 0, 0.3, 1, 0.03],
-            0,
-          ],
-          'circle-stroke-color': '#ffb020',
-          'circle-stroke-width': ['case', ['get', 'doorsOpen'], 1.6, 0],
-          'circle-stroke-opacity': [
-            'case',
-            ['get', 'doorsOpen'],
-            ['interpolate', ['linear'], ['get', 'pulse'], 0, 0.65, 1, 0.08],
-            0,
-          ],
-        },
-      });
-    }
-
-    // 6c. Stopped-state ring — a static coral ring under a vehicle that has come
-    //     to a standstill (`stopped`: doors open or `spd === 0`). The motion aura
-    //     fades to nothing at a standstill, so without this a halted tram — one
-    //     waiting at a light, stuck in traffic, or sitting at a terminus with its
-    //     doors shut — carries no positive "I'm stopped" cue and reads the same as
-    //     one crawling slowly. This supplies that cue and matches the coral
-    //     "Stopped" swatch in the filter-panel legend. Collapses to nothing the
-    //     moment the vehicle starts moving.
+    // 6b. Stopped-state glow — a subtle, soft coral halo under a vehicle that has
+    //     come to a standstill (`stopped`: doors open or `spd === 0`). The motion
+    //     aura fades to nothing at a standstill, so without any cue a halted tram —
+    //     one waiting at a light, stuck in traffic, or sitting at a terminus — reads
+    //     the same as one crawling slowly. This is deliberately understated: a
+    //     blurred, borderless coral disc (not a crisp stroked ring) so it cannot be
+    //     mistaken for the gold selection ring, and the doors-open body art already
+    //     signals boarding without needing a separate pulse. Collapses to nothing
+    //     the moment the vehicle starts moving.
     if (!map.getLayer('trams-stopped')) {
       map.addLayer({
         id: 'trams-stopped',
         type: 'circle',
         source: 'trams',
         paint: {
-          'circle-radius': ['case', ['get', 'stopped'], 13, 0],
-          'circle-color': 'rgba(225, 112, 85, 0.14)',
-          'circle-stroke-color': '#e17055',
-          'circle-stroke-width': ['case', ['get', 'stopped'], 2, 0],
-          'circle-stroke-opacity': ['case', ['get', 'stopped'], 0.9, 0],
-          'circle-opacity': ['case', ['get', 'stopped'], 1, 0],
+          'circle-radius': ['case', ['get', 'stopped'], 12, 0],
+          'circle-color': '#e17055',
+          'circle-blur': 0.85,
+          'circle-opacity': ['case', ['get', 'stopped'], 0.5, 0],
         },
       });
     }
