@@ -105,6 +105,8 @@ export const Map: React.FC<MapProps> = ({
   const selectedStopIdRef = useRef<string | null>(selectedStopId);
   const selectedBikeStationIdRef = useRef<string | null>(selectedBikeStationId);
   const showRouteNetworkRef = useRef<boolean>(showRouteNetwork);
+  const showTramsRef = useRef<boolean>(showTrams);
+  const showBusesRef = useRef<boolean>(showBuses);
   const is3DRef = useRef<boolean>(is3D);
   const mapThemeRef = useRef<'light' | 'dark'>(mapTheme);
   const isFollowingRef = useRef<boolean>(isFollowing);
@@ -153,6 +155,14 @@ export const Map: React.FC<MapProps> = ({
   }, [showRouteNetwork]);
 
   useEffect(() => {
+    showTramsRef.current = showTrams;
+  }, [showTrams]);
+
+  useEffect(() => {
+    showBusesRef.current = showBuses;
+  }, [showBuses]);
+
+  useEffect(() => {
     is3DRef.current = is3D;
   }, [is3D]);
 
@@ -164,33 +174,51 @@ export const Map: React.FC<MapProps> = ({
     isFollowingRef.current = isFollowing;
   }, [isFollowing]);
 
-  // Helper to toggle visibility of HSL background route layers
-  const updateRouteVisibility = (map: maplibregl.Map, show: boolean) => {
-    const routeLayers = [
-      'route_bus_case',
-      'route_bus',
-      'route_bus_inner',
-      'route_tram_case',
-      'route_tram',
-      'route_tram_inner',
-      'route_trunk_case',
-      'route_trunk',
-      'route_trunk_inner',
-      'route_lrail_case',
-      'route_lrail',
-      'route_lrail_inner',
-      'route_ferry',
-      'route_subway_case',
-      'route_subway',
-      'route_subway_underground',
-      'route_rail_case',
-      'route_rail',
-    ];
-    routeLayers.forEach((layerId) => {
+  // Helper to toggle visibility of the HSL background route network. The network
+  // uses HSL's mode colours (green trams, blue buses) rather than our per-line
+  // palette, and is scoped to just the tram and bus modes: tram routes follow the
+  // Trams toggle, bus/trunk routes follow the Buses toggle, and other modes
+  // (rail, subway, ferry) are never drawn here. When the network is off nothing
+  // shows regardless of the mode toggles.
+  const tramRouteLayers = [
+    'route_tram_case',
+    'route_tram',
+    'route_tram_inner',
+    'route_lrail_case',
+    'route_lrail',
+    'route_lrail_inner',
+  ];
+  const busRouteLayers = [
+    'route_bus_case',
+    'route_bus',
+    'route_bus_inner',
+    'route_trunk_case',
+    'route_trunk',
+    'route_trunk_inner',
+  ];
+  const otherRouteLayers = [
+    'route_ferry',
+    'route_subway_case',
+    'route_subway',
+    'route_subway_underground',
+    'route_rail_case',
+    'route_rail',
+  ];
+
+  const updateRouteVisibility = (
+    map: maplibregl.Map,
+    show: boolean,
+    trams: boolean,
+    buses: boolean,
+  ) => {
+    const setVisible = (layerId: string, visible: boolean) => {
       if (map.getLayer(layerId)) {
-        map.setLayoutProperty(layerId, 'visibility', show ? 'visible' : 'none');
+        map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
       }
-    });
+    };
+    tramRouteLayers.forEach((layerId) => setVisible(layerId, show && trams));
+    busRouteLayers.forEach((layerId) => setVisible(layerId, show && buses));
+    otherRouteLayers.forEach((layerId) => setVisible(layerId, false));
   };
 
   // Helper to toggle 3D tilt and buildings extrusion
@@ -1542,7 +1570,7 @@ export const Map: React.FC<MapProps> = ({
     }
 
     // Apply active route visibility and 3D mode setting
-    updateRouteVisibility(map, showRouteNetworkRef.current);
+    updateRouteVisibility(map, showRouteNetworkRef.current, showTramsRef.current, showBusesRef.current);
     update3DMode(map, is3DRef.current, mapThemeRef.current);
 
     // Hide white casing layers
@@ -1938,13 +1966,14 @@ export const Map: React.FC<MapProps> = ({
     }
   }, [is3D, mapTheme]);
 
-  // Dynamic Route visibility changes
+  // Dynamic Route visibility changes: the background network respects the
+  // Routes toggle plus the per-mode Trams/Buses toggles.
   useEffect(() => {
     const map = mapRef.current;
     if (map && map.getStyle()) {
-      updateRouteVisibility(map, showRouteNetwork);
+      updateRouteVisibility(map, showRouteNetwork, showTrams, showBuses);
     }
-  }, [showRouteNetwork]);
+  }, [showRouteNetwork, showTrams, showBuses]);
 
   // Dynamic Stop Route Filtering
   useEffect(() => {
