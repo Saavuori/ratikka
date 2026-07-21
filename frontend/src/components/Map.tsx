@@ -205,6 +205,85 @@ export const Map: React.FC<MapProps> = ({
     'route_rail',
   ];
 
+  // The HSL background route network (the `routes` vector source + its per-mode
+  // line layers) ships only in the light `style.json`. The dark theme loads
+  // Carto's dark-matter basemap, which has neither, so the Settings "Routes"
+  // toggle used to do nothing there — the route lines never appeared. This
+  // recreates that source and the tram/bus/light-rail/trunk layers (matching the
+  // style.json definitions, case → main → inner) whenever they are missing, so
+  // the network — and its mode colours — show in both themes. Guarded by
+  // `getSource`/`getLayer`, it is a no-op in light mode where the style already
+  // provides them.
+  const backgroundRouteNetworkLayers: maplibregl.LayerSpecification[] = [
+    // Trams (green)
+    { id: 'route_tram_case', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'TRAM'], layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 4], [22, 8]] } } },
+    { id: 'route_tram', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'TRAM'], layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
+      paint: { 'line-color': '#00985F', 'line-width': { stops: [[10, 2], [22, 6]] } } },
+    { id: 'route_tram_inner', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'TRAM'],
+      paint: { 'line-color': '#00bb75', 'line-width': { stops: [[10, 0.5], [22, 2]] } } },
+    // Light rail / Raide-Jokeri (teal)
+    { id: 'route_lrail_case', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'L_RAIL'], layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 4], [22, 8]] } } },
+    { id: 'route_lrail', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'L_RAIL'], layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
+      paint: { 'line-color': '#0098A1', 'line-width': { stops: [[10, 2], [22, 6]] } } },
+    { id: 'route_lrail_inner', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'L_RAIL'],
+      paint: { 'line-color': '#19a2aa', 'line-width': { stops: [[10, 0.5], [22, 2]] } } },
+    // Buses (blue)
+    { id: 'route_bus_case', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 4], [22, 8]] } } },
+    { id: 'route_bus', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+      layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
+      paint: { 'line-color': '#007ac9', 'line-width': { stops: [[10, 2], [22, 6]] } } },
+    { id: 'route_bus_inner', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+      paint: { 'line-color': '#3395d4', 'line-width': { stops: [[10, 0.5], [22, 2]] } } },
+    // Trunk buses (orange)
+    { id: 'route_trunk_case', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 4], [22, 8]] } } },
+    { id: 'route_trunk', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+      layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
+      paint: { 'line-color': '#CA4300', 'line-width': { stops: [[10, 2], [22, 6]] } } },
+    { id: 'route_trunk_inner', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+      paint: { 'line-color': '#FF6319', 'line-width': { stops: [[10, 1], [22, 4]] } } },
+  ] as unknown as maplibregl.LayerSpecification[];
+
+  const ensureBackgroundRouteNetwork = (map: maplibregl.Map) => {
+    // Add the JORE routes vector source if the base style doesn't provide it.
+    if (!map.getSource('routes')) {
+      map.addSource('routes', {
+        type: 'vector',
+        url: 'https://kartat.hsl.fi/jore/tiles/routes/index.json',
+      });
+    }
+
+    // Keep the network beneath the highlighted route path and the vehicles.
+    const beforeId = map.getLayer('route-lines-layer')
+      ? 'route-lines-layer'
+      : map.getLayer('trams-circles')
+      ? 'trams-circles'
+      : undefined;
+
+    backgroundRouteNetworkLayers.forEach((layer) => {
+      if (!map.getLayer(layer.id)) {
+        map.addLayer(layer, beforeId);
+      }
+    });
+  };
+
   const updateRouteVisibility = (
     map: maplibregl.Map,
     show: boolean,
@@ -1010,6 +1089,12 @@ export const Map: React.FC<MapProps> = ({
         },
       }, 'trams-circles');
     }
+
+    // 8b. Recreate the HSL background route network when the base style lacks it
+    //     (the dark-matter theme has no `routes` source/layers), so the Settings
+    //     "Routes" toggle draws the route lines — and their mode colours — in
+    //     both themes. No-op in light mode where style.json already supplies them.
+    ensureBackgroundRouteNetwork(map);
 
     // 9. Add Tram Text Label Layer (on top of arrows/circles)
     if (!map.getLayer('trams-labels')) {

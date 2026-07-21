@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.44.1] - 2026-07-21
+
+### Fixed
+- **Route network invisible in dark theme**: enabling the Settings "Routes" toggle showed nothing while the map was in dark mode. The HSL background route network (the JORE `routes` vector source and its tram/bus/light-rail/trunk line layers) was defined only in the light-theme `style.json`; the dark theme loads Carto's dark-matter basemap, which has neither, so the toggle silently no-op'd and no route colours appeared. The map now recreates that source and those layers whenever the base style lacks them, so the route network — green trams, blue buses, teal light rail, orange trunk — is drawn (and toggles) in both themes.
+
+---
+
 ## [v0.44.0] - 2026-07-21
 
 ### Changed
