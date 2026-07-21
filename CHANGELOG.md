@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.44.4] - 2026-07-21
+
+### Changed
+- **Route network coloured per line**: the background tram/light-rail route network was drawn in HSL's single mode green, so every tram line's route looked identical on the map. It is now tinted by the per-line palette — matching the JORE tiles' `routeIdParsed` line number against the same colours used for the vehicles and line badges — so each line's route reads in its own colour. Lines outside the palette fall back to the mode colour (a null/absent property is a no-op, never a regression); the white casing stays white and buses keep their mode blue.
+
+---
+
 ## [v0.44.3] - 2026-07-21
 
 ### Fixed

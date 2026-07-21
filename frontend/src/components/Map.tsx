@@ -5,7 +5,7 @@ import type { Feature, FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
-import { getRouteColor, ROUTE_COLORS, TRAM_GREEN } from '../lib/routeColors';
+import { getRouteColor, routeColorMatchExpression, ROUTE_COLORS, TRAM_GREEN } from '../lib/routeColors';
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection } from '../types';
 
@@ -289,6 +289,28 @@ export const Map: React.FC<MapProps> = ({
         map.addLayer(layer, beforeId);
       }
     });
+  };
+
+  // Tint the tram / light-rail route network by our per-line palette instead of
+  // HSL's single mode green, so a line's route on the map reads in the same
+  // colour as its vehicles and badges. The JORE routes tiles expose the friendly
+  // line number as `routeIdParsed` (e.g. "4", "6T", "15"), which is exactly the
+  // key our palette uses, so a `match` on it colours each line; any line missing
+  // from the palette falls back to the mode colour (so a null/absent property is
+  // a no-op, never a regression). The white casing layers stay white, and buses
+  // keep their mode blue.
+  const applyRouteNetworkColors = (map: maplibregl.Map) => {
+    const tramColor = routeColorMatchExpression('routeIdParsed', TRAM_GREEN) as unknown as maplibregl.DataDrivenPropertyValueSpecification<string>;
+    const lrailColor = routeColorMatchExpression('routeIdParsed', '#0098A1') as unknown as maplibregl.DataDrivenPropertyValueSpecification<string>;
+    const setColor = (layerId: string, color: maplibregl.DataDrivenPropertyValueSpecification<string>) => {
+      if (map.getLayer(layerId)) {
+        map.setPaintProperty(layerId, 'line-color', color);
+      }
+    };
+    setColor('route_tram', tramColor);
+    setColor('route_tram_inner', tramColor);
+    setColor('route_lrail', lrailColor);
+    setColor('route_lrail_inner', lrailColor);
   };
 
   const updateRouteVisibility = (
@@ -1126,6 +1148,10 @@ export const Map: React.FC<MapProps> = ({
     //     "Routes" toggle draws the route lines — and their mode colours — in
     //     both themes. No-op in light mode where style.json already supplies them.
     ensureBackgroundRouteNetwork(map);
+
+    // Tint the tram/light-rail route network per line (palette on `routeIdParsed`)
+    // so routes show their own colours instead of a single mode green.
+    applyRouteNetworkColors(map);
 
     // 9. Add Tram Text Label Layer (on top of arrows/circles)
     if (!map.getLayer('trams-labels')) {
