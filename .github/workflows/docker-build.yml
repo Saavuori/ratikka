@@ -18,22 +18,44 @@ jobs:
   tag:
     runs-on: ubuntu-latest
     outputs:
-      new_tag: ${{ steps.tag_version.outputs.new_tag }}
+      new_tag: ${{ steps.changelog_version.outputs.tag }}
+      released: ${{ steps.changelog_version.outputs.released }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Bump version and push tag
-        id: tag_version
-        uses: mathieudutour/github-tag-action@v6.2
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          default_bump: patch
+      # CHANGELOG.md is the single source of truth for the version. The release
+      # tag is whatever the top `## [vX.Y.Z]` heading says — so the deployed
+      # version and the changelog can never drift. To cut a release, bump the
+      # heading in CHANGELOG.md; if the heading is unchanged (e.g. a docs-only
+      # push) the tag already exists and we skip the build entirely.
+      - name: Derive version from CHANGELOG
+        id: changelog_version
+        run: |
+          VERSION=$(grep -m1 -oP '^##\s*\[\s*v?\K[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md || true)
+          if [ -z "$VERSION" ]; then
+            echo "::error::No version heading (## [vX.Y.Z]) found at the top of CHANGELOG.md"
+            exit 1
+          fi
+          TAG="v${VERSION}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists — CHANGELOG version unchanged, skipping release."
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Creating release tag ${TAG} from CHANGELOG.md"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "Release ${TAG}"
+            git push origin "$TAG"
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          fi
 
   build-and-push:
     needs: tag
+    if: needs.tag.outputs.released == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code

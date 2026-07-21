@@ -35,14 +35,17 @@ Use conventional commit prefixes (see `/versioning` workflow):
 
 ## Pushing to main
 
-Pushing to `main` triggers the full CI/CD pipeline (auto-tag → Docker build → release). See `/versioning` for details.
+Pushing to `main` triggers the full CI/CD pipeline (derive version from CHANGELOG → tag → Docker build → release). See `/versioning` for details.
 
 ## Changelog Management
 
-Whenever a new feature is introduced (`feat:`) or a bug is resolved (`fix:`), you **must** update the `CHANGELOG.md` at the root of the repository. This is not optional — every `feat:`/`fix:` change ships with a matching changelog entry in the **same** commit/PR:
+**`CHANGELOG.md` is the single source of truth for the release version** — CI tags each release from its top `## [vX.Y.Z]` heading, so the number you write there is exactly what gets deployed. Whenever a new feature is introduced (`feat:`) or a bug is resolved (`fix:`), you **must** update `CHANGELOG.md` in the **same** commit/PR:
 1. Document the changes under the appropriate section (e.g. `### Added`, `### Fixed`, `### Changed`).
-2. Add a new version heading like `## [vX.Y.Z] - YYYY-MM-DD`, bumping from the current top entry per the conventional-commit rule (`fix:` → patch, `feat:` → minor, `feat!:` → major). See `/versioning`.
-3. The `CHANGELOG.md` file is automatically parsed and deployed to GitHub Pages on every push to `main`.
+2. Add a new version heading `## [vX.Y.Z] - YYYY-MM-DD`, bumping from the current top entry per the conventional-commit rule (`fix:` → patch, `feat:` → minor, `feat!:` → major). This heading **is** the released version — the git tag will match it verbatim, so make sure the number is right before merging. See `/versioning`.
+3. Bump the changelog version **once per release**. Follow-up commits that don't change the top heading (docs tweaks, review fixes on an unmerged branch) reuse it — CI only cuts a release when the heading is a version with no existing tag, so unchanged headings never mint spurious tags.
+4. The `CHANGELOG.md` file is automatically parsed and deployed to GitHub Pages on every push to `main`.
+
+If the running app's version (`GET /api/v1/version`) ever disagrees with the changelog's top heading, the heading is wrong: correct it to the tag that actually shipped rather than inventing a new number.
 
 ## Pull Requests
 

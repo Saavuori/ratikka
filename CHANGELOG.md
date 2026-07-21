@@ -2,7 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.42.0] - 2026-07-21
+## [v0.41.2] - 2026-07-21
+
+### Changed
+- **CHANGELOG Drives the Release Version**: The deployed version and the changelog could drift because the release tag was auto-bumped from conventional-commit prefixes while the `## [vX.Y.Z]` heading was written by hand — a mismatched guess (e.g. a `fix:` commit under a minor-bump heading) shipped a version the changelog never named, and docs-only pushes minted entry-less tags. CI now reads the release version straight from the top `## [vX.Y.Z]` heading in `CHANGELOG.md`, tags the commit to match, and skips the build when that version is unchanged. The changelog heading is now the single source of truth, so the running version always equals the changelog's latest entry. Versioning/committing workflow docs updated to match.
+
+---
+
+## [v0.41.1] - 2026-07-21
 
 ### Fixed
 - **On-Map Bike Availability Always Zero**: The city-bike markers read `bikesAvailable` straight from the Digitransit rental-station **vector tiles**, but those tiles carry no live availability — only station id, name and location. The count therefore always fell back to `0`, so every station showed "0" and was greyed out as if empty. The map now sources live counts from the realtime API instead of the tiles (see below), so availability is accurate again.
