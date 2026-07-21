@@ -194,7 +194,21 @@ function App() {
       window.removeEventListener('touchend', handleTouchEnd);
     };
   }, [isFilterCollapsed, isDetailCollapsed, isMobile]);
-  const [selectedLines, setSelectedLines] = useState<string[]>([]);
+  const [selectedLines, setSelectedLines] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('selectedLines');
+      const parsed = stored ? JSON.parse(stored) : [];
+      return Array.isArray(parsed) ? parsed.filter((l): l is string => typeof l === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Persist the line filter (favorite lines) across reloads
+  useEffect(() => {
+    localStorage.setItem('selectedLines', JSON.stringify(selectedLines));
+  }, [selectedLines]);
+
   const [selectedStopRoutes, setSelectedStopRoutes] = useState<string[]>([]);
   const [mapBearing, setMapBearing] = useState<number>(0);
   const [routeGeometries, setRouteGeometries] = useState<Record<string, { geometries: string[]; color?: string; stops?: string[] }>>({});
