@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [v0.40.0] - 2026-07-21
 
 ### Added
 - **Bike Availability on the Map**: City-bike station markers now show how many bikes are left directly on the map. Previously only the fully zoomed-in bike sign (zoom ≥ 15.5) carried a count; at the default zoom level (14) stations were just plain gold dots with no indication of availability. The mid-zoom circle markers were enlarged and now display the available-bike count as a label (fading in from zoom 13.5 so the wide overview stays clean), and stations with no bikes left are greyed out so an empty station reads at a glance even before the number is visible. Clicking the number opens the station panel, same as clicking the marker.
