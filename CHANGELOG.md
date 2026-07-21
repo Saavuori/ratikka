@@ -9,12 +9,33 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [v0.37.0] - 2026-07-19
+## [v0.39.0] - 2026-07-20
+
+### Added
+- **Journey Line Filtering**: Choosing a route in the "Where to?" destination search now restricts the map to the vehicles running on that journey's transit legs, mirroring how selecting a line filter narrows the map. Clearing the journey restores the full set of vehicles.
+
+---
+
+## [v0.38.1] - 2026-07-19
+
+### Fixed
+- **Collapsible Journey Planner on Mobile**: The expanded "Where to?" panel covered the whole map on mobile, and the only way out (the X) cleared the journey — so riders could never see the route they had just planned. Picking an itinerary now auto-collapses the planner to a compact top summary bar (route chips + duration), revealing the highlighted route and stops underneath; tapping the bar re-expands it, while the X still fully clears the journey. Added a minimize control to the expanded header (desktop too) and capped the expanded panel to 60dvh so the map peeks through even before collapsing.
+
+---
+
+## [v0.38.0] - 2026-07-19
 
 ### Added
 - **Destination Journey Search**: A new top-center "Where to?" search lets riders pick a destination and instantly see the routes that get them there. The origin defaults to the device's current location (with a one-tap "Use current location" option and a manual origin field for when GPS is unavailable), destinations are found via a debounced geocoding autocomplete, and the planner returns ranked itineraries showing departure/arrival times, total duration, transfers, and a colour-coded leg-by-leg breakdown. The planner collapses to a compact summary bar (automatically on mobile once a route is picked) so the highlighted route on the map stays visible without losing the journey — closing it clears the journey.
 - **On-Map Journey Highlighting**: Selecting an itinerary draws its legs on the map — solid route-coloured lines for transit legs, dashed grey for walking — with origin/destination markers and highlighted stops the rider would actually use: green for the boarding stop, coral for the final stop, gold for transfers, and small dots for intermediate stops. The camera fits the whole journey into view.
 - **Backend Geocoding & Routing Proxies**: Added `GET /api/v1/geocode` (Digitransit Pelias place search, HSL-region constrained, 60s cache) and `GET /api/v1/plan` (Digitransit routing `plan` query, 20s cache), both proxied server-side so the Digitransit subscription key never reaches the browser. Requests are coalesced via `singleflight` and share the existing response cache.
+
+---
+
+## [v0.37.0] - 2026-07-19
+
+### Added
+- **Mobile Bottom-Sheet UI**: Replaced the desktop side-drawer layout (previously stretched onto small screens) with a mobile-first pattern. The filter panel and the vehicle/stop/bike detail panels become full-width bottom sheets (Google Maps/Transit style), and a new bottom tab bar (Map / Lines / Details) drives which sheet is expanded — only one at a time, so opening one collapses the other. Desktop layout and interactions are untouched; the behavior is gated entirely behind a `max-width: 768px` media query and a `useIsMobile()` hook.
 
 ---
 
