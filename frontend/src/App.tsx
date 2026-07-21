@@ -43,10 +43,6 @@ function App() {
   const [mapTheme, setMapTheme] = useState<'light' | 'dark'>(() => {
     return readStorage('mapTheme') === 'dark' ? 'dark' : 'light';
   });
-  const [showRouteNetwork, setShowRouteNetwork] = useState<boolean>(() => {
-    // Default on so the (tram) route network is visible on first load.
-    return readStorage('showRouteNetwork') !== 'false';
-  });
   const [is3D, setIs3D] = useState<boolean>(() => {
     return readStorage('is3D') === 'true';
   });
@@ -61,10 +57,6 @@ function App() {
     writeStorage('mapTheme', mapTheme);
     document.documentElement.setAttribute('data-theme', mapTheme);
   }, [mapTheme]);
-
-  useEffect(() => {
-    writeStorage('showRouteNetwork', String(showRouteNetwork));
-  }, [showRouteNetwork]);
 
   useEffect(() => {
     writeStorage('is3D', String(is3D));
@@ -491,7 +483,6 @@ function App() {
         lineFilters={selectedLines}
         routeGeometries={routeGeometries}
         mapTheme={mapTheme}
-        showRouteNetwork={showRouteNetwork}
         is3D={is3D}
         isFollowing={isFollowing}
         onDisableFollowing={() => setIsFollowing(false)}
@@ -514,8 +505,6 @@ function App() {
         onToggleCollapse={() => setIsFilterCollapsed(!isFilterCollapsed)}
         mapTheme={mapTheme}
         setMapTheme={setMapTheme}
-        showRouteNetwork={showRouteNetwork}
-        setShowRouteNetwork={setShowRouteNetwork}
         is3D={is3D}
         setIs3D={setIs3D}
         showTrams={showTrams}

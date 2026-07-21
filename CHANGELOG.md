@@ -4,8 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [v0.44.1] - 2026-07-21
 
+### Changed
+- **Route network is always on and driven by the line filter**: removed the Settings "Routes" toggle. The route network is now shown by default — all routes are visible whenever no line filter is active — and selecting one or more lines narrows the map to just those routes (drawn in their per-line palette colours). This makes the network behave like "Show All": there is no separate on/off switch to get out of sync with the filter. Tram vs bus routes still follow the **Trams**/**Buses** mode toggles.
+
 ### Fixed
-- **Route network invisible in dark theme**: enabling the Settings "Routes" toggle showed nothing while the map was in dark mode. The HSL background route network (the JORE `routes` vector source and its tram/bus/light-rail/trunk line layers) was defined only in the light-theme `style.json`; the dark theme loads Carto's dark-matter basemap, which has neither, so the toggle silently no-op'd and no route colours appeared. The map now recreates that source and those layers whenever the base style lacks them, so the route network — green trams, blue buses, teal light rail, orange trunk — is drawn (and toggles) in both themes.
+- **Route network invisible in dark theme**: with the network shown by default, it previously still drew nothing while the map was in dark mode. The HSL background route network (the JORE `routes` vector source and its tram/bus/light-rail/trunk line layers) was defined only in the light-theme `style.json`; the dark theme loads Carto's dark-matter basemap, which has neither, so no route colours appeared. The map now recreates that source and those layers whenever the base style lacks them, so the route network — green trams, blue buses, teal light rail, orange trunk — is drawn in both themes.
 
 ---
 
