@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72" fill="none">
+  <rect x="0" y="0" width="72" height="72" rx="10" fill="#0f172a"/>
+  <circle cx="36" cy="36" fill="none" stroke="#ffb020" stroke-width="1.8">
+    <animate attributeName="r" values="12;21;12" dur="1.5s" repeatCount="indefinite"/>
+    <animate attributeName="stroke-opacity" values="0.65;0.08;0.65" dur="1.5s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="36" cy="36" fill="#ffb020">
+    <animate attributeName="r" values="12;21;12" dur="1.5s" repeatCount="indefinite"/>
+    <animate attributeName="fill-opacity" values="0.30;0.03;0.30" dur="1.5s" repeatCount="indefinite"/>
+  </circle>
+  <g transform="translate(16,16)">
+  <path d="M20 3.2 L24 8.4 L16 8.4 Z" fill="#00985F" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+  <rect x="12.5" y="7.5" width="15" height="26" rx="6.5" fill="#00985F" stroke="#ffffff" stroke-width="2"/>
+  <rect x="15" y="10" width="10" height="4.6" rx="2" fill="rgba(255,255,255,0.9)"/>
+  <rect x="11.9" y="18.4" width="4.4" height="7.6" rx="1.3" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
+  <rect x="23.7" y="18.4" width="4.4" height="7.6" rx="1.3" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
+  <rect x="15" y="29" width="10" height="3" rx="1.5" fill="rgba(0,0,0,0.3)"/></g>
+</svg>

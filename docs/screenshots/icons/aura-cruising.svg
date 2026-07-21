@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72" fill="none">
+  <rect x="0" y="0" width="72" height="72" rx="10" fill="#0f172a"/>
+  <defs><filter id="b" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="5"/></filter></defs>
+  <circle cx="36" cy="36" r="17" fill="#2dd4a7" opacity="0.5" filter="url(#b)"/>
+  <g transform="translate(16,16)">
+  <path d="M20 3.2 L24 8.4 L16 8.4 Z" fill="#00985F" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+  <rect x="12.5" y="7.5" width="15" height="26" rx="6.5" fill="#00985F" stroke="#ffffff" stroke-width="2"/>
+  <rect x="15" y="10" width="10" height="4.6" rx="2" fill="rgba(255,255,255,0.9)"/>
+  <rect x="14.7" y="17.5" width="4" height="9" rx="1.2" fill="rgba(0,0,0,0.4)"/>
+  <rect x="21.3" y="17.5" width="4" height="9" rx="1.2" fill="rgba(0,0,0,0.4)"/>
+  <rect x="15" y="29" width="10" height="3" rx="1.5" fill="rgba(0,0,0,0.3)"/></g>
+</svg>

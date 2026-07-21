@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80" fill="none">
+  <rect x="0" y="0" width="80" height="80" rx="12" fill="#0f172a"/>
+  <g transform="rotate(-90 40 40)">
+    <circle cx="40" cy="40" r="26" stroke="rgba(255,255,255,0.10)" stroke-width="4.5" fill="none"/>
+    <circle cx="40" cy="40" r="26" stroke="#34d399" stroke-width="4.5" fill="none" stroke-linecap="round"
+            stroke-dasharray="163.36281798666926" stroke-dashoffset="163.20"/>
+  </g>
+  <text x="40" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="800" fill="#f8fafc">±0</text>
+  <text x="40" y="52" text-anchor="middle" font-family="Arial, sans-serif" font-size="7" font-weight="700" fill="#94a3b8" letter-spacing="0.5">ON-TIME</text>
+</svg>
