@@ -116,8 +116,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   const filteredCount = filteredAlerts.length;
 
   // Determine widget text and badge label context
-  let widgetLabel = 'All services normal';
-  let badgeText = '';
+  let widgetLabel: string;
+  let badgeText: string;
 
   if (selectedTram) {
     widgetLabel = filteredCount > 0 ? `Alerts for Line ${selectedTram.desi}` : `Line ${selectedTram.desi} is clear`;

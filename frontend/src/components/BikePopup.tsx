@@ -19,11 +19,21 @@ export const BikePopup: React.FC<BikePopupProps> = ({
   isCollapsed,
   onToggleCollapse,
 }) => {
-  const [details, setDetails] = useState<BikeStationDetailsResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  interface StationFetchState {
+    stationId: string;
+    data: BikeStationDetailsResponse | null;
+    error: string | null;
+  }
+  const [fetchState, setFetchState] = useState<StationFetchState | null>(null);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const isMobile = useIsMobile();
+
+  // Only trust a result fetched for the station currently shown; anything else
+  // means we are (re)loading.
+  const current = fetchState?.stationId === stationId ? fetchState : null;
+  const loading = current === null;
+  const error = current?.error ?? null;
+  const details = current?.data ?? null;
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.touches[0].clientX);
@@ -51,19 +61,18 @@ export const BikePopup: React.FC<BikePopupProps> = ({
   };
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-
+    let cancelled = false;
     fetchBikeStationDetails(stationId)
       .then((data) => {
-        setDetails(data);
-        setLoading(false);
+        if (!cancelled) setFetchState({ stationId, data, error: null });
       })
       .catch((err) => {
         console.error(err);
-        setError('Failed to load bike station data');
-        setLoading(false);
+        if (!cancelled) setFetchState({ stationId, data: null, error: 'Failed to load bike station data' });
       });
+    return () => {
+      cancelled = true;
+    };
   }, [stationId]);
 
   return (

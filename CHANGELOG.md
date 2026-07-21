@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.43.1] - 2026-07-21
+
+### Fixed
+- **Production-Readiness Audit**: A full sweep of the Go backend and React frontend for release, fixing every error-level lint finding and a set of real runtime defects found by review:
+  - **Backend — WebSocket hub**: replaced the unbuffered register/unregister channels with mutex-guarded map operations. Previously, once the hub loop stopped at shutdown, every connected client's handler goroutine blocked forever on unregister (a permanent goroutine leak), and clients whose 16-message send buffer stayed full were skipped forever but never disconnected — they are now dropped with a `slow consumer` close.
+  - **Backend — alerts endpoint**: no longer holds a write mutex across the upstream GraphQL round-trip (up to 10s), which serialized *all* concurrent alert requests behind one fetch. Alerts now use the same singleflight + response-cache pattern as the other endpoints.
+  - **Backend — hardening**: the in-memory response cache now evicts expired entries (previously unbounded growth from distinct geocode/plan keys); `http.Server` gained `ReadHeaderTimeout`/`IdleTimeout` (slowloris guard); the `.env` loader no longer prints secret values into logs; the `?departures=` parameter is capped at 50; vehicles reporting a missing HFP timestamp are no longer purged as stale on the next sweep; removed the stray `backend/query_trip.go` debug script. `/api/v1/config` can now serve a dedicated `DIGITRANSIT_MAP_API_KEY` to browsers so the server-side routing key can stay private.
+  - **Frontend — map**: layer click/hover handlers were re-registered on every theme change and never removed, so after N theme toggles a single tap fired N+1 selection events — they now bind once per map instance. The two bus-stop layer filters used `'and'`, which is not a MapLibre expression operator, and are corrected to `'all'`. Deferred SVG `onload` callbacks no longer touch a removed map, and the 60fps interpolation loop now survives a thrown frame instead of freezing every vehicle for the rest of the session.
+  - **Frontend — stale-response races**: stop, bike-station, and route-geometry fetches now ignore responses that arrive after the selection has changed, so a slow response can no longer show the wrong stop's timetable, the wrong station's capacity, or re-draw a deselected line's route.
+  - **Frontend — resilience**: all `localStorage` access goes through guarded helpers (Safari Private Browsing / blocked-storage no longer crashes the app) and the app is wrapped in an error boundary with a reload fallback instead of white-screening on an unexpected error. Removed leftover `console.log` noise; `eslint` and `tsc` now pass with zero errors.
+
+---
+
 ## [v0.43.0] - 2026-07-21
 
 ### Added

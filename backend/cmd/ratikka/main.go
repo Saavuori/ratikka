@@ -82,6 +82,11 @@ func main() {
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
 		Handler: router,
+		// No global Read/WriteTimeout: the /api/v1/stream WebSocket is a
+		// long-lived connection. ReadHeaderTimeout still guards against
+		// slowloris-style clients dribbling request headers.
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// 8. Handle OS shutdown signals for graceful termination

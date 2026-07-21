@@ -184,6 +184,12 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 		tripId = constructGTFSTripID(vp.Route, vp.Oday, vp.Dir, vp.Start)
 	}
 
+	// A missing/zero HFP timestamp would make the stale-vehicle sweeper purge
+	// this live vehicle immediately; fall back to ingestion time.
+	if vp.Tsi == 0 {
+		vp.Tsi = time.Now().Unix()
+	}
+
 	routeLabel := vp.Route
 	if routeLabel == "" {
 		routeLabel = "unknown"

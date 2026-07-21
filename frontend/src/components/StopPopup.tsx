@@ -72,11 +72,16 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   );
 
   useEffect(() => {
+    // Guard against a slow response for a previously selected stop landing
+    // after this one and overwriting both local state and the parent's
+    // route/coordinate state with the wrong stop's data.
+    let active = true;
     setLoading(true);
     setError(null);
 
     fetchStopDetails(stopId, 8)
       .then((data) => {
+        if (!active) return;
         setDetails(data);
         setLoading(false);
         if (onStopDeparturesLoaded) {
@@ -91,10 +96,16 @@ export const StopPopup: React.FC<StopPopupProps> = ({
         }
       })
       .catch((err) => {
+        if (!active) return;
         console.error(err);
         setError('Failed to load stop timetable');
         setLoading(false);
       });
+
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- callbacks are stable enough; re-fetch only when the stop changes
   }, [stopId]);
 
   const getDelayColor = (seconds: number) => {

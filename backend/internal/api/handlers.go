@@ -32,8 +32,9 @@ type responseCacheItem struct {
 
 // ResponseCache is a thread-safe in-memory cache for API payloads
 type ResponseCache struct {
-	mu    sync.RWMutex
-	items map[string]responseCacheItem
+	mu        sync.RWMutex
+	items     map[string]responseCacheItem
+	lastSweep time.Time
 }
 
 func NewResponseCache() *ResponseCache {
@@ -55,9 +56,20 @@ func (c *ResponseCache) Get(key string) ([]byte, bool) {
 func (c *ResponseCache) Set(key string, data []byte, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	now := time.Now()
+	// Opportunistically evict expired entries so keys derived from unbounded
+	// user input (geocode text, plan coordinates) cannot grow the map forever.
+	if now.Sub(c.lastSweep) > 5*time.Minute {
+		for k, item := range c.items {
+			if now.After(item.expiresAt) {
+				delete(c.items, k)
+			}
+		}
+		c.lastSweep = now
+	}
 	c.items[key] = responseCacheItem{
 		data:      data,
-		expiresAt: time.Now().Add(ttl),
+		expiresAt: now.Add(ttl),
 	}
 }
 
@@ -67,24 +79,18 @@ type Handlers struct {
 	mqtt  interface {
 		IsConnected() bool
 	}
-	alertsCache     map[string][]AlertResponse
-	alertsCacheTime map[string]time.Time
-	alertsMutex     sync.RWMutex
-
-	// Caching and request coalescing for other API queries
+	// Caching and request coalescing for upstream API queries
 	apiCache *ResponseCache
 	sfGroup  *singleflight.Group
 }
 
 func NewHandlers(c cache.Cache, gql *GraphQLClient, mqtt interface{ IsConnected() bool }) *Handlers {
 	return &Handlers{
-		cache:           c,
-		gql:             gql,
-		mqtt:            mqtt,
-		alertsCache:     make(map[string][]AlertResponse),
-		alertsCacheTime: make(map[string]time.Time),
-		apiCache:        NewResponseCache(),
-		sfGroup:         &singleflight.Group{},
+		cache:    c,
+		gql:      gql,
+		mqtt:     mqtt,
+		apiCache: NewResponseCache(),
+		sfGroup:  &singleflight.Group{},
 	}
 }
 
@@ -145,8 +151,15 @@ type ConfigResponse struct {
 }
 
 func (h *Handlers) Config(w http.ResponseWriter, r *http.Request) {
+	// The frontend needs a subscription key for map tile requests, so a key is
+	// necessarily public. Prefer a dedicated (rate-limited / map-only) key via
+	// DIGITRANSIT_MAP_API_KEY so the server-side routing key stays private.
+	mapKey := os.Getenv("DIGITRANSIT_MAP_API_KEY")
+	if mapKey == "" {
+		mapKey = os.Getenv("DIGITRANSIT_API_KEY")
+	}
 	res := ConfigResponse{
-		DigitransitMapKey: os.Getenv("DIGITRANSIT_API_KEY"),
+		DigitransitMapKey: mapKey,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)
@@ -552,7 +565,9 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 
 	departuresVal := r.URL.Query().Get("departures")
 	numDepartures := 10
-	if val, err := strconv.Atoi(departuresVal); err == nil && val > 0 {
+	// Cap the value: each distinct count is a distinct cache key, and huge
+	// values would be forwarded verbatim to the upstream API.
+	if val, err := strconv.Atoi(departuresVal); err == nil && val > 0 && val <= 50 {
 		numDepartures = val
 	}
 
@@ -1160,26 +1175,11 @@ func (h *Handlers) Alerts(w http.ResponseWriter, r *http.Request) {
 		lang = "sv"
 	}
 
-	h.alertsMutex.RLock()
-	cacheTime, exists := h.alertsCacheTime[lang]
-	cachedAlerts, hasAlerts := h.alertsCache[lang]
-	if exists && hasAlerts && time.Since(cacheTime) < 60*time.Second {
-		defer h.alertsMutex.RUnlock()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(AlertsListResponse{Alerts: cachedAlerts})
-		return
-	}
-	h.alertsMutex.RUnlock()
+	key := "alerts:" + lang
 
-	h.alertsMutex.Lock()
-	defer h.alertsMutex.Unlock()
-
-	// Double check after acquiring write lock
-	cacheTime, exists = h.alertsCacheTime[lang]
-	cachedAlerts, hasAlerts = h.alertsCache[lang]
-	if exists && hasAlerts && time.Since(cacheTime) < 60*time.Second {
+	if cached, ok := h.apiCache.Get(key); ok {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(AlertsListResponse{Alerts: cachedAlerts})
+		w.Write(cached)
 		return
 	}
 
@@ -1213,51 +1213,64 @@ func (h *Handlers) Alerts(w http.ResponseWriter, r *http.Request) {
 		}
 	`
 
-	// Context with the accept-language value
-	ctx := context.WithValue(r.Context(), AcceptLanguageKey, lang)
+	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
+		// Double-check cache inside singleflight
+		if cached, ok := h.apiCache.Get(key); ok {
+			return cached, nil
+		}
 
-	var raw rawAlertResponse
-	if err := h.gql.query(ctx, queryStr, nil, &raw); err != nil {
+		// Context with the accept-language value
+		ctx := context.WithValue(r.Context(), AcceptLanguageKey, lang)
+
+		var raw rawAlertResponse
+		if err := h.gql.query(ctx, queryStr, nil, &raw); err != nil {
+			return nil, err
+		}
+
+		// Map rawAlerts to AlertResponse
+		alerts := make([]AlertResponse, 0, len(raw.Alerts))
+		for _, ra := range raw.Alerts {
+			entities := make([]AlertEntityResponse, 0, len(ra.Entities))
+			for _, re := range ra.Entities {
+				entities = append(entities, AlertEntityResponse{
+					Type:      re.Typename,
+					GtfsId:    re.GtfsId,
+					ShortName: re.ShortName,
+					Mode:      re.Mode,
+					Name:      re.Name,
+					Code:      re.Code,
+				})
+			}
+
+			alerts = append(alerts, AlertResponse{
+				Feed:            ra.Feed,
+				SeverityLevel:   ra.AlertSeverityLevel,
+				Effect:          ra.AlertEffect,
+				Cause:           ra.AlertCause,
+				HeaderText:      ra.AlertHeaderText,
+				DescriptionText: ra.AlertDescriptionText,
+				Url:             ra.AlertUrl,
+				StartDate:       ra.EffectiveStartDate,
+				EndDate:         ra.EffectiveEndDate,
+				Entities:        entities,
+			})
+		}
+
+		payload, err := json.Marshal(AlertsListResponse{Alerts: alerts})
+		if err != nil {
+			return nil, err
+		}
+		h.apiCache.Set(key, payload, 60*time.Second)
+		return payload, nil
+	})
+	if err != nil {
 		log.Printf("GraphQL query error for alerts: %v\n", err)
 		http.Error(w, "upstream api error", http.StatusBadGateway)
 		return
 	}
 
-	// Map rawAlerts to AlertResponse
-	alerts := make([]AlertResponse, 0, len(raw.Alerts))
-	for _, ra := range raw.Alerts {
-		entities := make([]AlertEntityResponse, 0, len(ra.Entities))
-		for _, re := range ra.Entities {
-			entities = append(entities, AlertEntityResponse{
-				Type:      re.Typename,
-				GtfsId:    re.GtfsId,
-				ShortName: re.ShortName,
-				Mode:      re.Mode,
-				Name:      re.Name,
-				Code:      re.Code,
-			})
-		}
-
-		alerts = append(alerts, AlertResponse{
-			Feed:            ra.Feed,
-			SeverityLevel:   ra.AlertSeverityLevel,
-			Effect:          ra.AlertEffect,
-			Cause:           ra.AlertCause,
-			HeaderText:      ra.AlertHeaderText,
-			DescriptionText: ra.AlertDescriptionText,
-			Url:             ra.AlertUrl,
-			StartDate:       ra.EffectiveStartDate,
-			EndDate:         ra.EffectiveEndDate,
-			Entities:        entities,
-		})
-	}
-
-	// Update cache
-	h.alertsCache[lang] = alerts
-	h.alertsCacheTime[lang] = time.Now()
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(AlertsListResponse{Alerts: alerts})
+	w.Write(dataInterface.([]byte))
 }
 
 

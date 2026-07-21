@@ -13,6 +13,7 @@ import { VersionBadge } from './components/VersionBadge';
 import { BottomNav, type MobileTab } from './components/BottomNav';
 import { JourneySearch, type JourneySelection } from './components/JourneySearch';
 import { fetchRouteDetails, fetchAlerts, fetchTripDetails } from './lib/api';
+import { readStorage, writeStorage } from './lib/storage';
 import { areTripsEquivalent } from './lib/trip';
 import type { VehiclePosition, Alert, TripDetailsResponse } from './types';
 
@@ -40,40 +41,40 @@ function App() {
 
   // Map settings states with localStorage persistence
   const [mapTheme, setMapTheme] = useState<'light' | 'dark'>(() => {
-    return (localStorage.getItem('mapTheme') as 'light' | 'dark') || 'light';
+    return readStorage('mapTheme') === 'dark' ? 'dark' : 'light';
   });
   const [showRouteNetwork, setShowRouteNetwork] = useState<boolean>(() => {
-    return localStorage.getItem('showRouteNetwork') === 'true';
+    return readStorage('showRouteNetwork') === 'true';
   });
   const [is3D, setIs3D] = useState<boolean>(() => {
-    return localStorage.getItem('is3D') === 'true';
+    return readStorage('is3D') === 'true';
   });
   const [showTrams, setShowTrams] = useState<boolean>(() => {
-    return localStorage.getItem('showTrams') !== 'false';
+    return readStorage('showTrams') !== 'false';
   });
   const [showBuses, setShowBuses] = useState<boolean>(() => {
-    return localStorage.getItem('showBuses') !== 'false';
+    return readStorage('showBuses') !== 'false';
   });
 
   useEffect(() => {
-    localStorage.setItem('mapTheme', mapTheme);
+    writeStorage('mapTheme', mapTheme);
     document.documentElement.setAttribute('data-theme', mapTheme);
   }, [mapTheme]);
 
   useEffect(() => {
-    localStorage.setItem('showRouteNetwork', String(showRouteNetwork));
+    writeStorage('showRouteNetwork', String(showRouteNetwork));
   }, [showRouteNetwork]);
 
   useEffect(() => {
-    localStorage.setItem('is3D', String(is3D));
+    writeStorage('is3D', String(is3D));
   }, [is3D]);
 
   useEffect(() => {
-    localStorage.setItem('showTrams', String(showTrams));
+    writeStorage('showTrams', String(showTrams));
   }, [showTrams]);
 
   useEffect(() => {
-    localStorage.setItem('showBuses', String(showBuses));
+    writeStorage('showBuses', String(showBuses));
   }, [showBuses]);
 
   // UI Selection States
@@ -196,7 +197,7 @@ function App() {
   }, [isFilterCollapsed, isDetailCollapsed, isMobile]);
   const [selectedLines, setSelectedLines] = useState<string[]>(() => {
     try {
-      const stored = localStorage.getItem('selectedLines');
+      const stored = readStorage('selectedLines');
       const parsed = stored ? JSON.parse(stored) : [];
       return Array.isArray(parsed) ? parsed.filter((l): l is string => typeof l === 'string') : [];
     } catch {
@@ -206,7 +207,7 @@ function App() {
 
   // Persist the line filter (favorite lines) across reloads
   useEffect(() => {
-    localStorage.setItem('selectedLines', JSON.stringify(selectedLines));
+    writeStorage('selectedLines', JSON.stringify(selectedLines));
   }, [selectedLines]);
 
   const [selectedStopRoutes, setSelectedStopRoutes] = useState<string[]>([]);
@@ -240,10 +241,15 @@ function App() {
       return updated;
     });
 
+    // Cancellation guard: without it, a geometry response arriving after the
+    // line was deselected would re-insert the line and leave its polyline
+    // drawn on the map with no filter selected.
+    let cancelled = false;
     linesToHighlight.forEach((line) => {
       if (!routeGeometries[line]) {
         fetchRouteDetails(line)
           .then((data) => {
+            if (cancelled) return;
             setRouteGeometries((prev) => ({
               ...prev,
               [line]: {
@@ -258,6 +264,10 @@ function App() {
           });
       }
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedLines, selectedTram, selectedStopRoutes]);
 
   const handleSelectTram = (tram: VehiclePosition | null) => {
