@@ -2,10 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.44.9] - 2026-07-22
+## [v0.44.10] - 2026-07-22
 
 ### Changed
-- **Motion aura under vehicles disabled**: the v0.44.8 stop fix restored the `trams-circles` layer to a valid state, which also brought back the coloured motion glow drawn beneath each vehicle. That glow is now switched off — `trams-circles` is fully transparent (`circle-opacity: 0`) and only serves as the `beforeId` anchor for the other custom layers and the vehicle tap/click hit-target. Vehicle heading and state are read from the carriage body and the rear brake lights; tram/bus stops stay visible at every zoom, exactly as after v0.44.8.
+- **Motion aura under vehicles disabled**: the v0.44.8 stop fix restored the `trams-circles` layer to a valid state, which also brought back the coloured motion glow drawn beneath each vehicle. That glow is now switched off — `trams-circles` is fully transparent (`circle-opacity: 0`) and only serves as the `beforeId` anchor for the other custom layers and the vehicle tap/click hit-target. Vehicle heading and state are read from the carriage body and the rear brake lights; tram/bus stops stay visible at every zoom, exactly as after v0.44.8. (The change first landed under a v0.44.9 heading, but that merge did not trigger a release build; this heading cuts the release so the image is actually built and shipped.)
 
 ## [v0.44.8] - 2026-07-22
 
