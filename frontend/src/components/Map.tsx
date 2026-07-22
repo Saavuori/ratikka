@@ -1099,10 +1099,18 @@ export const Map: React.FC<MapProps> = ({
           // speed-driven size. Zoomed out the floor keeps every vehicle a solid,
           // findable dot even when stopped/crawling; zoomed in the floor drops
           // away and the aura grows with speed exactly as before.
+          //
+          // `zoom` must be the top-level input to a `step`/`interpolate` (MapLibre
+          // rejects a style whose paint property nests `zoom` inside another
+          // expression such as `max`, and refuses to add the whole layer — which
+          // in turn breaks every layer anchored to it via `beforeId`). So the
+          // zoom interpolation is the outer expression and the speed-driven size
+          // is folded into each zoom stop's output via `max`.
           'circle-radius': [
-            'max',
-            ['interpolate', ['linear'], ['zoom'], 11, 9, 13.5, 5, 14.5, 0],
-            ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 11, 1, 23],
+            'interpolate', ['linear'], ['zoom'],
+            11, ['max', 9, ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 11, 1, 23]],
+            13.5, ['max', 5, ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 11, 1, 23]],
+            14.5, ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 11, 1, 23],
           ],
           'circle-color': [
             'case',
@@ -1119,15 +1127,14 @@ export const Map: React.FC<MapProps> = ({
           // zoomed out (regardless of speed); it fades to zero as you zoom in,
           // handing back to the original motion fade so a stopped vehicle's aura
           // still disappears (the rear brake lights mark it up close).
+          //
+          // Same constraint as circle-radius above: `zoom` stays the top-level
+          // interpolate input and the speed-driven fade is folded into each stop.
           'circle-opacity': [
-            'max',
-            ['interpolate', ['linear'], ['zoom'], 11, 0.9, 13.5, 0.6, 15, 0.0],
-            [
-              'interpolate', ['linear'], ['get', 'speedNorm'],
-              0, 0.0,
-              0.06, 0.45,
-              1, 0.62,
-            ],
+            'interpolate', ['linear'], ['zoom'],
+            11, ['max', 0.9, ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 0.0, 0.06, 0.45, 1, 0.62]],
+            13.5, ['max', 0.6, ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 0.0, 0.06, 0.45, 1, 0.62]],
+            15, ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 0.0, 0.06, 0.45, 1, 0.62],
           ],
         },
       });

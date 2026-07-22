@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.44.8] - 2026-07-22
+
+### Fixed
+- **Tram (and bus) stops disappeared when zoomed in**: the v0.44.7 motion-aura change gave the `trams-circles` layer a `circle-radius`/`circle-opacity` of the form `['max', ['interpolate', … ['zoom'] …], ['interpolate', … ['get','speedNorm'] …]]`. MapLibre only allows a `zoom` expression as the *top-level* input to a `step`/`interpolate`, so nesting it inside `max` made the whole layer invalid and `addLayer('trams-circles')` was rejected. Because the stop-sign layer (and several others) are inserted with `beforeId: 'trams-circles'`, that anchor going missing meant `stops_signs` was never added at all — so once zoomed in past 15.5 (where the circle stops fade out and the sign-on-a-pole symbols are meant to take over) there was nothing left to draw and stops vanished. The aura expressions are restructured so `zoom` stays the top-level interpolate input and the speed-driven size/fade is folded into each zoom stop via `max`, preserving the exact locator-vs-speed behaviour while keeping the layer valid; `trams-circles` (and with it `stops_signs`, the highlighted route path, and the selected/next-stop markers) are added again.
+
 ## [v0.44.7] - 2026-07-22
 
 ### Fixed
