@@ -863,6 +863,23 @@ export const Map: React.FC<MapProps> = ({
     registerVehicleImage('bus-body', busBody(false));
     registerVehicleImage('bus-body-open', busBody(true));
 
+    // Rear brake lights: two red lamps on a transparent 40x40 canvas, positioned
+    // at the tail of the carriage (bottom of the art). Drawn on top of the body
+    // and rotated with `hdg`, so the lamps always sit on the vehicle's rear.
+    // Each lamp is a hot core inside two softer red glows (no SVG filters — the
+    // rest of the icon set fakes glow with stacked opacities the same way).
+    const brakeLights = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
+        <circle cx="16" cy="30.6" r="3.7" fill="#ff1f1f" opacity="0.30"/>
+        <circle cx="16" cy="30.6" r="2.1" fill="#ff2d2d" opacity="0.8"/>
+        <circle cx="16" cy="30.6" r="1.15" fill="#ff8a8a"/>
+        <circle cx="24" cy="30.6" r="3.7" fill="#ff1f1f" opacity="0.30"/>
+        <circle cx="24" cy="30.6" r="2.1" fill="#ff2d2d" opacity="0.8"/>
+        <circle cx="24" cy="30.6" r="1.15" fill="#ff8a8a"/>
+      </svg>
+    `;
+    registerVehicleImage('brake-lights', brakeLights);
+
     // 2. Create Selected Tram Highlight Image
     if (!map.hasImage('tram-selected')) {
       const selectedSvg = `
@@ -1023,7 +1040,7 @@ export const Map: React.FC<MapProps> = ({
     //    under each vehicle that visualises how it is moving: it grows with speed
     //    (`speedNorm`) and is tinted by acceleration — green while pulling away, red
     //    while braking, mode-neutral while cruising. At a standstill it fades to
-    //    nothing (the subtle stopped glow takes over). Tuned to read at a glance:
+    //    nothing (the rear brake lights take over). Tuned to read at a glance:
     //    it snaps to a clearly-visible opacity as soon as a vehicle is moving and a
     //    tighter blur keeps the coloured disc defined rather than washed out.
     if (!map.getLayer('trams-circles')) {
@@ -1054,8 +1071,8 @@ export const Map: React.FC<MapProps> = ({
           // Opacity is the larger of a zoom-driven visibility floor and the
           // speed-driven fade. The floor makes the aura clearly visible when
           // zoomed out (regardless of speed); it fades to zero as you zoom in,
-          // handing back to the original motion fade so stopped vehicles still
-          // disappear behind the coral stopped glow up close.
+          // handing back to the original motion fade so a stopped vehicle's aura
+          // still disappears (the rear brake lights mark it up close).
           'circle-opacity': [
             'max',
             ['interpolate', ['linear'], ['zoom'], 11, 0.9, 13.5, 0.6, 15, 0.0],
@@ -1070,28 +1087,8 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
-    // 6b. Stopped-state glow — a subtle, soft coral halo under a vehicle that has
-    //     come to a standstill (`stopped`: doors open or `spd === 0`). The motion
-    //     aura fades to nothing at a standstill, so without any cue a halted tram —
-    //     one waiting at a light, stuck in traffic, or sitting at a terminus — reads
-    //     the same as one crawling slowly. This is deliberately understated: a
-    //     blurred, borderless coral disc (not a crisp stroked ring) so it cannot be
-    //     mistaken for the gold selection ring, and the doors-open body art already
-    //     signals boarding without needing a separate pulse. Collapses to nothing
-    //     the moment the vehicle starts moving.
-    if (!map.getLayer('trams-stopped')) {
-      map.addLayer({
-        id: 'trams-stopped',
-        type: 'circle',
-        source: 'trams',
-        paint: {
-          'circle-radius': ['case', ['get', 'stopped'], 12, 0],
-          'circle-color': '#e17055',
-          'circle-blur': 0.85,
-          'circle-opacity': ['case', ['get', 'stopped'], 0.5, 0],
-        },
-      });
-    }
+    // 6b. (The stopped cue is no longer a glow under the vehicle — it is the rear
+    //     brake-lights layer added on top of the body in section 7b below.)
 
     // 7. Directional vehicle body (on top of the aura + pulse). Rotates to `hdg`
     //    and swaps to the doors-open art while the doors are open.
@@ -1124,6 +1121,44 @@ export const Map: React.FC<MapProps> = ({
             12, 1.3,
             14, 1.55,
             17, 2.0,
+          ],
+        },
+      });
+    }
+
+    // 7b. Rear brake lights — the stopped/braking cue, replacing the old coral
+    //     glow. Two red tail lamps drawn on TOP of the body (the lamps sit inside
+    //     the carriage footprint, so a layer under the body would hide them) and
+    //     rotated with `hdg` at the exact icon-size of the body, so they stay
+    //     pinned to the vehicle's rear at every zoom. They light while the vehicle
+    //     is `stopped` (waiting at a light, in traffic, at a terminus, or with
+    //     doors open) and also while it is braking hard (`acc < -0.35`, the same
+    //     threshold that turns the motion aura red), so they glow on the way into
+    //     a stop and stay lit through it — just like real brake lights. Off (and
+    //     placement-free) the instant the vehicle is moving without braking.
+    if (!map.getLayer('trams-brake')) {
+      map.addLayer({
+        id: 'trams-brake',
+        type: 'symbol',
+        source: 'trams',
+        layout: {
+          'icon-image': 'brake-lights',
+          'icon-rotate': ['get', 'hdg'],
+          'icon-rotation-alignment': 'map',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'icon-size': [
+            'interpolate', ['linear'], ['zoom'],
+            12, 1.3,
+            14, 1.55,
+            17, 2.0,
+          ],
+        },
+        paint: {
+          'icon-opacity': [
+            'case',
+            ['any', ['get', 'stopped'], ['<', ['get', 'acc'], -0.35]], 1,
+            0,
           ],
         },
       });

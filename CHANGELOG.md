@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [v0.44.6] - 2026-07-22
 
 ### Changed
+- **Stopped cue is now rear brake lights**: replaced the soft coral "stopped" glow (`trams-stopped`) with two red tail lamps (`trams-brake`) drawn on top of the carriage and rotated with heading, so they always sit on the vehicle's rear. They light while a vehicle is stopped (waiting at a light, in traffic, at a terminus, or with doors open) **and** while it is braking hard (`acc < -0.35`), so they glow on the way into a stop and stay lit through it — like real brake lights. This reads as "braking/stopped" with no legend and, unlike the halo, isn't easy to miss on a busy map. The filter-panel "Stopped" legend swatch is recoloured to match (`#e17055` → `#ff2d2d`).
 - **Motion aura reads as a locator dot when zoomed out**: the coloured aura under each vehicle was tuned only for the zoomed-in view (fixed pixel size, opacity fading to zero at a standstill), so on a city-wide view — where many vehicles are on screen at once — stopped or crawling trams almost vanished. The aura now takes the *larger* of a zoom-driven "locator" floor and the existing speed-driven values: zoomed out it keeps a solid, crisper (lower-blur), clearly visible dot for every vehicle regardless of speed, and as you zoom in the floor fades away so the up-close speed/acceleration glow behaves exactly as before.
 
 ### Fixed

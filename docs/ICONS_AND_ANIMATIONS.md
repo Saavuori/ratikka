@@ -9,8 +9,8 @@ when you open this page on GitHub.
 > live map the same art is drawn with a transparent background.
 
 Colour language: tram green `#00985f`, bus blue `#007ac9` / `#0984e3`, trunk-bus
-orange `#CA4300`, selection gold `#fdcb6e`, boarding amber `#ffb020`, stopped coral
-`#e17055`. Source: [`Map.tsx`](../frontend/src/components/Map.tsx),
+orange `#CA4300`, selection gold `#fdcb6e`, boarding amber `#ffb020`, brake-light red
+`#ff2d2d`. Source: [`Map.tsx`](../frontend/src/components/Map.tsx),
 [`TramPopup.tsx`](../frontend/src/components/TramPopup.tsx),
 [`TramCard.tsx`](../frontend/src/components/TramCard.tsx),
 [`lib/routeColors.ts`](../frontend/src/lib/routeColors.ts),
@@ -82,21 +82,22 @@ glow above (and, at a standstill, to the coral stopped glow).
 |:--:|:--:|:--:|
 | <img src="screenshots/icons/aura-accelerating.svg" height="72"> | <img src="screenshots/icons/aura-cruising.svg" height="72"> | <img src="screenshots/icons/aura-braking.svg" height="72"> |
 
-### Stopped glow
+### Rear brake lights
 
-<img src="screenshots/icons/stopped-glow.svg" height="72" align="left" hspace="14">
+A halted or braking vehicle lights up **two red tail lamps** on the back of the
+carriage — the positive "I'm slowing / I'm stopped" cue once the motion aura has faded.
+The lamps are drawn on top of the body and rotate with `hdg`, so they always sit on the
+vehicle's rear. They come on while the vehicle is **stopped** (waiting at a light, stuck
+in traffic, at a terminus, or with doors open) **and** while it is **braking hard**
+(`acc < -0.35`, the same threshold that turns the motion aura red) — so they glow on the
+way into a stop and stay lit through it, just like real brake lights. There is no
+separate boarding animation: the amber door gaps in the doors-open body art already
+signal boarding.
 
-A halted vehicle (waiting at a light, stuck in traffic, sitting at a terminus) gets a
-**subtle, borderless coral halo** — the positive "I'm stopped" cue once the motion
-aura has faded away. It is deliberately understated and soft-edged so it can't be
-mistaken for the crisp gold selection ring. There is no separate boarding animation:
-the amber door gaps in the doors-open body art already signal boarding.
-
-<br clear="left">
-
-> **Design note:** an earlier version wrapped stopped vehicles in a hard coral ring
-> and pulsed an amber ring while boarding. Both were dropped — the ring read too much
-> like the selection highlight, and the doors-open icon already conveys boarding.
+> **Design note:** earlier versions used a hard coral ring, then a soft borderless coral
+> halo, for the stopped state. Both were dropped — the ring read too much like the gold
+> selection highlight, and the halo was easy to miss on a busy map. Rear brake lights are
+> unmistakable, directional, and read as "braking/stopped" without any legend.
 
 ### Smooth movement
 
@@ -187,7 +188,7 @@ badges throughout the UI:
 | Trunk-bus orange | `#CA4300` | Trunk-bus stop sign |
 | Selection gold | `#fdcb6e` | Selected/next-stop signs, selection ring, follow accent |
 | Boarding amber | `#ffb020` | Doors-open body gaps, door-pulse ring |
-| Stopped coral | `#e17055` | Stopped ring, "Stopped" legend swatch |
+| Brake-light red | `#ff2d2d` | Rear brake lamps (stopped/braking), "Stopped" legend swatch |
 | Accelerating green | `#22c55e` / `#34d399` | Motion aura, accelerometer, accel chevrons |
 | Braking red | `#ef4444` / `#f87171` | Motion aura, accelerometer, brake chevrons |
 
@@ -195,9 +196,9 @@ badges throughout the UI:
 |---|---|---|
 | `hdg` | Heading (degrees) | Body/arrow rotation, chase-camera bearing |
 | `spd` | Speed (m/s) | Aura size, wheel spin period, speedometer |
-| `acc` | Acceleration (m/s²) | Aura tint, ease-in/out motion, accelerometer, chevrons |
+| `acc` | Acceleration (m/s²) | Aura tint, brake lights (hard braking), ease-in/out motion, accelerometer, chevrons |
 | `drst` | Door state (`1` = open) | Doors-open body swap, door pulse, sliding doors, blinking lights |
-| `spd === 0` \|\| `drst === 1` | Stopped | Coral stopped ring |
+| `spd === 0` \|\| `drst === 1` | Stopped | Rear brake lights |
 | `dl` | Schedule deviation (s) | Delay colour, deviation dial |
 | `desi` | Line short name | Per-line body tint, line badges, map label |
 | `mode` | `tram` / `bus` | Body / sign / schematic selection, mode colours |
