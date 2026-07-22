@@ -212,6 +212,27 @@ export const Map: React.FC<MapProps> = ({
     'route_rail',
   ];
 
+  // Each background route layer's own (mode/trunk) filter, mirrored from the
+  // light `style.json` and the dark-theme recreation in
+  // `backgroundRouteNetworkLayers`. Narrowing the network to the selected lines
+  // combines the layer's base filter with a `routeIdParsed` line match, so we
+  // keep the base filter here to restore "show all of this mode" when no line
+  // filter is active.
+  const routeLayerBaseFilters: Record<string, maplibregl.FilterSpecification> = {
+    route_tram_case: ['==', ['get', 'mode'], 'TRAM'],
+    route_tram: ['==', ['get', 'mode'], 'TRAM'],
+    route_tram_inner: ['==', ['get', 'mode'], 'TRAM'],
+    route_lrail_case: ['==', ['get', 'mode'], 'L_RAIL'],
+    route_lrail: ['==', ['get', 'mode'], 'L_RAIL'],
+    route_lrail_inner: ['==', ['get', 'mode'], 'L_RAIL'],
+    route_bus_case: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+    route_bus: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+    route_bus_inner: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+    route_trunk_case: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+    route_trunk: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+    route_trunk_inner: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+  };
+
   // The HSL background route network (the `routes` vector source + its per-mode
   // line layers) ships only in the light `style.json`. The dark theme loads
   // Carto's dark-matter basemap, which has neither, so the Settings "Routes"
@@ -315,17 +336,42 @@ export const Map: React.FC<MapProps> = ({
 
   const updateRouteVisibility = (
     map: maplibregl.Map,
-    show: boolean,
     trams: boolean,
     buses: boolean,
+    lines: string[],
   ) => {
     const setVisible = (layerId: string, visible: boolean) => {
       if (map.getLayer(layerId)) {
         map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
       }
     };
-    tramRouteLayers.forEach((layerId) => setVisible(layerId, show && trams));
-    busRouteLayers.forEach((layerId) => setVisible(layerId, show && buses));
+    // Narrow the background network to the selected lines. With no line filter
+    // the network is the "show all" state (each layer keeps its own mode/trunk
+    // filter); selecting one or more lines adds a `routeIdParsed` match — the
+    // JORE tiles' friendly line number, the same key as a vehicle's `desi` — so
+    // only those lines' routes are drawn instead of all-or-nothing.
+    const applyLineFilter = (layerId: string) => {
+      if (!map.getLayer(layerId)) return;
+      const base = routeLayerBaseFilters[layerId];
+      if (!base) return;
+      if (lines.length === 0) {
+        map.setFilter(layerId, base);
+      } else {
+        map.setFilter(layerId, [
+          'all',
+          base,
+          ['in', ['get', 'routeIdParsed'], ['literal', lines]],
+        ] as maplibregl.FilterSpecification);
+      }
+    };
+    tramRouteLayers.forEach((layerId) => {
+      setVisible(layerId, trams);
+      applyLineFilter(layerId);
+    });
+    busRouteLayers.forEach((layerId) => {
+      setVisible(layerId, buses);
+      applyLineFilter(layerId);
+    });
     otherRouteLayers.forEach((layerId) => setVisible(layerId, false));
   };
 
@@ -1750,10 +1796,9 @@ export const Map: React.FC<MapProps> = ({
       }
     }
 
-    // Apply active route visibility and 3D mode setting. The all-routes network
-    // shows only while no line filter is active; selecting lines hides it and
-    // leaves just those lines' highlighted paths.
-    updateRouteVisibility(map, lineFiltersRef.current.length === 0, showTramsRef.current, showBusesRef.current);
+    // Apply active route visibility and 3D mode setting. With no line filter the
+    // whole network shows; selecting lines narrows it to just those routes.
+    updateRouteVisibility(map, showTramsRef.current, showBusesRef.current, lineFiltersRef.current);
     update3DMode(map, is3DRef.current, mapThemeRef.current);
 
     // Hide white casing layers
@@ -2149,14 +2194,14 @@ export const Map: React.FC<MapProps> = ({
     }
   }, [is3D, mapTheme]);
 
-  // Dynamic Route visibility changes: the all-routes background network is drawn
-  // whenever no line filter is active (and respects the per-mode Trams/Buses
-  // toggles); selecting specific lines hides it so only those lines' highlighted
-  // paths remain.
+  // Dynamic Route visibility changes: the background network respects the
+  // per-mode Trams/Buses toggles and is narrowed to the selected lines — all
+  // routes when no line filter is active, just the selected lines' routes
+  // otherwise (drawn from the network itself, so it works for every mode).
   useEffect(() => {
     const map = mapRef.current;
     if (map && map.getStyle()) {
-      updateRouteVisibility(map, lineFilters.length === 0, showTrams, showBuses);
+      updateRouteVisibility(map, showTrams, showBuses, lineFilters);
     }
   }, [lineFilters, showTrams, showBuses]);
 

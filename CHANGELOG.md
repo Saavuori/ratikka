@@ -2,7 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.44.6] - 2026-07-22
+## [v0.44.7] - 2026-07-22
+
+### Fixed
+- **Line filter only showed all routes or none**: selecting specific lines was meant to narrow the background route network "to just those routes", but `updateRouteVisibility` toggled the *entire* network on or off based only on whether *any* line filter was active — so the map showed every route (no filter) or, once you picked a line, hid the whole network and relied on a separate per-line highlight overlay that never covered non-tram routes (the route-details lookup is tram-only). The result read as all-or-nothing. The network is now narrowed by matching each route's `routeIdParsed` (the JORE tiles' friendly line number, the same key as a vehicle's `desi`) against the selected lines, combined with each layer's existing mode/trunk filter. With no filter the whole network shows; selecting one or more lines draws just those lines' routes — and, because it filters the network itself rather than a fetched overlay, it works for trams, light rail, buses, and trunk routes alike.
 
 ### Changed
 - **Stopped cue is now rear brake lights**: replaced the soft coral "stopped" glow (`trams-stopped`) with two red tail lamps (`trams-brake`) drawn on top of the carriage and rotated with heading, so they always sit on the vehicle's rear. They light while a vehicle is stopped (waiting at a light, in traffic, at a terminus, or with doors open) **and** while it is braking hard (`acc < -0.35`), so they glow on the way into a stop and stay lit through it — like real brake lights. This reads as "braking/stopped" with no legend and, unlike the halo, isn't easy to miss on a busy map. The filter-panel "Stopped" legend swatch is recoloured to match (`#e17055` → `#ff2d2d`).
