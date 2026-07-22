@@ -1081,61 +1081,24 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
-    // 6. Motion aura — the floor of the vehicle stack (kept as `trams-circles`
-    //    so every other layer's `beforeId` anchor still resolves). A coloured glow
-    //    under each vehicle that visualises how it is moving: it grows with speed
-    //    (`speedNorm`) and is tinted by acceleration — green while pulling away, red
-    //    while braking, mode-neutral while cruising. At a standstill it fades to
-    //    nothing (the rear brake lights take over). Tuned to read at a glance:
-    //    it snaps to a clearly-visible opacity as soon as a vehicle is moving and a
-    //    tighter blur keeps the coloured disc defined rather than washed out.
+    // 6. Vehicle base circle — the floor of the vehicle stack. It is kept as
+    //    `trams-circles` for two reasons even though the motion aura it used to
+    //    draw is gone: it is the `beforeId` anchor every other custom layer is
+    //    inserted before, and it is the (invisible) tap/click hit-target for a
+    //    vehicle, extending the target beyond the body icon (the body is the
+    //    primary target; both are bound in the interaction setup below). It is
+    //    fully transparent, so no coloured glow is drawn under vehicles — the
+    //    heading/state is read from the carriage body and the rear brake lights.
     if (!map.getLayer('trams-circles')) {
       map.addLayer({
         id: 'trams-circles',
         type: 'circle',
         source: 'trams',
         paint: {
-          // Radius is the larger of a zoom-driven "locator" floor and the
-          // speed-driven size. Zoomed out the floor keeps every vehicle a solid,
-          // findable dot even when stopped/crawling; zoomed in the floor drops
-          // away and the aura grows with speed exactly as before.
-          //
-          // `zoom` must be the top-level input to a `step`/`interpolate` (MapLibre
-          // rejects a style whose paint property nests `zoom` inside another
-          // expression such as `max`, and refuses to add the whole layer — which
-          // in turn breaks every layer anchored to it via `beforeId`). So the
-          // zoom interpolation is the outer expression and the speed-driven size
-          // is folded into each zoom stop's output via `max`.
-          'circle-radius': [
-            'interpolate', ['linear'], ['zoom'],
-            11, ['max', 9, ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 11, 1, 23]],
-            13.5, ['max', 5, ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 11, 1, 23]],
-            14.5, ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 11, 1, 23],
-          ],
-          'circle-color': [
-            'case',
-            ['>', ['get', 'acc'], 0.35], '#22c55e',  // accelerating -> green
-            ['<', ['get', 'acc'], -0.35], '#ef4444', // braking -> red
-            ['==', ['get', 'mode'], 'bus'], '#38bdf8',
-            '#2dd4a7', // tram cruising
-          ],
-          // Crisper when zoomed out so the locator dot reads as a solid mark,
-          // softening back to the diffuse motion glow once zoomed in.
-          'circle-blur': ['interpolate', ['linear'], ['zoom'], 11, 0.12, 14.5, 0.4],
-          // Opacity is the larger of a zoom-driven visibility floor and the
-          // speed-driven fade. The floor makes the aura clearly visible when
-          // zoomed out (regardless of speed); it fades to zero as you zoom in,
-          // handing back to the original motion fade so a stopped vehicle's aura
-          // still disappears (the rear brake lights mark it up close).
-          //
-          // Same constraint as circle-radius above: `zoom` stays the top-level
-          // interpolate input and the speed-driven fade is folded into each stop.
-          'circle-opacity': [
-            'interpolate', ['linear'], ['zoom'],
-            11, ['max', 0.9, ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 0.0, 0.06, 0.45, 1, 0.62]],
-            13.5, ['max', 0.6, ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 0.0, 0.06, 0.45, 1, 0.62]],
-            15, ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 0.0, 0.06, 0.45, 1, 0.62],
-          ],
+          // A modest zoom-scaled radius keeps vehicles easy to tap; opacity 0
+          // means it only ever acts as a hit-target, never a visible mark.
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 11, 17, 20],
+          'circle-opacity': 0,
         },
       });
     }
