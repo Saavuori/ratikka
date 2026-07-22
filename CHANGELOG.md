@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.44.6] - 2026-07-22
+
+### Changed
+- **Motion aura reads as a locator dot when zoomed out**: the coloured aura under each vehicle was tuned only for the zoomed-in view (fixed pixel size, opacity fading to zero at a standstill), so on a city-wide view — where many vehicles are on screen at once — stopped or crawling trams almost vanished. The aura now takes the *larger* of a zoom-driven "locator" floor and the existing speed-driven values: zoomed out it keeps a solid, crisper (lower-blur), clearly visible dot for every vehicle regardless of speed, and as you zoom in the floor fades away so the up-close speed/acceleration glow behaves exactly as before.
+
+### Fixed
+- **Smoother vehicle animation on a crowded map**: the per-frame loop rebuilt every vehicle's GeoJSON feature and pushed it through `setData` at 60 fps, which is O(number of vehicles) and stuttered once a lot of trams/buses were visible. Rebuilds are now adaptively throttled by vehicle count and zoom — the sub-pixel interpolation between the 1 Hz snapshots is imperceptible when zoomed out, so a busy view updates less often while staying correct. Chasing a selected vehicle is never throttled, so the follow view keeps every frame.
+
+---
+
 ## [v0.44.5] - 2026-07-21
 
 ### Changed

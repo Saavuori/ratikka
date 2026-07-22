@@ -72,6 +72,12 @@ acceleration — **green** pulling away, **red** braking, **teal** cruising. It 
 full size at ordinary city-tram speeds and fades to nothing at a standstill, so a
 moving vehicle reads at a glance.
 
+**Zoomed out** the aura doubles as a **locator dot**: on a city-wide view (where many
+vehicles share the screen) it takes a zoom-driven visibility floor — a solid, crisper,
+clearly-visible disc for *every* vehicle regardless of speed — so nothing disappears in
+the crowd. That floor fades away as you zoom in, handing back to the speed/acceleration
+glow above (and, at a standstill, to the coral stopped glow).
+
 | Accelerating | Cruising | Braking |
 |:--:|:--:|:--:|
 | <img src="screenshots/icons/aura-accelerating.svg" height="72"> | <img src="screenshots/icons/aura-cruising.svg" height="72"> | <img src="screenshots/icons/aura-braking.svg" height="72"> |
@@ -98,6 +104,12 @@ Between the ~1 Hz position snapshots the loop interpolates position and heading 
 motion is fluid. Position is **acceleration-shaped**: the marker eases *in* while the
 vehicle pulls away from a stop and eases *out* while braking into one (`easeByAccel`
 in [`lib/lerp.ts`](../frontend/src/lib/lerp.ts)); heading eases with `smoothstep`.
+
+Rebuilding every vehicle's feature each frame is O(number of vehicles), so on a crowded
+map the loop **adaptively throttles** the rebuild by vehicle count and zoom — the
+sub-pixel movement between snapshots is imperceptible when zoomed out, so a busy view
+updates less often while staying correct. A vehicle you are **chasing** is never
+throttled, so the follow view keeps every frame.
 
 ### Chase / follow camera
 

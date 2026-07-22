@@ -520,6 +520,9 @@ export const Map: React.FC<MapProps> = ({
   const prevPositionsRef = useRef<Record<string, RenderPosition>>({});
   const targetPositionsRef = useRef<Record<string, RenderPosition>>({});
   const lastUpdateRef = useRef<number>(0);
+  // Wall-clock of the last vehicle-feature rebuild, used to adaptively throttle
+  // the (O(n)) per-frame rebuild when the map is crowded (see tickFrame).
+  const lastRenderRef = useRef<number>(0);
   const animationFrameRef = useRef<number | null>(null);
 
   // Interpolation and GeoJSON updates loop
@@ -546,6 +549,27 @@ export const Map: React.FC<MapProps> = ({
       // Snapshot updates are expected every 1000ms. Clamp delta to 1.0.
       const elapsed = now - lastUpdateRef.current;
       const t = Math.min(elapsed / 1000, 1.0);
+
+      // Adaptive render throttle. Rebuilding every vehicle's GeoJSON feature and
+      // pushing it through `setData` is O(n) and, at 60 fps with a full map, it
+      // dominates the frame budget and makes the whole animation stutter. The
+      // sub-pixel movement between two 1 Hz snapshots is imperceptible when the
+      // map is zoomed out, so when there are many vehicles we cap the rebuild
+      // rate by load and zoom. Interpolation stays correct (each render still
+      // computes the right position for `now`), it just updates less often.
+      // Chasing a vehicle is never throttled — that view needs every frame.
+      const vehicleCount = Object.keys(targetPositionsRef.current).length;
+      const following = !!selectedTramIdRef.current;
+      if (!following && vehicleCount > 25) {
+        const zoom = map.getZoom();
+        const minInterval = vehicleCount > 60
+          ? (zoom < 13.5 ? 100 : 50)
+          : (zoom < 13.5 ? 66 : 33);
+        if (now - lastRenderRef.current < minInterval) {
+          return;
+        }
+      }
+      lastRenderRef.current = now;
 
       const features = Object.entries(targetPositionsRef.current).map(([id, target]) => {
         const prev = prevPositionsRef.current[id] || target;
@@ -1008,7 +1032,15 @@ export const Map: React.FC<MapProps> = ({
         type: 'circle',
         source: 'trams',
         paint: {
-          'circle-radius': ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 11, 1, 23],
+          // Radius is the larger of a zoom-driven "locator" floor and the
+          // speed-driven size. Zoomed out the floor keeps every vehicle a solid,
+          // findable dot even when stopped/crawling; zoomed in the floor drops
+          // away and the aura grows with speed exactly as before.
+          'circle-radius': [
+            'max',
+            ['interpolate', ['linear'], ['zoom'], 11, 9, 13.5, 5, 14.5, 0],
+            ['interpolate', ['linear'], ['get', 'speedNorm'], 0, 11, 1, 23],
+          ],
           'circle-color': [
             'case',
             ['>', ['get', 'acc'], 0.35], '#22c55e',  // accelerating -> green
@@ -1016,12 +1048,23 @@ export const Map: React.FC<MapProps> = ({
             ['==', ['get', 'mode'], 'bus'], '#38bdf8',
             '#2dd4a7', // tram cruising
           ],
-          'circle-blur': 0.4,
+          // Crisper when zoomed out so the locator dot reads as a solid mark,
+          // softening back to the diffuse motion glow once zoomed in.
+          'circle-blur': ['interpolate', ['linear'], ['zoom'], 11, 0.12, 14.5, 0.4],
+          // Opacity is the larger of a zoom-driven visibility floor and the
+          // speed-driven fade. The floor makes the aura clearly visible when
+          // zoomed out (regardless of speed); it fades to zero as you zoom in,
+          // handing back to the original motion fade so stopped vehicles still
+          // disappear behind the coral stopped glow up close.
           'circle-opacity': [
-            'interpolate', ['linear'], ['get', 'speedNorm'],
-            0, 0.0,
-            0.06, 0.45,
-            1, 0.62,
+            'max',
+            ['interpolate', ['linear'], ['zoom'], 11, 0.9, 13.5, 0.6, 15, 0.0],
+            [
+              'interpolate', ['linear'], ['get', 'speedNorm'],
+              0, 0.0,
+              0.06, 0.45,
+              1, 0.62,
+            ],
           ],
         },
       });
