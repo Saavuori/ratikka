@@ -6,11 +6,17 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/prometheus/client_golang/prometheus"
 	"ratikka/internal/cache"
+)
+
+const (
+	tramTopic = "/hfp/v2/journey/ongoing/vp/tram/#"
+	busTopic  = "/hfp/v2/journey/ongoing/vp/bus/#"
 )
 
 var (
@@ -88,6 +94,13 @@ type IngestionWorker struct {
 	client mqtt.Client
 	cache  cache.Cache
 	broker string
+
+	// busEnabled is toggled on demand: buses are only ingested while at least
+	// one connected client has opted in to seeing them. Guarded by mu because
+	// EnableBus/DisableBus are called from the WebSocket hub goroutine while
+	// OnConnect (reconnect) reads it from the MQTT client goroutine.
+	mu         sync.Mutex
+	busEnabled bool
 }
 
 func NewIngestionWorker(broker string, cache cache.Cache) *IngestionWorker {
@@ -109,18 +122,22 @@ func (w *IngestionWorker) Start(ctx context.Context) error {
 	opts.SetKeepAlive(30 * time.Second)
 	opts.SetPingTimeout(10 * time.Second)
 
-	// Callback when connection is established (or re-established)
+	// Callback when connection is established (or re-established). Trams are
+	// always subscribed; buses are only (re)subscribed if a client currently
+	// wants them, so the subscription state survives MQTT reconnects.
 	opts.OnConnect = func(client mqtt.Client) {
 		log.Println("MQTT connected to broker:", w.broker)
-		topics := map[string]byte{
-			"/hfp/v2/journey/ongoing/vp/tram/#": 0,
-			"/hfp/v2/journey/ongoing/vp/bus/#":  0,
-		}
-		token := client.SubscribeMultiple(topics, w.handleMessage)
-		if token.Wait() && token.Error() != nil {
-			log.Printf("Failed to subscribe to topics: %v\n", token.Error())
+		if token := client.Subscribe(tramTopic, 0, w.handleMessage); token.Wait() && token.Error() != nil {
+			log.Printf("Failed to subscribe to tram topic: %v\n", token.Error())
 		} else {
-			log.Println("Successfully subscribed to topics")
+			log.Println("Subscribed to tram topic")
+		}
+
+		w.mu.Lock()
+		busWanted := w.busEnabled
+		w.mu.Unlock()
+		if busWanted {
+			w.subscribeBus(client)
 		}
 	}
 
@@ -139,6 +156,51 @@ func (w *IngestionWorker) Start(ctx context.Context) error {
 
 func (w *IngestionWorker) IsConnected() bool {
 	return w.client != nil && w.client.IsConnected()
+}
+
+// EnableBus starts ingesting bus positions. Called when the first client opts
+// in to buses. Idempotent and safe to call from another goroutine.
+func (w *IngestionWorker) EnableBus() {
+	w.mu.Lock()
+	if w.busEnabled {
+		w.mu.Unlock()
+		return
+	}
+	w.busEnabled = true
+	w.mu.Unlock()
+
+	log.Println("Bus ingestion enabled (a client requested buses)")
+	if w.client != nil && w.client.IsConnected() {
+		w.subscribeBus(w.client)
+	}
+}
+
+// DisableBus stops ingesting bus positions. Called when the last client that
+// wanted buses disconnects or toggles them off. Stale bus entries already in
+// the cache expire via the normal 60s cleanup. Idempotent.
+func (w *IngestionWorker) DisableBus() {
+	w.mu.Lock()
+	if !w.busEnabled {
+		w.mu.Unlock()
+		return
+	}
+	w.busEnabled = false
+	w.mu.Unlock()
+
+	log.Println("Bus ingestion disabled (no clients want buses)")
+	if w.client != nil && w.client.IsConnected() {
+		if token := w.client.Unsubscribe(busTopic); token.Wait() && token.Error() != nil {
+			log.Printf("Failed to unsubscribe from bus topic: %v\n", token.Error())
+		}
+	}
+}
+
+func (w *IngestionWorker) subscribeBus(client mqtt.Client) {
+	if token := client.Subscribe(busTopic, 0, w.handleMessage); token.Wait() && token.Error() != nil {
+		log.Printf("Failed to subscribe to bus topic: %v\n", token.Error())
+	} else {
+		log.Println("Subscribed to bus topic")
+	}
 }
 
 func (w *IngestionWorker) Stop() {

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.45.0] - 2026-07-23
+
+### Changed
+- **On-Demand Bus Ingestion**: The backend now only subscribes to the HSL bus MQTT feed (`.../vp/bus/#`) while at least one connected client has opted in to buses; trams always stream. The WebSocket hub reference-counts client bus preferences (sent as `{"buses": bool}` over the stream socket) and toggles the ingestion worker's bus subscription on the 0→1 / 1→0 boundaries, re-armed on MQTT reconnect. Buses are ~84% of the vehicle feed (≈655 msg/s total), so with no bus viewers the backend's steady-state CPU drops from ~15% toward ~3%. Stale buses drain from the cache via the existing 60s cleanup once the topic is dropped.
+- **Buses Default Off**: `showBuses` now defaults to off (opt-in) so the bus feed isn't ingested for every casual visitor. A user's prior explicit choice in `localStorage` is still respected.
+
+---
+
 ## [v0.44.10] - 2026-07-22
 
 ### Changed
@@ -179,7 +187,6 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - **Mobile Bottom-Sheet UI**: Replaced the desktop side-drawer layout (previously stretched onto small screens) with a mobile-first pattern. The filter panel and the vehicle/stop/bike detail panels become full-width bottom sheets (Google Maps/Transit style), and a new bottom tab bar (Map / Lines / Details) drives which sheet is expanded — only one at a time, so opening one collapses the other. Desktop layout and interactions are untouched; the behavior is gated entirely behind a `max-width: 768px` media query and a `useIsMobile()` hook.
-
 ---
 
 ## [v0.36.1] - 2026-07-19

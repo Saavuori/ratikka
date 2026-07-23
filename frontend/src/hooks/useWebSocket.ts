@@ -5,13 +5,24 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
 interface UseWebSocketOptions {
   onMessage: (data: PositionsMessage) => void;
+  // Whether this client wants bus positions. Sent to the backend so it only
+  // ingests the (large) bus feed while at least one client has opted in.
+  wantsBuses: boolean;
 }
 
-export function useWebSocket({ onMessage }: UseWebSocketOptions) {
+export function useWebSocket({ onMessage, wantsBuses }: UseWebSocketOptions) {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectDelayRef = useRef<number>(1000); // Start reconnect delay at 1s
+  const wantsBusesRef = useRef<boolean>(wantsBuses);
+
+  const sendBusPref = (want: boolean) => {
+    const socket = socketRef.current;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ buses: want }));
+    }
+  };
 
   const connect = () => {
     if (socketRef.current) return;
@@ -27,6 +38,7 @@ export function useWebSocket({ onMessage }: UseWebSocketOptions) {
     socket.onopen = () => {
       setStatus('connected');
       reconnectDelayRef.current = 1000; // Reset backoff delay
+      sendBusPref(wantsBusesRef.current); // Announce current bus preference
     };
 
     socket.onmessage = (event) => {
@@ -64,6 +76,13 @@ export function useWebSocket({ onMessage }: UseWebSocketOptions) {
       connect();
     }, delay);
   };
+
+  // Push preference changes to the backend live (e.g. user toggles buses on/off
+  // while connected). onopen handles the initial announcement after (re)connect.
+  useEffect(() => {
+    wantsBusesRef.current = wantsBuses;
+    sendBusPref(wantsBuses);
+  }, [wantsBuses]);
 
   useEffect(() => {
     connect();

@@ -54,8 +54,10 @@ func main() {
 	}
 	defer mqttWorker.Stop()
 
-	// 5. Initialize WebSocket Hub
+	// 5. Initialize WebSocket Hub. It drives on-demand bus ingestion: buses are
+	// only streamed while at least one connected client has opted in.
 	wsHub := ws.NewHub(liveCache)
+	wsHub.SetBusController(mqttWorker)
 	go wsHub.Run(ctx)
 
 	// Spawn background stale vehicle cleanup (older than 60 seconds)

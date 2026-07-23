@@ -19,7 +19,6 @@ import type { VehiclePosition, Alert, TripDetailsResponse } from './types';
 
 function App() {
   const { trams, handleUpdate } = useTramData();
-  const { status: connectionStatus } = useWebSocket({ onMessage: (data) => handleUpdate(data.vehicles) });
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const isMobile = useIsMobile();
 
@@ -50,7 +49,16 @@ function App() {
     return readStorage('showTrams') !== 'false';
   });
   const [showBuses, setShowBuses] = useState<boolean>(() => {
-    return readStorage('showBuses') !== 'false';
+    // Buses default OFF: they are ~80% of the vehicle feed, so the backend only
+    // ingests them once a user opts in. Respect a prior explicit choice.
+    return readStorage('showBuses') === 'true';
+  });
+
+  // Drive the WebSocket here (after showBuses is declared) so the backend knows
+  // whether to stream buses. Trams always stream.
+  const { status: connectionStatus } = useWebSocket({
+    onMessage: (data) => handleUpdate(data.vehicles),
+    wantsBuses: showBuses,
   });
 
   useEffect(() => {

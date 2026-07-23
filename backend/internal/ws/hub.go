@@ -25,15 +25,30 @@ func init() {
 }
 
 
+// BusController lets the hub turn on-demand bus ingestion on and off based on
+// whether any connected client currently wants to see buses.
+type BusController interface {
+	EnableBus()
+	DisableBus()
+}
+
 type Client struct {
 	conn *websocket.Conn
 	send chan []byte
+	// wantsBuses is guarded by Hub.clientsMu.
+	wantsBuses bool
 }
 
 type Hub struct {
 	cache     cache.Cache
 	clients   map[*Client]bool
 	clientsMu sync.RWMutex
+
+	// busCtl toggles on-demand bus ingestion. busDemand counts how many
+	// connected clients currently want buses; ingestion is enabled while it is
+	// > 0. Both are guarded by clientsMu.
+	busCtl    BusController
+	busDemand int
 }
 
 type PositionsMessage struct {
@@ -47,6 +62,45 @@ func NewHub(c cache.Cache) *Hub {
 	return &Hub{
 		cache:   c,
 		clients: make(map[*Client]bool),
+	}
+}
+
+// SetBusController wires the ingestion worker that the hub toggles based on
+// client demand for buses. Call once before Run.
+func (h *Hub) SetBusController(ctl BusController) {
+	h.busCtl = ctl
+}
+
+// setClientBusPref records whether a client wants buses and toggles ingestion
+// on the 0->1 / 1->0 demand boundaries. The controller call happens outside
+// clientsMu because EnableBus/DisableBus may block on an MQTT round-trip.
+func (h *Hub) setClientBusPref(client *Client, want bool) {
+	var enable, disable bool
+	h.clientsMu.Lock()
+	if _, ok := h.clients[client]; ok && want != client.wantsBuses {
+		client.wantsBuses = want
+		if want {
+			if h.busDemand == 0 {
+				enable = true
+			}
+			h.busDemand++
+		} else {
+			h.busDemand--
+			if h.busDemand <= 0 {
+				h.busDemand = 0
+				disable = true
+			}
+		}
+	}
+	h.clientsMu.Unlock()
+
+	if h.busCtl == nil {
+		return
+	}
+	if enable {
+		h.busCtl.EnableBus()
+	} else if disable {
+		h.busCtl.DisableBus()
 	}
 }
 
@@ -72,15 +126,29 @@ func (h *Hub) addClient(client *Client) {
 }
 
 // removeClient deletes the client and closes its send channel exactly once.
-// Safe to call from both the connection handler and the broadcast loop.
+// Safe to call from both the connection handler and the broadcast loop. If the
+// client wanted buses, its demand is released and ingestion may be disabled.
 func (h *Hub) removeClient(client *Client) {
+	var disable bool
 	h.clientsMu.Lock()
 	if _, ok := h.clients[client]; ok {
 		delete(h.clients, client)
 		close(client.send)
+		if client.wantsBuses {
+			client.wantsBuses = false
+			h.busDemand--
+			if h.busDemand <= 0 {
+				h.busDemand = 0
+				disable = true
+			}
+		}
 	}
 	ActiveClientsGauge.Set(float64(len(h.clients)))
 	h.clientsMu.Unlock()
+
+	if disable && h.busCtl != nil {
+		h.busCtl.DisableBus()
+	}
 }
 
 func (h *Hub) broadcastSnapshot(ctx context.Context) {
@@ -185,12 +253,22 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Read loop to detect disconnects / ping-pong
+	// Read loop: detect disconnects and handle client control messages.
+	// Clients send {"buses": true|false} to opt in/out of bus positions, which
+	// drives on-demand bus ingestion in the hub.
 	for {
-		_, _, err := conn.Read(r.Context())
+		_, data, err := conn.Read(r.Context())
 		if err != nil {
 			log.Printf("WS Connection closed or error: %v\n", err)
 			break
 		}
+
+		var ctrl struct {
+			Buses *bool `json:"buses"`
+		}
+		if err := json.Unmarshal(data, &ctrl); err != nil || ctrl.Buses == nil {
+			continue
+		}
+		h.setClientBusPref(client, *ctrl.Buses)
 	}
 }
