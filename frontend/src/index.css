@@ -116,8 +116,12 @@ body {
   top: 80px;
   left: 0;
   width: 190px;
-  height: calc(100vh - 160px);
-  height: calc(100dvh - 160px);
+  /* Size to content, but never taller than the available viewport slot.
+     Keeps the panel from being mostly empty on tall screens while still
+     scrolling internally when the line list is long. */
+  height: auto;
+  max-height: calc(100vh - 160px);
+  max-height: calc(100dvh - 160px);
   padding: 10px;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 0 12px 12px 0;
@@ -158,7 +162,10 @@ body {
 }
 
 .filter-scroll-area {
-  flex: 1;
+  /* Don't grow to fill the panel (that left empty space on tall screens); just
+     take the space the line list needs and scroll once it hits the cap. */
+  flex: 0 1 auto;
+  min-height: 0;
   overflow-y: auto;
   margin-top: 8px;
 }

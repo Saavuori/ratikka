@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.45.1] - 2026-07-24
+
+### Fixed
+- **Left filter panel no longer mostly empty on tall screens**: the desktop panel used a fixed `height: calc(100dvh - 160px)`, so on large displays it stretched to fill the viewport with the line list floating in a sea of empty space. It now sizes to its content (`height: auto`) and only caps at that same height via `max-height`, and the line list (`.filter-scroll-area`) no longer grows to fill the panel — it takes just the room it needs and scrolls internally once the panel hits the cap, keeping the Legend and Settings pinned below.
+
+---
+
 ## [v0.45.0] - 2026-07-23
 
 ### Changed
