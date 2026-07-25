@@ -27,7 +27,7 @@ services:
       - ratikka-cache
 
   ratikka-cache:
-    image: redis:7-alpine
+    image: redis:8-alpine
     restart: unless-stopped
     command: redis-server --appendonly no --maxmemory 64mb --maxmemory-policy allkeys-lru
 
@@ -37,7 +37,10 @@ services:
 
 
   ratikka-alloy:
-    image: docker.io/grafana/alloy:latest
+    # Pinned deliberately. On `:latest` an unattended restart could pull a new
+    # Alloy major and break metrics collection with no change on our side.
+    # Dependabot (.github/dependabot.yml, docker ecosystem) proposes bumps.
+    image: docker.io/grafana/alloy:v1.18.0
     restart: unless-stopped
     volumes:
       - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro,Z

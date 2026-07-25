@@ -1,5 +1,5 @@
 # Stage 1: Build Frontend React app
-FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-builder
+FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend-builder
 WORKDIR /app
 COPY frontend/package*.json ./
 RUN npm ci
@@ -21,7 +21,7 @@ ARG GIT_SHA=unknown
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X ratikka/internal/api.Version=${VERSION} -X ratikka/internal/api.BuildDate=${BUILD_DATE} -X ratikka/internal/api.GitCommit=${GIT_SHA}" -o ratikka ./cmd/ratikka
 
 # Stage 3: Minimal Production Runtime
-FROM alpine:3.21
+FROM alpine:3.24
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=backend-builder /app/ratikka .

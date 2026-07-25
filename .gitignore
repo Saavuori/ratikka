@@ -1,11 +1,18 @@
 # Node modules & build outputs
 node_modules/
-dist/
+frontend/dist/
 .env
 .env.local
 .env.*.local
 
-# Go binary build
+# Go embed target. The real frontend build is copied in at image build time
+# (see Dockerfile), so the built assets stay untracked -- but the placeholder
+# index.html IS tracked, because `//go:embed all:dist` fails to compile when
+# the directory has no files at all. Without it `go build` and `go test` break
+# on a clean checkout.
+#
+# Note: the ignore above must not be a bare `dist/`. Git does not descend into
+# an excluded directory, so a blanket `dist/` makes the negation below dead.
 backend/internal/api/dist/*
 !backend/internal/api/dist/index.html
 backend/internal/api/placeholder_dist/

@@ -1,0 +1,57 @@
+version: 2
+
+# Grouped weekly PRs rather than one per dependency — this stack has few
+# direct deps, so ungrouped updates would be mostly noise. CI (ci.yml) gates
+# every one of these, which is what makes them safe to merge on sight.
+updates:
+  - package-ecosystem: gomod
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      go-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # MapLibre majors change map rendering behaviour and need a visual pass
+      # over Map.tsx — see docs/TECH_STACK_UPGRADE_PLAN.md. Minor/patch still
+      # flow through the group above.
+      - dependency-name: maplibre-gl
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
