@@ -134,21 +134,38 @@ Dependency updates arrive as weekly grouped Dependabot PRs
 (`.github/dependabot.yml`). MapLibre majors are deliberately excluded; see
 `docs/TECH_STACK_UPGRADE_PLAN.md`.
 
-### Verifying map layers
+### Verifying the map
 
-MapLibre expressions are validated at runtime in a browser, not by `tsc` — so
-neither the build nor the tests can tell you a layer was rejected. Because most
-layers anchor to `trams-circles` via `beforeId`, one bad expression silently
-takes the stops, route path and journey overlay with it (this is what happened
-in v0.44.7). **After any change to layer specs in `Map.tsx`, run:**
+Nothing about the map is checked by `tsc` or the unit tests. There are two
+separate failure modes and a script for each — **run both**; passing one proves
+nothing about the other.
 
 ```bash
 cd frontend && npm run build && cd ..
 npx playwright@latest install chromium    # once
-node scripts/verify-map-layers.mjs        # exits non-zero on a rejected layer
+npm i --no-save playwright                # from the repo root, once per checkout
+
+node scripts/verify-map-layers.mjs        # 1. are the layer specs valid?
+DIGITRANSIT_API_KEY=... node scripts/verify-map-renders.mjs   # 2. does it draw?
 ```
 
 Playwright is intentionally not a devDependency, to keep `npm install` lean.
+
+**1. Layer specs** (`verify-map-layers.mjs`) — MapLibre validates expressions at
+runtime in a browser. Because most layers anchor to `trams-circles` via
+`beforeId`, one bad expression silently takes the stops, route path and journey
+overlay with it (v0.44.7). This script stubs every external asset, so it is
+purely a spec check.
+
+**2. Actual rendering** (`verify-map-renders.mjs`) — hits the real Digitransit
+basemap with a real subscription key, then asserts vector tiles came back and
+`isStyleLoaded()` is true. This exists because v0.46.0 passed the spec check and
+still shipped a completely blank map: the stubs meant no tile was ever parsed,
+so nothing downstream of the worker was exercised. "The specs are valid" and
+"pixels appear" are different claims and need different checks.
+
+Get the key from the deploy host's `.env` (see memory `oracle-host-multi-app-deploy`).
+This check is not in CI — it needs a real key as a secret.
 
 ## Conventions
 
