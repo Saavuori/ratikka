@@ -490,6 +490,7 @@ function App() {
         onSelectBikeStation={handleSelectBikeStation}
         lineFilters={selectedLines}
         routeGeometries={routeGeometries}
+        selectedLine={selectedTram?.desi || null}
         mapTheme={mapTheme}
         is3D={is3D}
         isFollowing={isFollowing}

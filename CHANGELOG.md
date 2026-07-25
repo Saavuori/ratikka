@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.47.2] - 2026-07-25
+
+### Fixed
+- **Overlapping route paths no longer blend into one another.** Most of the tram network shares track — a dozen lines run down the same few streets — so highlighting several lines stacked their polylines pixel-on-pixel at 75% opacity: the colours mixed into a muddy third colour and only the last-drawn line was actually visible. Each highlighted line now gets a stable offset slot and is drawn with a perpendicular `line-offset`, so overlapping routes fan out into parallel ribbons instead of covering each other, with a themed casing under each one to keep neighbouring colours from reading as a single wide band. Slots are numerically ordered and depend only on the set of highlighted lines, so routes never shuffle on a redraw.
+- **Clicking a tram now actually picks its route out of the network.** The selected vehicle's line was drawn exactly like every other highlighted route, on a map that was simultaneously drawing the whole colour-tinted background network underneath it. It now keeps slot 0 — staying on the true geometry while the others are pushed aside — and is drawn wider, opaque and sorted on top, while the other highlighted routes drop to 40% and the background network fades to 30% for as long as something is selected.
+
+### Added
+- **`lib/routeSlots.ts` + tests** — the slot assignment is a small pure function, so the centring, the shift that puts the selected line on the true geometry, numeric ordering ("2" before "10") and stability across redraws are covered by unit tests rather than only being visible on the map.
+
+---
+
 ## [v0.47.1] - 2026-07-25
 
 ### Changed

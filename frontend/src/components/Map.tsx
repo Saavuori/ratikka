@@ -16,6 +16,7 @@ import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint 
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
 import { getRouteColor, routeColorMatchExpression, ROUTE_COLORS, TRAM_GREEN } from '../lib/routeColors';
+import { assignRouteSlots } from '../lib/routeSlots';
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection } from '../types';
 
@@ -26,6 +27,47 @@ maplibregl.setWorkerUrl(maplibreWorkerUrl);
 // (jumping/back-tracking) paths. Disabled until the matching is made robust. The
 // next-stop signpost highlight itself is unaffected and remains enabled.
 const HIGHLIGHT_NEXT_STOP_ROUTE = false;
+
+// Paint expressions shared by the highlighted route path and its casing. All
+// three are zoom-and-property expressions: the zoom stops keep the ribbons
+// readable from the whole-city view down to street level, while the inner
+// `case`/`*` reads the per-feature slot written by `drawRouteGeometries`.
+//
+// The offset spacing is deliberately a touch wider than the line width at every
+// zoom, so parallel routes stay separated by a sliver of map instead of merging
+// back into one thick band.
+const routeLineWidth = (selected: number, other: number): maplibregl.ExpressionSpecification =>
+  ['case', ['get', 'selected'], selected, other];
+
+const ROUTE_LINE_WIDTH: maplibregl.DataDrivenPropertyValueSpecification<number> = [
+  'interpolate', ['linear'], ['zoom'],
+  10, routeLineWidth(3.5, 2),
+  13, routeLineWidth(5.5, 3.2),
+  16, routeLineWidth(8, 4.5),
+];
+
+const ROUTE_CASING_WIDTH: maplibregl.DataDrivenPropertyValueSpecification<number> = [
+  'interpolate', ['linear'], ['zoom'],
+  10, routeLineWidth(5.5, 3.6),
+  13, routeLineWidth(8, 5),
+  16, routeLineWidth(11, 6.8),
+];
+
+const ROUTE_LINE_OFFSET: maplibregl.DataDrivenPropertyValueSpecification<number> = [
+  'interpolate', ['linear'], ['zoom'],
+  10, ['*', ['get', 'offsetIndex'], 2.5],
+  13, ['*', ['get', 'offsetIndex'], 4.5],
+  16, ['*', ['get', 'offsetIndex'], 7],
+];
+
+// Non-selected routes fade back so the clicked vehicle's line reads first.
+const ROUTE_LINE_OPACITY: maplibregl.DataDrivenPropertyValueSpecification<number> =
+  ['case', ['get', 'dim'], 0.4, 0.95];
+
+// The selected line is drawn last within the layer, so it wins where the
+// ribbons still cross.
+const ROUTE_LINE_SORT_KEY: maplibregl.DataDrivenPropertyValueSpecification<number> =
+  ['case', ['get', 'selected'], 2, 1];
 
 interface MapProps {
   trams: Record<string, VehiclePosition>;
@@ -48,6 +90,9 @@ interface MapProps {
   onSelectBikeStation: (station: { id: string; name: string } | null) => void;
   lineFilters: string[];
   routeGeometries: Record<string, { geometries: string[]; color?: string; stops?: string[] }>;
+  // Line number (`desi`) of the currently selected vehicle, if any. Its route
+  // path is drawn emphasised while every other highlighted route is dimmed.
+  selectedLine?: string | null;
   mapTheme: 'light' | 'dark';
   is3D: boolean;
   isFollowing: boolean;
@@ -79,6 +124,7 @@ export const Map: React.FC<MapProps> = ({
   onSelectBikeStation,
   lineFilters,
   routeGeometries,
+  selectedLine = null,
   mapTheme,
   is3D,
   isFollowing,
@@ -121,6 +167,7 @@ export const Map: React.FC<MapProps> = ({
   const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing, onMapBearingChange });
   const routeGeometriesRef = useRef<Record<string, { geometries: string[]; color?: string; stops?: string[] }>>(routeGeometries);
   const selectedTramIdRef = useRef<string | null>(selectedTramId);
+  const selectedLineRef = useRef<string | null>(selectedLine);
   const selectedStopIdRef = useRef<string | null>(selectedStopId);
   const selectedBikeStationIdRef = useRef<string | null>(selectedBikeStationId);
   const lineFiltersRef = useRef<string[]>(lineFilters);
@@ -160,6 +207,10 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     selectedTramIdRef.current = selectedTramId;
   }, [selectedTramId]);
+
+  useEffect(() => {
+    selectedLineRef.current = selectedLine;
+  }, [selectedLine]);
 
   useEffect(() => {
     selectedStopIdRef.current = selectedStopId;
@@ -313,8 +364,11 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
-    // Keep the network beneath the highlighted route path and the vehicles.
-    const beforeId = map.getLayer('route-lines-layer')
+    // Keep the network beneath the highlighted route path (casing included, or
+    // the network would draw over it) and the vehicles.
+    const beforeId = map.getLayer('route-lines-casing')
+      ? 'route-lines-casing'
+      : map.getLayer('route-lines-layer')
       ? 'route-lines-layer'
       : map.getLayer('trams-circles')
       ? 'trams-circles'
@@ -347,6 +401,20 @@ export const Map: React.FC<MapProps> = ({
     setColor('route_tram_inner', tramColor);
     setColor('route_lrail', lrailColor);
     setColor('route_lrail_inner', lrailColor);
+  };
+
+  // Fade the background route network back while a vehicle is selected. With no
+  // filter active the network draws every tram and bus line in its own colour,
+  // which is exactly the clutter the highlighted route has to be picked out of —
+  // on a shared street the selected line was competing with a dozen others in
+  // similar hues. Restored to full strength as soon as nothing is selected.
+  const applyRouteNetworkEmphasis = (map: maplibregl.Map, selected: string | null) => {
+    const opacity = selected ? 0.3 : 1;
+    [...tramRouteLayers, ...busRouteLayers].forEach((layerId) => {
+      if (map.getLayer(layerId)) {
+        map.setPaintProperty(layerId, 'line-opacity', opacity);
+      }
+    });
   };
 
   const updateRouteVisibility = (
@@ -448,16 +516,37 @@ export const Map: React.FC<MapProps> = ({
     }
   };
 
-  // Helper to draw route geometries on the map
-  const drawRouteGeometries = (map: maplibregl.Map, geometries: Record<string, { geometries: string[]; color?: string }>) => {
+  // Helper to draw route geometries on the map.
+  //
+  // Overlapping lines are fanned out into parallel ribbons via a per-feature
+  // offset slot (see lib/routeSlots) instead of being stacked pixel-on-pixel,
+  // where their colours used to blend into a muddy third colour. The selected
+  // vehicle's line keeps slot 0 — it stays on the true geometry while the others
+  // are pushed aside — and is drawn wider, opaque and on top, with the rest
+  // dimmed.
+  const drawRouteGeometries = (
+    map: maplibregl.Map,
+    geometries: Record<string, { geometries: string[]; color?: string }>,
+    selectedLine: string | null,
+  ) => {
     const source = map.getSource('route-lines') as maplibregl.GeoJSONSource;
     if (!source) return;
 
-    const features: { type: 'Feature'; geometry: { type: 'LineString'; coordinates: [number, number][] }; properties: { line: string; color: string } }[] = [];
-    Object.entries(geometries).forEach(([line, data]) => {
+    const lines = Object.keys(geometries);
+    const slots = assignRouteSlots(lines, selectedLine);
+    const hasSelection = !!selectedLine && lines.includes(selectedLine);
+
+    const features: {
+      type: 'Feature';
+      geometry: { type: 'LineString'; coordinates: [number, number][] };
+      properties: { line: string; color: string; offsetIndex: number; selected: boolean; dim: boolean };
+    }[] = [];
+    lines.forEach((line) => {
+      const data = geometries[line];
       // Colour the highlighted route path by our per-line palette rather than
       // HSL's mode green (which is identical for every tram line).
       const colorHex = getRouteColor(line);
+      const selected = line === selectedLine;
 
       data.geometries.forEach((poly) => {
         const coords = decodePolyline(poly);
@@ -470,6 +559,9 @@ export const Map: React.FC<MapProps> = ({
           properties: {
             line: line,
             color: colorHex,
+            offsetIndex: slots[line],
+            selected,
+            dim: hasSelection && !selected,
           },
         });
       });
@@ -1196,6 +1288,30 @@ export const Map: React.FC<MapProps> = ({
     }
 
     // 8. Add Route Lines Layer (Rendered before trams-circles so it is underneath)
+    //
+    //    Two layers: a casing underneath and the coloured line on top. The
+    //    casing separates neighbouring ribbons where several lines share a
+    //    street — without it two adjacent route colours read as one wide band —
+    //    and keeps a pale route legible against the basemap in either theme.
+    if (!map.getLayer('route-lines-casing')) {
+      map.addLayer({
+        id: 'route-lines-casing',
+        type: 'line',
+        source: 'route-lines',
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round',
+          'line-sort-key': ROUTE_LINE_SORT_KEY,
+        },
+        paint: {
+          'line-color': mapThemeRef.current === 'dark' ? '#0b1220' : '#ffffff',
+          'line-width': ROUTE_CASING_WIDTH,
+          'line-offset': ROUTE_LINE_OFFSET,
+          'line-opacity': ['case', ['get', 'dim'], 0.3, 0.85],
+        },
+      }, 'trams-circles');
+    }
+
     if (!map.getLayer('route-lines-layer')) {
       map.addLayer({
         id: 'route-lines-layer',
@@ -1204,11 +1320,15 @@ export const Map: React.FC<MapProps> = ({
         layout: {
           'line-join': 'round',
           'line-cap': 'round',
+          'line-sort-key': ROUTE_LINE_SORT_KEY,
         },
         paint: {
           'line-color': ['coalesce', ['get', 'color'], '#10b981'],
-          'line-width': 4.5,
-          'line-opacity': 0.75,
+          'line-width': ROUTE_LINE_WIDTH,
+          // Fan overlapping routes out into parallel ribbons (see
+          // drawRouteGeometries) so their colours never blend.
+          'line-offset': ROUTE_LINE_OFFSET,
+          'line-opacity': ROUTE_LINE_OPACITY,
         },
       }, 'trams-circles');
     }
@@ -1222,6 +1342,9 @@ export const Map: React.FC<MapProps> = ({
     // Tint the tram/light-rail route network per line (palette on `routeIdParsed`)
     // so routes show their own colours instead of a single mode green.
     applyRouteNetworkColors(map);
+
+    // Dim that network while a vehicle is selected so its route path stands out.
+    applyRouteNetworkEmphasis(map, selectedLineRef.current);
 
     // 9. Add Tram Text Label Layer (on top of arrows/circles)
     if (!map.getLayer('trams-labels')) {
@@ -1736,7 +1859,7 @@ export const Map: React.FC<MapProps> = ({
     }
 
     // Draw route geometries now that style and layer are loaded
-    drawRouteGeometries(map, routeGeometriesRef.current);
+    drawRouteGeometries(map, routeGeometriesRef.current, selectedLineRef.current);
 
     // Restore any active journey after a style/theme change
     updateJourney(map, journeyLegsRef.current, journeyEndpointsRef.current, false);
@@ -2162,13 +2285,22 @@ export const Map: React.FC<MapProps> = ({
     }
   }, [selectedTramId, isFollowing]);
 
-  // Update route geometries on map
+  // Update route geometries on map. Redrawn on selection change too: which line
+  // is selected decides the offset slots, the widths and what gets dimmed.
   useEffect(() => {
     const map = mapRef.current;
     if (map && map.getStyle() && map.getSource('route-lines')) {
-      drawRouteGeometries(map, routeGeometries);
+      drawRouteGeometries(map, routeGeometries, selectedLine);
     }
-  }, [routeGeometries]);
+  }, [routeGeometries, selectedLine]);
+
+  // Fade the background route network while a vehicle is selected.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && map.getStyle()) {
+      applyRouteNetworkEmphasis(map, selectedLine);
+    }
+  }, [selectedLine]);
 
   // Update planned journey rendering. Fit the camera only when the journey
   // itself changes (not on unrelated re-renders) to avoid fighting the user.
