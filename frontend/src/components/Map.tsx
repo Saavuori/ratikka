@@ -16,7 +16,7 @@ import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint 
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
 import { getRouteColor, routeColorMatchExpression, ROUTE_COLORS, TRAM_GREEN } from '../lib/routeColors';
-import { assignRouteSlots } from '../lib/routeSlots';
+import { assignRouteSlots, canonicalizeDirection } from '../lib/routeSlots';
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection } from '../types';
 
@@ -55,9 +55,9 @@ const ROUTE_CASING_WIDTH: maplibregl.DataDrivenPropertyValueSpecification<number
 
 const ROUTE_LINE_OFFSET: maplibregl.DataDrivenPropertyValueSpecification<number> = [
   'interpolate', ['linear'], ['zoom'],
-  10, ['*', ['get', 'offsetIndex'], 2.5],
-  13, ['*', ['get', 'offsetIndex'], 4.5],
-  16, ['*', ['get', 'offsetIndex'], 7],
+  10, ['*', ['get', 'offsetIndex'], 3],
+  13, ['*', ['get', 'offsetIndex'], 6.5],
+  16, ['*', ['get', 'offsetIndex'], 10],
 ];
 
 // Non-selected routes fade back so the clicked vehicle's line reads first.
@@ -403,56 +403,57 @@ export const Map: React.FC<MapProps> = ({
     setColor('route_lrail_inner', lrailColor);
   };
 
-  // Fade the background route network back while a vehicle is selected. With no
-  // filter active the network draws every tram and bus line in its own colour,
-  // which is exactly the clutter the highlighted route has to be picked out of —
-  // on a shared street the selected line was competing with a dozen others in
-  // similar hues. Restored to full strength as soon as nothing is selected.
-  const applyRouteNetworkEmphasis = (map: maplibregl.Map, selected: string | null) => {
-    const opacity = selected ? 0.3 : 1;
-    [...tramRouteLayers, ...busRouteLayers].forEach((layerId) => {
-      if (map.getLayer(layerId)) {
-        map.setPaintProperty(layerId, 'line-opacity', opacity);
-      }
-    });
-  };
-
+  // The background network and the highlighted route paths must never draw the
+  // same line at once. They come from different sources — JORE vector tiles vs.
+  // the fetched pattern geometry — and only the highlighted path is offset into
+  // its own slot, so a line drawn by both appears twice: once on the street and
+  // once beside it, in the same palette colour. Which is why the network is the
+  // "nothing chosen" state only:
+  //
+  //   line filters active → hidden. The highlighted ribbons *are* those routes,
+  //     drawn better (per-line offset, casing, selection emphasis).
+  //   only a vehicle selected → drawn as context, minus that vehicle's line,
+  //     faded so the selected route reads first.
+  //   nothing selected → the whole network at full strength, as before.
   const updateRouteVisibility = (
     map: maplibregl.Map,
     trams: boolean,
     buses: boolean,
     lines: string[],
+    selectedLine: string | null,
   ) => {
+    const highlighted = lines.length > 0;
+    const context = !highlighted && !!selectedLine;
+
     const setVisible = (layerId: string, visible: boolean) => {
       if (map.getLayer(layerId)) {
         map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
       }
     };
-    // Narrow the background network to the selected lines. With no line filter
-    // the network is the "show all" state (each layer keeps its own mode/trunk
-    // filter); selecting one or more lines adds a `routeIdParsed` match — the
-    // JORE tiles' friendly line number, the same key as a vehicle's `desi` — so
-    // only those lines' routes are drawn instead of all-or-nothing.
+    // `routeIdParsed` is the JORE tiles' friendly line number — the same key as
+    // a vehicle's `desi` and our palette — so excluding the selected line is a
+    // plain negated match on it.
     const applyLineFilter = (layerId: string) => {
       if (!map.getLayer(layerId)) return;
       const base = routeLayerBaseFilters[layerId];
       if (!base) return;
-      if (lines.length === 0) {
-        map.setFilter(layerId, base);
-      } else {
+      if (context) {
         map.setFilter(layerId, [
           'all',
           base,
-          ['in', ['get', 'routeIdParsed'], ['literal', lines]],
+          ['!', ['in', ['get', 'routeIdParsed'], ['literal', [selectedLine]]]],
         ] as maplibregl.FilterSpecification);
+      } else {
+        map.setFilter(layerId, base);
       }
+      map.setPaintProperty(layerId, 'line-opacity', context ? 0.3 : 1);
     };
     tramRouteLayers.forEach((layerId) => {
-      setVisible(layerId, trams);
+      setVisible(layerId, trams && !highlighted);
       applyLineFilter(layerId);
     });
     busRouteLayers.forEach((layerId) => {
-      setVisible(layerId, buses);
+      setVisible(layerId, buses && !highlighted);
       applyLineFilter(layerId);
     });
     otherRouteLayers.forEach((layerId) => setVisible(layerId, false));
@@ -547,9 +548,19 @@ export const Map: React.FC<MapProps> = ({
       // HSL's mode green (which is identical for every tram line).
       const colorHex = getRouteColor(line);
       const selected = line === selectedLine;
+      // The API returns one polyline per pattern, so a route's two directions
+      // arrive as near-reverses. The backend dedupes on the raw string, which
+      // never matches a reverse — once canonicalised the exact pairs collapse,
+      // and drawing each only once keeps the translucent dimmed paths from
+      // compositing into a darker line than the rest.
+      const seen = new Set<string>();
 
       data.geometries.forEach((poly) => {
-        const coords = decodePolyline(poly);
+        const coords = canonicalizeDirection(decodePolyline(poly));
+        const key = `${coords.length}:${coords[0]?.join()}:${coords[coords.length - 1]?.join()}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+
         features.push({
           type: 'Feature',
           geometry: {
@@ -1343,9 +1354,6 @@ export const Map: React.FC<MapProps> = ({
     // so routes show their own colours instead of a single mode green.
     applyRouteNetworkColors(map);
 
-    // Dim that network while a vehicle is selected so its route path stands out.
-    applyRouteNetworkEmphasis(map, selectedLineRef.current);
-
     // 9. Add Tram Text Label Layer (on top of arrows/circles)
     if (!map.getLayer('trams-labels')) {
       map.addLayer({
@@ -1906,7 +1914,7 @@ export const Map: React.FC<MapProps> = ({
 
     // Apply active route visibility and 3D mode setting. With no line filter the
     // whole network shows; selecting lines narrows it to just those routes.
-    updateRouteVisibility(map, showTramsRef.current, showBusesRef.current, lineFiltersRef.current);
+    updateRouteVisibility(map, showTramsRef.current, showBusesRef.current, lineFiltersRef.current, selectedLineRef.current);
     update3DMode(map, is3DRef.current, mapThemeRef.current);
 
     // Hide white casing layers
@@ -2294,14 +2302,6 @@ export const Map: React.FC<MapProps> = ({
     }
   }, [routeGeometries, selectedLine]);
 
-  // Fade the background route network while a vehicle is selected.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (map && map.getStyle()) {
-      applyRouteNetworkEmphasis(map, selectedLine);
-    }
-  }, [selectedLine]);
-
   // Update planned journey rendering. Fit the camera only when the journey
   // itself changes (not on unrelated re-renders) to avoid fighting the user.
   useEffect(() => {
@@ -2335,9 +2335,9 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     const map = mapRef.current;
     if (map && map.getStyle()) {
-      updateRouteVisibility(map, showTrams, showBuses, lineFilters);
+      updateRouteVisibility(map, showTrams, showBuses, lineFilters, selectedLine);
     }
-  }, [lineFilters, showTrams, showBuses]);
+  }, [lineFilters, showTrams, showBuses, selectedLine]);
 
   // Dynamic Stop Route Filtering
   useEffect(() => {
