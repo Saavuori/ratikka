@@ -6,15 +6,20 @@ frontend/dist/
 .env.*.local
 
 # Go embed target. The real frontend build is copied in at image build time
-# (see Dockerfile), so the built assets stay untracked -- but the placeholder
-# index.html IS tracked, because `//go:embed all:dist` fails to compile when
-# the directory has no files at all. Without it `go build` and `go test` break
-# on a clean checkout.
+# (see Dockerfile), so the built assets stay untracked -- but .gitkeep IS
+# tracked, because `//go:embed all:dist` fails to compile when the directory
+# has no files at all. Without it `go build` and `go test` break on a clean
+# checkout. The `all:` prefix is what makes the embed pick up a dotfile.
+#
+# It must be .gitkeep and not a placeholder index.html: a local frontend build
+# copied into this directory would collide with a tracked index.html, clobber
+# it on checkout, and show up as a dirty file on every build. .gitkeep is a
+# name the build never produces.
 #
 # Note: the ignore above must not be a bare `dist/`. Git does not descend into
 # an excluded directory, so a blanket `dist/` makes the negation below dead.
 backend/internal/api/dist/*
-!backend/internal/api/dist/index.html
+!backend/internal/api/dist/.gitkeep
 backend/internal/api/placeholder_dist/
 /ratikka
 
