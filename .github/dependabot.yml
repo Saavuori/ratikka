@@ -42,8 +42,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Must stay "chore(deps)" -- docker-build.yml keys the automatic
+    # dependency release off that exact prefix. A generic "ci" prefix would
+    # make action bumps look like human commits and silently skip the release.
     commit-message:
-      prefix: "ci"
+      prefix: "chore(deps)"
     groups:
       actions:
         patterns:

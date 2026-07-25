@@ -31,35 +31,37 @@ jobs:
       # version and the changelog can never drift. To cut a release, bump the
       # heading in CHANGELOG.md; if the heading is unchanged (e.g. a docs-only
       # push) the tag already exists and we skip the build entirely.
+      #
+      # The one exception is dependency updates. Dependabot cannot write a
+      # changelog entry, so without the fallback below its merges would land on
+      # main and never ship — the build is skipped precisely because the heading
+      # did not move. When the only new commits since the current tag are
+      # dependency updates, we generate the entry, bump the patch, and release.
+      # Logic lives in scripts/derive-release.sh so it can be tested outside
+      # CI — see scripts/derive-release.test.sh. Release logic that silently
+      # ships nothing has bitten this repo before (v0.44.9).
       - name: Derive version from CHANGELOG
         id: changelog_version
-        run: |
-          VERSION=$(grep -m1 -oP '^##\s*\[\s*v?\K[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md || true)
-          if [ -z "$VERSION" ]; then
-            echo "::error::No version heading (## [vX.Y.Z]) found at the top of CHANGELOG.md"
-            exit 1
-          fi
-          TAG="v${VERSION}"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag ${TAG} already exists — CHANGELOG version unchanged, skipping release."
-            echo "released=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Creating release tag ${TAG} from CHANGELOG.md"
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git tag -a "$TAG" -m "Release ${TAG}"
-            git push origin "$TAG"
-            echo "released=true" >> "$GITHUB_OUTPUT"
-          fi
+        run: ./scripts/derive-release.sh
 
   build-and-push:
     needs: tag
     if: needs.tag.outputs.released == 'true'
     runs-on: ubuntu-latest
     steps:
+      # Check out the tag rather than the triggering SHA. On an automatic
+      # dependency release the tag points at the CHANGELOG-bump commit, which
+      # is one ahead of github.sha — so building github.sha would ship an image
+      # whose embedded version does not match the tag it is published under.
+      # For a normal release the tag is at github.sha and this is a no-op.
       - name: Checkout Code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.tag.outputs.new_tag }}
+
+      - name: Resolve tagged commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -92,11 +94,11 @@ jobs:
           tags: |
             ghcr.io/${{ steps.meta.outputs.repo_lower }}:latest
             ghcr.io/${{ steps.meta.outputs.repo_lower }}:${{ needs.tag.outputs.new_tag }}
-            ghcr.io/${{ steps.meta.outputs.repo_lower }}:${{ github.sha }}
+            ghcr.io/${{ steps.meta.outputs.repo_lower }}:${{ steps.commit.outputs.sha }}
           build-args: |
             VERSION=${{ needs.tag.outputs.new_tag }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
-            GIT_SHA=${{ github.sha }}
+            GIT_SHA=${{ steps.commit.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           

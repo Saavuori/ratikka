@@ -101,6 +101,20 @@ Commit messages still follow Conventional Commits (`feat:`, `fix:`, `docs:`,
 `chore:`, scopes allowed) — they are how the changelog gets written, they just
 no longer drive the version number.
 
+**The one exception is dependency updates.** Dependabot cannot write a
+changelog entry, so its merges would otherwise land on `main` and never ship —
+skipped precisely because the heading did not move. When *every* new non-merge
+commit since the current tag is prefixed `chore(deps)` or `chore(deps-dev)`,
+`scripts/derive-release.sh` generates the entry, bumps the **patch**, and
+releases. A single human commit in the batch disables this: the heading stays
+put and nothing ships until a human writes an entry, exactly as before. This is
+why `.github/dependabot.yml` must keep the `chore(deps)` commit prefix on every
+ecosystem — the release keys off that exact string.
+
+The decision logic is in `scripts/derive-release.sh` rather than inline YAML so
+it can be tested; `scripts/derive-release.test.sh` covers all four paths and
+runs in CI.
+
 ### CHANGELOG
 
 - `CHANGELOG.md` is maintained **by hand**. Add an entry under a new
