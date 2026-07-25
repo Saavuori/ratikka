@@ -62,6 +62,7 @@ npm install
 npm run dev      # Vite dev server; proxies /api and /api/v1/stream to 127.0.0.1:8080
 npm run build    # tsc -b && vite build
 npm run lint
+npm test         # vitest run
 ```
 Run the backend on :8080 first — the Vite dev server proxies API + WebSocket to it.
 
@@ -72,33 +73,52 @@ docker compose up --build   # override file builds the backend image locally
 
 ## Versioning & Release
 
-**Semantic versioning, driven by Conventional Commits, fully automated in CI.**
-Do **not** hand-edit version numbers or create tags manually.
+**`CHANGELOG.md` is the single source of truth for the version.** The release
+tag is whatever the top `## [vX.Y.Z]` heading says, so the deployed version and
+the changelog cannot drift apart. Do **not** create tags manually.
 
-- Commit messages must follow Conventional Commits: `feat:`, `fix:`, `docs:`,
-  `chore:`, etc. (scopes allowed, e.g. `fix(frontend): ...`).
-- On push to `main`, `.github/workflows/docker-build.yml` runs
-  `mathieudutour/github-tag-action`, which computes the next tag from the commits
-  since the last tag: `feat` → **minor**, `fix` → **patch**, `BREAKING CHANGE` (or `!`)
-  → **major**. Default bump is **patch**. It creates the `vX.Y.Z` git tag.
+**To cut a release: bump the heading in `CHANGELOG.md`.** That is the whole
+trigger. If the heading is unchanged, the tag already exists and
+`.github/workflows/docker-build.yml` skips the build entirely — so a merge to
+`main` that forgets the changelog bump ships nothing, silently. (This has
+bitten before: v0.44.9 had to be re-cut as v0.44.10 for exactly this reason.)
+
+- On push to `main`, `docker-build.yml` greps the first `## [vX.Y.Z]` heading
+  out of `CHANGELOG.md` and tags the commit `vX.Y.Z`. There is no automatic
+  bump computation — you choose the number by writing the heading.
+- Pick the number semantically: new feature → minor, bugfix → patch,
+  breaking change → major.
 - The same workflow then builds a multi-arch image (`linux/amd64`, `linux/arm64`)
   and pushes to `ghcr.io/saavuori/ratikka` tagged `latest`, `vX.Y.Z`, and the commit SHA.
   The build injects `VERSION` / `BUILD_DATE` / `GIT_SHA` via `-ldflags`, surfaced at
   `GET /api/v1/version` and in the frontend `VersionBadge`.
-- Watchtower on the host auto-pulls the new `latest` image (see `deploy.sh` /
-  `docker-compose.yml`), so a merge to `main` deploys itself.
+- An auto-update cron on the host pulls the new `latest` image (see `deploy.sh` /
+  `docker-compose.yml`), so a merge to `main` with a bumped changelog deploys itself.
 - Doc/infra-only changes are skipped (`paths-ignore` for `README.md`, `docs/**`,
   `monitoring/**`, `deploy.sh`, `.gitignore`) — they don't cut a release.
+
+Commit messages still follow Conventional Commits (`feat:`, `fix:`, `docs:`,
+`chore:`, scopes allowed) — they are how the changelog gets written, they just
+no longer drive the version number.
 
 ### CHANGELOG
 
 - `CHANGELOG.md` is maintained **by hand**. Add an entry under a new
-  `## [vX.Y.Z] - YYYY-MM-DD` heading with `### Added` / `### Fixed` sections.
-- **The version heading must match the tag CI will actually generate** — mismatches
-  have been fixed before (see the changelog itself). Match the bump to your commit
-  types before writing the heading.
+  `## [vX.Y.Z] - YYYY-MM-DD` heading with `### Added` / `### Fixed` /
+  `### Changed` sections.
 - Pushing a changed `CHANGELOG.md` to `main` triggers `deploy-pages.yml`, which
   compiles it via `scripts/build-changelog.js` and publishes to GitHub Pages.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every PR and on `main`: `go vet` + `go test ./...`
++ a `go mod tidy` check for the backend, `npm run lint`/`build`/`test` for the
+frontend, and an amd64-only Docker build. A merge to `main` deploys itself, so
+this is the gate — keep it green.
+
+Dependency updates arrive as weekly grouped Dependabot PRs
+(`.github/dependabot.yml`). MapLibre majors are deliberately excluded; see
+`docs/TECH_STACK_UPGRADE_PLAN.md`.
 
 ## Conventions
 
