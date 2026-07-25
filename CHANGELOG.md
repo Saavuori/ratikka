@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.46.1] - 2026-07-25
+
+### Fixed
+- **Map was not visible at all in production**: reverts the MapLibre GL 5 → 6 upgrade shipped in v0.46.0. v6 was verified against the layer specs — every layer and source is accepted, and `public/style.json` validates clean against style-spec 26.2.1 — but that check ran with the basemap tiles, sprites and glyphs stubbed, so it only ever proved the specs were *valid*, never that the map *renders* against the real Digitransit basemap. It does not. Pinned back to `maplibre-gl ^5.24.0` with the default import restored, so the map works while v6 is re-attempted properly.
+
+### Changed
+- **Dependency merges now release themselves**: the release tag comes from the top `CHANGELOG.md` heading and Dependabot cannot write an entry, so its merges landed on `main` and shipped nothing — visible right now as five dependency merges sitting on `main` with no tag past v0.46.0. When every new non-merge commit since the current tag is `chore(deps)`/`chore(deps-dev)`, `scripts/derive-release.sh` now generates the entry, bumps the patch and releases; a single human commit in the batch disables it. Logic lives in a script so it can be tested (`scripts/derive-release.test.sh`, 7 assertions, runs in CI).
+- **Embed placeholder is `.gitkeep`, not `index.html`**: the v0.46.0 placeholder sat at the exact path a frontend build writes its entry point to. Since that path was previously gitignored, git treated a real local build as expendable and silently overwrote it on checkout, leaving a stub page. Docker was unaffected (the image build copies the real `dist/` over it), but local checkouts were not.
+
+---
+
 ## [v0.46.0] - 2026-07-25
 
 ### Added

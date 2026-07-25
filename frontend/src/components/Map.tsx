@@ -1,6 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-// MapLibre GL 6 is ESM-only and dropped the default export.
-import * as maplibregl from 'maplibre-gl';
+import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Feature, FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
