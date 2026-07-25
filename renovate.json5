@@ -1,0 +1,89 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: ['config:recommended'],
+  timezone: 'Europe/Helsinki',
+
+  // JSON5 rather than renovate.json so this file can carry comments: Renovate
+  // rejects unknown keys, so `_comment` fields would raise config warnings.
+
+  // No `schedule` here on purpose — the cron in .github/workflows/renovate.yml is
+  // the single source of truth for when Renovate runs. Two schedules would have to
+  // intersect for anything to happen, which is a confusing way to get silence.
+
+  labels: ['dependencies'],
+  semanticCommits: 'enabled',
+  semanticCommitType: 'chore',
+  semanticCommitScope: 'deps',
+
+  // Every manager keeps the `chore(deps)` prefix — including GitHub Actions.
+  // scripts/derive-release.sh greps for exactly `^chore\(deps(-dev)?\):` when it
+  // decides whether a batch is dependency-only, and that fallback is what still
+  // ships a merge whose changelog entry never got written. A prettier `ci(deps)`
+  // for action bumps would make them look like human commits and silently
+  // disable it.
+
+  prConcurrentLimit: 5,
+
+  // Renovate normally reports its own progress as commit statuses (e.g. "waiting
+  // for minimumReleaseAge"). Our GitHub App has no `statuses: write`, and a 403
+  // there isn't a soft failure — Renovate reads it as the repo changing underneath
+  // it and aborts the whole run *after* pushing the branch but *before* opening the
+  // PR. Turning the statuses off is cheaper than widening the app's permissions:
+  // they're informational, and the PR body says the same thing.
+  statusCheckNames: {
+    artifactError: null,
+    configValidation: null,
+    mergeConfidence: null,
+    minimumReleaseAge: null,
+  },
+
+  // Don't propose a release until it has survived three days in the wild, so a
+  // version that gets yanked shortly after publishing never reaches a PR.
+  minimumReleaseAge: '3 days',
+
+  // Runs once per branch after all updates are applied and before the commit, so
+  // the entry lands inside Renovate's own commit rather than being generated on
+  // `main` after the merge. That is the whole point of the switch from Dependabot:
+  // CHANGELOG.md is this repo's release trigger, so writing the entry in the PR
+  // means a dependency merge releases itself through the ordinary path, and the
+  // text is reviewable before it ships instead of after.
+  //
+  // Because the edit is Renovate's own commit and not a foreign push, Renovate
+  // keeps rebasing the branch and regenerates the entry — so the predicted version
+  // corrects itself if another PR merges first and takes that number.
+  //
+  // `commands` must also match RENOVATE_ALLOWED_COMMANDS in the workflow; that
+  // allow-list, not this block, is what actually permits the command to run.
+  postUpgradeTasks: {
+    commands: ['node scripts/changelog-entry.js'],
+    fileFilters: ['CHANGELOG.md'],
+    executionMode: 'branch',
+  },
+
+  packageRules: [
+    // One PR a week across every manager — Go, npm, Actions, Docker, compose.
+    // One PR means one predicted version heading, so siblings can't claim the
+    // same one. Majors stay separate (Renovate splits them by default): those
+    // need a real look.
+    {
+      matchUpdateTypes: ['minor', 'patch', 'digest'],
+      groupName: 'all non-major dependencies',
+      groupSlug: 'all-minor-patch',
+    },
+    // MapLibre majors change map rendering behaviour and need both map checks
+    // run by hand (see CLAUDE.md, "Verifying the map") — v0.46.0 shipped a
+    // completely blank map through a green CI. Minor/patch still flow through
+    // the group above.
+    {
+      matchPackageNames: ['maplibre-gl'],
+      matchUpdateTypes: ['major'],
+      enabled: false,
+    },
+    // Our own image, pinned to :latest by design — the host's update.sh cron is
+    // what pulls it.
+    {
+      matchPackageNames: ['ghcr.io/saavuori/ratikka'],
+      enabled: false,
+    },
+  ],
+}

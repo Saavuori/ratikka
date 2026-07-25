@@ -210,3 +210,19 @@ curl -sSL -O https://raw.githubusercontent.com/Saavuori/ratikka/main/deploy.sh &
 ```
 
 *(The script configures unprivileged port binding, sets the firewall, installs Podman, downloads `docker-compose.yml`, `Caddyfile`, and `config.alloy` from the repository, prompts for API/monitoring keys, and starts the container stack. Images are refreshed by an `update.sh` cron job every 5 minutes rather than Watchtower, which is incompatible with rootless Podman.)*
+
+## 🔄 Dependency updates
+
+Renovate opens one grouped pull request every Monday morning covering every place the repo pins a version — `backend/go.mod`, `frontend/package.json`, the GitHub Actions in `.github/workflows/`, the `Dockerfile` build and runtime stages, and the images in `docker-compose.yml`. Major updates come as their own PR; MapLibre majors are disabled entirely, because they need both map checks run by hand (see `CLAUDE.md`). Config lives in [`renovate.json5`](renovate.json5); the schedule is the cron in [`.github/workflows/renovate.yml`](.github/workflows/renovate.yml).
+
+Each PR writes its own `CHANGELOG.md` entry: Renovate runs [`scripts/changelog-entry.js`](scripts/changelog-entry.js) as a post-upgrade task, which reads the pending diff and lists what moved. Since the top changelog heading *is* the release tag, that entry is what makes a dependency merge ship. The text is factual only — expand it by hand when a bump actually matters.
+
+### Required setup
+
+The workflow runs as a **GitHub App**, and needs two repository secrets: `RENOVATE_APP_ID` and `RENOVATE_APP_PRIVATE_KEY`. The app needs `contents: write`, `pull-requests: write` and `workflows: write` on this repository, and has to be installed on it. The workflow mints a short-lived installation token per run, so nothing long-lived is stored.
+
+It **cannot** run as `GITHUB_TOKEN`: pull requests opened with the built-in token don't trigger `pull_request` workflows, so `ci.yml` would never run on a dependency PR. CI is the only thing that makes these safe to merge on sight, and a merge to `main` deploys itself. App-opened PRs do trigger it. (A classic PAT with `repo` scope works too, but then the token is long-lived and commits are attributed to a human.)
+
+Because an installation token can't call `/user`, Renovate can't infer its own commit identity — the workflow resolves the app's `[bot]` user and passes it as `RENOVATE_GIT_AUTHOR` / `RENOVATE_USERNAME`.
+
+Renovate has to be **self-hosted** from the scheduled workflow rather than run as the Mend-hosted app, because generating the changelog entry means running a command and the hosted app doesn't permit that. Until both secrets are set, the workflow fails with an explicit message rather than running to a silent no-op — no dependency PRs will open at all.

@@ -101,25 +101,38 @@ Commit messages still follow Conventional Commits (`feat:`, `fix:`, `docs:`,
 `chore:`, scopes allowed) — they are how the changelog gets written, they just
 no longer drive the version number.
 
-**The one exception is dependency updates.** Dependabot cannot write a
-changelog entry, so its merges would otherwise land on `main` and never ship —
-skipped precisely because the heading did not move. When *every* new non-merge
-commit since the current tag is prefixed `chore(deps)` or `chore(deps-dev)`,
-`scripts/derive-release.sh` generates the entry, bumps the **patch**, and
-releases. A single human commit in the batch disables this: the heading stays
-put and nothing ships until a human writes an entry, exactly as before. This is
-why `.github/dependabot.yml` must keep the `chore(deps)` commit prefix on every
-ecosystem — the release keys off that exact string.
+**Dependency updates write their own entry.** Renovate runs
+`scripts/changelog-entry.js` as a post-upgrade task, so the entry — and
+therefore the bumped heading — is part of Renovate's own commit on the branch.
+A dependency PR then releases itself through the ordinary path above, and the
+text is reviewable before it ships rather than after. The version is a
+prediction (base heading, patch + 1); Renovate regenerates it on every rebase,
+so it corrects itself if another PR merges first and takes that number.
 
-The decision logic is in `scripts/derive-release.sh` rather than inline YAML so
-it can be tested; `scripts/derive-release.test.sh` covers all four paths and
-runs in CI.
+**The fallback in `scripts/derive-release.sh` is now a safety net, not the
+mechanism.** If a dependency branch reaches `main` with the heading unmoved —
+the post-upgrade task failed, or the bot was swapped out — then when *every*
+new non-merge commit since the current tag is prefixed `chore(deps)` or
+`chore(deps-dev)`, it generates the entry, bumps the **patch**, and releases. A
+single human commit in the batch disables it: the heading stays put and nothing
+ships until a human writes an entry. This is why `renovate.json5` must keep the
+`chore(deps)` commit prefix on **every** manager, GitHub Actions included — the
+fallback keys off that exact string, and a prettier `ci(deps)` would silently
+disable it.
+
+Both scripts are release-critical, so both are tested outside CI's YAML and run
+in the `release-logic` job: `scripts/derive-release.test.sh` covers the four
+release-decision paths, `scripts/changelog-entry.test.sh` covers what the
+generated entry says and the no-op cases.
 
 ### CHANGELOG
 
 - `CHANGELOG.md` is maintained **by hand**. Add an entry under a new
   `## [vX.Y.Z] - YYYY-MM-DD` heading with `### Added` / `### Fixed` /
-  `### Changed` sections.
+  `### Changed` sections, separated from the entry below it by `---`.
+- The sole exception is dependency PRs, where Renovate writes the entry. That
+  text is factual only — what moved, between which versions — so expand it by
+  hand when a bump actually matters.
 - Pushing a changed `CHANGELOG.md` to `main` triggers `deploy-pages.yml`, which
   compiles it via `scripts/build-changelog.js` and publishes to GitHub Pages.
 
@@ -130,9 +143,18 @@ runs in CI.
 frontend, and an amd64-only Docker build. A merge to `main` deploys itself, so
 this is the gate — keep it green.
 
-Dependency updates arrive as weekly grouped Dependabot PRs
-(`.github/dependabot.yml`). MapLibre majors are deliberately excluded; see
-`docs/TECH_STACK_UPGRADE_PLAN.md`.
+Dependency updates arrive as **one** grouped Renovate PR every Monday covering
+every pinned surface — `backend/go.mod`, `frontend/package.json`, the GitHub
+Actions, the `Dockerfile` stages and the `docker-compose.yml` images. Config is
+`renovate.json5`; the schedule is the cron in `.github/workflows/renovate.yml`.
+Majors come as their own PR, and MapLibre majors are disabled outright — v0.46.0
+shipped a blank map through a green CI, so those need both map checks run by
+hand. Adding a new kind of pinned version means adding a pattern to `SOURCES` in
+`scripts/changelog-entry.js`, or its bump lands in the PR with no changelog line.
+
+Renovate is self-hosted (the Mend-hosted app won't run post-upgrade commands)
+and authenticates as a GitHub App — see README, "Dependency updates", for the
+two secrets it needs and why `GITHUB_TOKEN` cannot be used.
 
 ### Verifying the map
 
