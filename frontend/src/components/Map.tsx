@@ -16,7 +16,8 @@ import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint 
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
 import { getRouteColor, routeColorMatchExpression, ROUTE_COLORS, TRAM_GREEN } from '../lib/routeColors';
-import { assignRouteSlots, canonicalizeDirection, dedupeOverlappingPaths } from '../lib/routeSlots';
+import { assignCorridorSlots, canonicalizeDirection, dedupeOverlappingPaths } from '../lib/routeSlots';
+import type { RoutePath } from '../lib/routeSlots';
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection } from '../types';
 
@@ -407,23 +408,32 @@ export const Map: React.FC<MapProps> = ({
   // same line at once. They come from different sources — JORE vector tiles vs.
   // the fetched pattern geometry — and only the highlighted path is offset into
   // its own slot, so a line drawn by both appears twice: once on the street and
-  // once beside it, in the same palette colour. Which is why the network is the
-  // "nothing chosen" state only:
+  // once beside it, in the same palette colour.
+  //
+  // `ribbonLines` is what the fetched geometry covers, which is every tram line
+  // running — "Show All" highlights them all rather than falling back to the
+  // flat mode-coloured tiles, so the map looks the same whether you picked no
+  // lines or all of them. The tram tiles are therefore hidden whenever any
+  // ribbon is drawn. Buses have no pattern geometry to draw from (the route
+  // endpoint is tram-only), so the bus network stays exactly as it was: shown
+  // until the user narrows to specific lines.
   //
   //   line filters active → hidden. The highlighted ribbons *are* those routes,
   //     drawn better (per-line offset, casing, selection emphasis).
-  //   only a vehicle selected → drawn as context, minus that vehicle's line,
-  //     faded so the selected route reads first.
-  //   nothing selected → the whole network at full strength, as before.
+  //   only a vehicle selected → buses drawn as context, minus that vehicle's
+  //     line, faded so the selected route reads first.
+  //   nothing selected → trams as ribbons, the bus network at full strength.
   const updateRouteVisibility = (
     map: maplibregl.Map,
     trams: boolean,
     buses: boolean,
     lines: string[],
     selectedLine: string | null,
+    ribbonLines: string[] = [],
   ) => {
     const highlighted = lines.length > 0;
     const context = !highlighted && !!selectedLine;
+    const ribboned = ribbonLines.length > 0;
 
     const setVisible = (layerId: string, visible: boolean) => {
       if (map.getLayer(layerId)) {
@@ -449,7 +459,7 @@ export const Map: React.FC<MapProps> = ({
       map.setPaintProperty(layerId, 'line-opacity', context ? 0.3 : 1);
     };
     tramRouteLayers.forEach((layerId) => {
-      setVisible(layerId, trams && !highlighted);
+      setVisible(layerId, trams && !highlighted && !ribboned);
       applyLineFilter(layerId);
     });
     busRouteLayers.forEach((layerId) => {
@@ -517,9 +527,25 @@ export const Map: React.FC<MapProps> = ({
     }
   };
 
+  // Decoding and de-duplicating a line's patterns is the expensive part of a
+  // redraw, and a redraw happens on every selection change — with the whole tram
+  // network highlighted that is tens of thousands of points. The result depends
+  // only on the polylines themselves, and those arrive as one array per fetch
+  // and are never mutated, so caching against the array's identity is enough.
+  const routePathsCacheRef = useRef<Record<string, { src: string[]; paths: [number, number][][] }>>({});
+  const routePathsOf = (line: string, src: string[]): [number, number][][] => {
+    const cached = routePathsCacheRef.current[line];
+    if (cached && cached.src === src) return cached.paths;
+    const paths = dedupeOverlappingPaths(
+      src.map((poly) => canonicalizeDirection(decodePolyline(poly)))
+    );
+    routePathsCacheRef.current[line] = { src, paths };
+    return paths;
+  };
+
   // Helper to draw route geometries on the map.
   //
-  // Overlapping lines are fanned out into parallel ribbons via a per-feature
+  // Lines sharing a street are fanned out into parallel ribbons via a per-feature
   // offset slot (see lib/routeSlots) instead of being stacked pixel-on-pixel,
   // where their colours used to blend into a muddy third colour. The selected
   // vehicle's line keeps slot 0 — it stays on the true geometry while the others
@@ -534,46 +560,36 @@ export const Map: React.FC<MapProps> = ({
     if (!source) return;
 
     const lines = Object.keys(geometries);
-    const slots = assignRouteSlots(lines, selectedLine);
     const hasSelection = !!selectedLine && lines.includes(selectedLine);
 
-    const features: {
-      type: 'Feature';
-      geometry: { type: 'LineString'; coordinates: [number, number][] };
-      properties: { line: string; color: string; offsetIndex: number; selected: boolean; dim: boolean };
-    }[] = [];
+    const paths: RoutePath[] = [];
     lines.forEach((line) => {
-      const data = geometries[line];
-      // Colour the highlighted route path by our per-line palette rather than
-      // HSL's mode green (which is identical for every tram line).
-      const colorHex = getRouteColor(line);
-      const selected = line === selectedLine;
       // The API returns one polyline per pattern — each direction, plus short
       // turns and branch variants — and the backend dedupes on the raw string,
-      // which no two of them ever share. They all take this line's slot, so any
-      // that retrace the same street have to be dropped rather than drawn on
-      // top of (or worse, beside) one another.
-      const paths = dedupeOverlappingPaths(
-        data.geometries.map((poly) => canonicalizeDirection(decodePolyline(poly)))
+      // which no two of them ever share. Every pattern of a line shares its
+      // slot, so any that retrace the same street have to be dropped rather
+      // than drawn on top of (or worse, beside) one another.
+      routePathsOf(line, geometries[line].geometries).forEach((coords) =>
+        paths.push({ line, coords })
       );
-
-      paths.forEach((coords) => {
-        features.push({
-          type: 'Feature',
-          geometry: {
-            type: 'LineString',
-            coordinates: coords,
-          },
-          properties: {
-            line: line,
-            color: colorHex,
-            offsetIndex: slots[line],
-            selected,
-            dim: hasSelection && !selected,
-          },
-        });
-      });
     });
+
+    const features = assignCorridorSlots(paths, selectedLine).map(({ line, coords, slot }) => ({
+      type: 'Feature' as const,
+      geometry: {
+        type: 'LineString' as const,
+        coordinates: coords,
+      },
+      properties: {
+        line,
+        // Colour the highlighted route path by our per-line palette rather than
+        // HSL's mode green (which is identical for every tram line).
+        color: getRouteColor(line),
+        offsetIndex: slot,
+        selected: line === selectedLine,
+        dim: hasSelection && line !== selectedLine,
+      },
+    }));
 
     source.setData({
       type: 'FeatureCollection',
@@ -1911,7 +1927,14 @@ export const Map: React.FC<MapProps> = ({
 
     // Apply active route visibility and 3D mode setting. With no line filter the
     // whole network shows; selecting lines narrows it to just those routes.
-    updateRouteVisibility(map, showTramsRef.current, showBusesRef.current, lineFiltersRef.current, selectedLineRef.current);
+    updateRouteVisibility(
+      map,
+      showTramsRef.current,
+      showBusesRef.current,
+      lineFiltersRef.current,
+      selectedLineRef.current,
+      Object.keys(routeGeometriesRef.current),
+    );
     update3DMode(map, is3DRef.current, mapThemeRef.current);
 
     // Hide white casing layers
@@ -2326,15 +2349,22 @@ export const Map: React.FC<MapProps> = ({
   }, [is3D, mapTheme]);
 
   // Dynamic Route visibility changes: the background network respects the
-  // per-mode Trams/Buses toggles and is narrowed to the selected lines — all
-  // routes when no line filter is active, just the selected lines' routes
-  // otherwise (drawn from the network itself, so it works for every mode).
+  // per-mode Trams/Buses toggles, gives way to the highlighted ribbons wherever
+  // those cover the same mode, and is hidden altogether once the user narrows to
+  // specific lines.
   useEffect(() => {
     const map = mapRef.current;
     if (map && map.getStyle()) {
-      updateRouteVisibility(map, showTrams, showBuses, lineFilters, selectedLine);
+      updateRouteVisibility(
+        map,
+        showTrams,
+        showBuses,
+        lineFilters,
+        selectedLine,
+        Object.keys(routeGeometries),
+      );
     }
-  }, [lineFilters, showTrams, showBuses, selectedLine]);
+  }, [lineFilters, showTrams, showBuses, selectedLine, routeGeometries]);
 
   // Dynamic Stop Route Filtering
   useEffect(() => {

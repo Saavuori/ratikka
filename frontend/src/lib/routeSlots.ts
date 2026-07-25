@@ -4,40 +4,19 @@
 // Helsinki tram lines share long stretches of track — most of the network runs
 // down Aleksanterinkatu — so highlighting several lines stacks their polylines
 // pixel-on-pixel. Drawn translucently they blend into a muddy third colour, and
-// only the last-drawn line is really visible. Each line therefore gets a slot
+// only the last-drawn line is really visible. Each path therefore gets a slot
 // here, which the map turns into a perpendicular `line-offset`: overlapping
 // routes fan out into parallel ribbons instead of covering one another.
 //
-// Slots are centred on the true geometry (…, -1, 0, 1, …) so the fan stays
-// balanced over the street it follows. When a vehicle is selected, the whole fan
-// shifts so *its* line sits at slot 0 — the selected route keeps the real
-// alignment and everything else is pushed aside.
-
-/**
- * Assign each line a centred offset slot, keyed by line short name.
- *
- * The ordering is numerically aware ("2" before "10") and depends only on the
- * set of lines, so a line's slot changes when the highlighted set changes and
- * never on a redraw — routes don't shuffle underneath the user.
- */
-export function assignRouteSlots(
-  lines: string[],
-  selectedLine: string | null = null
-): Record<string, number> {
-  const ordered = [...lines].sort((a, b) =>
-    a.localeCompare(b, undefined, { numeric: true })
-  );
-  const centre = (ordered.length - 1) / 2;
-  const selectedIdx = selectedLine ? ordered.indexOf(selectedLine) : -1;
-  // Shifting by the selected line's own centred slot lands it exactly on 0.
-  const shift = selectedIdx >= 0 ? selectedIdx - centre : 0;
-
-  const slots: Record<string, number> = {};
-  ordered.forEach((line, i) => {
-    slots[line] = i - centre - shift;
-  });
-  return slots;
-}
+// Slots are assigned per corridor rather than across the whole highlighted set:
+// a path takes the slot nearest 0 that no other line is already using on the
+// ground it covers. A route nobody shares a street with therefore stays on its
+// true geometry, and the fan over Aleksanterinkatu is only as wide as the number
+// of lines actually running down it — not as wide as the number highlighted.
+// (A global fan was fine for the three or four lines a filter usually selects,
+// but with the whole tram network shown it pushed routes tens of pixels off the
+// street they follow.) When a vehicle is selected its line is placed first, so
+// it claims slot 0 the whole way and everything else fans around it.
 
 /**
  * Flip a polyline so every path along the same corridor runs the same way.
@@ -79,13 +58,124 @@ export function canonicalizeDirection(
 // enough that the same street sampled by two patterns lands in the same cells.
 const CELL = 0.0004;
 
+// Vertices are as far apart as the street is straight, so two lines down the
+// same boulevard can sample points several cells apart and never meet on the
+// grid — they would then read as "different ground" and take the same slot.
+// Walking each segment in half-cell steps closes those gaps: coverage follows
+// the street rather than wherever the polyline happened to be sampled.
+const STEP = CELL / 2;
+
 const cellsOf = (coords: [number, number][]): Set<string> => {
   const cells = new Set<string>();
-  for (const [lng, lat] of coords) {
+  if (coords.length === 0) return cells;
+  const add = (lng: number, lat: number) =>
     cells.add(`${Math.round(lng / CELL)}:${Math.round(lat / CELL)}`);
+
+  add(coords[0][0], coords[0][1]);
+  for (let i = 1; i < coords.length; i++) {
+    const [lng0, lat0] = coords[i - 1];
+    const [lng1, lat1] = coords[i];
+    const steps = Math.max(
+      1,
+      Math.ceil(Math.max(Math.abs(lng1 - lng0), Math.abs(lat1 - lat0)) / STEP)
+    );
+    for (let s = 1; s <= steps; s++) {
+      add(lng0 + ((lng1 - lng0) * s) / steps, lat0 + ((lat1 - lat0) * s) / steps);
+    }
   }
   return cells;
 };
+
+const neighboursOf = (cell: string): string[] => {
+  const [cx, cy] = cell.split(':').map(Number);
+  const out: string[] = [];
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) out.push(`${cx + dx}:${cy + dy}`);
+  }
+  return out;
+};
+
+export interface RoutePath {
+  line: string;
+  coords: [number, number][];
+}
+
+export interface SlottedPath extends RoutePath {
+  slot: number;
+}
+
+// 0, 1, -1, 2, -2, … — the fan grows outwards from the true geometry, so the
+// first line down a street keeps the real alignment and the rest alternate
+// either side of it.
+const slotCandidate = (i: number): number =>
+  i === 0 ? 0 : i % 2 === 1 ? (i + 1) / 2 : -(i / 2);
+
+/**
+ * Give every path the offset slot it should be drawn in.
+ *
+ * Paths are placed one at a time, each claiming its slot on the grid cells it
+ * covers; a later path may take a slot only where no *other* line already holds
+ * it nearby. Two lines sharing a corridor therefore end up side by side, while a
+ * line alone on its street stays at 0.
+ *
+ * A line's own paths are allowed to share a slot: the branches of one route are
+ * drawn in one colour, so where they retrace the same trunk they should sit on
+ * top of each other rather than fan out into two ribbons of the same line.
+ *
+ * The order — selected line first, then numerically ("2" before "10"), longest
+ * path first within a line — depends only on the set of paths, so slots don't
+ * shuffle underneath the user on a redraw.
+ */
+export function assignCorridorSlots(
+  paths: RoutePath[],
+  selectedLine: string | null = null
+): SlottedPath[] {
+  const ordered = [...paths].sort((a, b) => {
+    if (a.line !== b.line) {
+      if (a.line === selectedLine) return -1;
+      if (b.line === selectedLine) return 1;
+      return a.line.localeCompare(b.line, undefined, { numeric: true });
+    }
+    return b.coords.length - a.coords.length;
+  });
+
+  // cell → slot → the line holding that slot there.
+  const claims = new Map<string, Map<number, string>>();
+
+  return ordered.map((path) => {
+    const cells = cellsOf(path.coords);
+    const taken = new Set<number>(); // held nearby by another line
+    const own = new Set<number>(); // held nearby by this same line
+    for (const cell of cells) {
+      for (const near of neighboursOf(cell)) {
+        const held = claims.get(near);
+        if (!held) continue;
+        for (const [slot, line] of held) {
+          (line === path.line ? own : taken).add(slot);
+        }
+      }
+    }
+
+    const pick = (): number => {
+      const reuse = [...own]
+        .sort((a, b) => Math.abs(a) - Math.abs(b))
+        .find((s) => !taken.has(s));
+      if (reuse !== undefined) return reuse;
+      for (let i = 0; ; i++) {
+        const candidate = slotCandidate(i);
+        if (!taken.has(candidate)) return candidate;
+      }
+    };
+    const slot = pick();
+
+    for (const cell of cells) {
+      const held = claims.get(cell) ?? new Map<number, string>();
+      held.set(slot, path.line);
+      claims.set(cell, held);
+    }
+    return { ...path, slot };
+  });
+}
 
 // A cell counts as covered if anything already kept passes through it *or* one
 // of its neighbours. Two directions of a bus route run down opposite sides of
@@ -94,15 +184,8 @@ const cellsOf = (coords: [number, number][]): Set<string> => {
 // keep the return leg and put it back on the far side of the fan. The
 // neighbourhood absorbs that; a branch has to leave the corridor entirely,
 // which is the distinction worth drawing at map scale anyway.
-const isCovered = (cell: string, covered: Set<string>): boolean => {
-  const [cx, cy] = cell.split(':').map(Number);
-  for (let dx = -1; dx <= 1; dx++) {
-    for (let dy = -1; dy <= 1; dy++) {
-      if (covered.has(`${cx + dx}:${cy + dy}`)) return true;
-    }
-  }
-  return false;
-};
+const isCovered = (cell: string, covered: Set<string>): boolean =>
+  neighboursOf(cell).some((near) => covered.has(near));
 
 /**
  * Drop the paths of one line that cover ground another of its paths already

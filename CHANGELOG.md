@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.48.0] - 2026-07-25
+
+### Changed
+- **"Show All" now draws the tram network the same way selecting every line does.** Route separation only ever applied to the fetched pattern geometry, so with no line filter the map fell back to the JORE vector tiles underneath: every tram line in the same mode green, stacked pixel-on-pixel wherever they share track. The default view now highlights every tram line that is running — the same set the filter panel offers as chips — so the ribbons are fanned, cased and coloured by our per-line palette whether you picked nothing or picked everything. The tram tiles step aside whenever a ribbon covers them. Buses are untouched and keep their tile network: `/api/v1/route/{n}` only serves trams, and there are far too many bus lines to fetch a pattern each.
+- **Offset slots are assigned per corridor instead of across the whole highlighted set.** A path now takes the slot nearest 0 that no other line is already using on the ground it covers, so a route nobody shares a street with stays on its true geometry and the fan over Aleksanterinkatu is only as wide as the number of lines actually running down it. The old global fan was fine for the three or four lines a filter usually selects, but with the whole network shown it would have pushed every line tens of pixels off the street it follows. A line's own branches may still share a slot — they are drawn in one colour, so where they retrace the same trunk they belong on top of each other rather than beside. Coverage is now sampled along each segment rather than at its vertices, so two lines down the same long straight street can't miss each other on the grid.
+
+---
+
 ## [v0.47.4] - 2026-07-25
 
 ### Fixed
