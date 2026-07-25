@@ -73,6 +73,9 @@ docker compose up --build   # override file builds the backend image locally
 
 ## Versioning & Release
 
+Full pipeline reference (all three workflows, the release decision table,
+the deploy path, and a runbook): `docs/CICD.md`. Summary below.
+
 **`CHANGELOG.md` is the single source of truth for the version.** The release
 tag is whatever the top `## [vX.Y.Z]` heading says, so the deployed version and
 the changelog cannot drift apart. Do **not** create tags manually.
