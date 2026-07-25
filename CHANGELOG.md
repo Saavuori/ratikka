@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.47.1] - 2026-07-25
+
+### Changed
+- **Dependency updates move from Dependabot to self-hosted Renovate, and now write their changelog entry in the PR instead of on `main` afterwards.** The release tag comes from the top `CHANGELOG.md` heading, and Dependabot cannot write one — so v0.46.1 added a fallback that generated the entry *after* the merge, committing it straight to `main` and tagging from there. That worked, but it put the only description of what shipped behind the merge, where nobody reviews it, and it required CI to push to `main`. Renovate runs `scripts/changelog-entry.js` as a post-upgrade task, before it commits: the entry lands inside Renovate's own commit, so the heading has already moved by the time the PR is opened and a dependency merge releases itself through the ordinary path. The predicted version corrects itself on rebase if another PR merges first and claims that number. `scripts/derive-release.sh` keeps its fallback as a safety net for a branch whose entry never got written — which is why every manager keeps the `chore(deps)` prefix, GitHub Actions included.
+- **One PR a week instead of up to four.** Dependabot grouped per ecosystem, so Go, npm, Actions and Docker arrived separately; Renovate groups every non-major update across all managers into a single PR, which also means a single predicted version heading that siblings cannot collide over. Majors still come on their own. Coverage picks up the `docker-compose.yml` images (Caddy, Redis, Alloy), which the Dependabot config never watched.
+
+### Added
+- **Updates wait three days before being proposed** (`minimumReleaseAge`). A version that gets yanked shortly after publishing never reaches a PR — Dependabot had no equivalent, so the only defence was noticing by hand.
+- **`scripts/changelog-entry.test.sh`** — 14 assertions over the generated entry: the predicted version, each of the five manifest kinds it parses, that a rerun replaces its own entry rather than stacking a copy, that a non-dependency edit leaves the file alone, and finally that `derive-release.sh` ships the heading it produced. This script runs inside Renovate, where a silent no-op is indistinguishable from "nothing to report", so the no-op paths are asserted rather than assumed. Runs in CI alongside the existing release-decision tests.
+
+---
+
 ## [v0.47.0] - 2026-07-25
 
 ### Changed

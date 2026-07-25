@@ -73,7 +73,7 @@ jobs:
         run: npm test
 
   release-logic:
-    name: Release logic (derive-release.sh)
+    name: Release logic (release + changelog scripts)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -88,8 +88,14 @@ jobs:
       # throwaway repos: heading bumped, nothing new, dependency-only batch,
       # and a mixed batch. A wrong answer here either ships nothing silently
       # or releases something a human meant to hold back.
-      - name: Test
+      - name: Release decision
         run: ./scripts/derive-release.test.sh
+
+      # The entry Renovate writes is what moves the heading, and the heading is
+      # the release. This script runs inside Renovate where a silent no-op looks
+      # exactly like "nothing to report", so the no-op cases are asserted too.
+      - name: Dependency changelog entry
+        run: ./scripts/changelog-entry.test.sh
 
   docker:
     name: Docker image builds
