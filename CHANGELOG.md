@@ -2,17 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.47.3] - 2026-07-25
+
+### Fixed
+- **A route no longer appears twice, once either side of its own street.** The fan-out shipped in v0.47.2 offset each highlighted line into its own slot — but `line-offset` is signed relative to a path's *direction of travel*, and `/api/v1/route/{n}` returns one polyline per pattern. A route's outbound and inbound patterns are near-reverses of each other, so they were pushed to opposite sides and the single route read as two ribbons. Path direction is now canonicalised before the offset is applied, so both patterns take the same side and overlay as they always did. Exact reverse pairs are then deduped, which also stops two translucent copies compositing into a darker line than the rest.
+- **The background route network no longer redraws lines that already have a highlighted path.** The two come from different sources — JORE vector tiles vs. the fetched pattern geometry — and only the highlighted path is offset, so any line drawn by both appeared twice in the same palette colour: once on the street, once beside it. With a line filter active this was guaranteed, because the network was narrowed to exactly the filtered lines. The network is now the "nothing chosen" state only: hidden outright while line filters are active (the ribbons *are* those routes, drawn better), and kept as faded context minus that vehicle's own line when only a vehicle is selected.
+- **Neighbouring ribbons are separated by map rather than touching at their casings** — slot spacing widened to 3 / 6.5 / 10px at zoom 10 / 13 / 16, which at every zoom is wider than the casing it has to clear.
+
+---
+
 ## [v0.47.2] - 2026-07-25
 
 ### Fixed
 - **Overlapping route paths no longer blend into one another.** Most of the tram network shares track — a dozen lines run down the same few streets — so highlighting several lines stacked their polylines pixel-on-pixel at 75% opacity: the colours mixed into a muddy third colour and only the last-drawn line was actually visible. Each highlighted line now gets a stable offset slot and is drawn with a perpendicular `line-offset`, so overlapping routes fan out into parallel ribbons instead of covering each other, with a themed casing under each one to keep neighbouring colours from reading as a single wide band. Slots are numerically ordered and depend only on the set of highlighted lines, so routes never shuffle on a redraw.
 - **Clicking a tram now actually picks its route out of the network.** The selected vehicle's line was drawn exactly like every other highlighted route, on a map that was simultaneously drawing the whole colour-tinted background network underneath it. It now keeps slot 0 — staying on the true geometry while the others are pushed aside — and is drawn wider, opaque and sorted on top, while the other highlighted routes drop to 40% and the background network fades to 30% for as long as something is selected.
 
-- **A route no longer appears twice, once either side of its own street.** `line-offset` is signed relative to the line's *direction of travel*, and `/api/v1/route/{n}` returns one polyline per pattern — so a route's outbound and inbound patterns, which are near-reverses of each other, were pushed to opposite sides. Path direction is now canonicalised before the offset is applied, so both patterns take the same side and overlay as they always did; exact reverse pairs are then deduped, which also stops two translucent copies compositing into a darker line than the rest.
-- **The background network no longer redraws lines that already have a highlighted path.** The two come from different sources — JORE vector tiles vs. fetched pattern geometry — and only the highlighted path is offset, so any line drawn by both appeared twice in the same palette colour: once on the street, once beside it. The network is now the "nothing chosen" state only. With line filters active it is hidden outright (the ribbons *are* those routes, drawn better); with just a vehicle selected it stays as context, minus that vehicle's line, faded.
-
 ### Added
-- **`lib/routeSlots.ts` + tests** — the slot assignment and the direction canonicalisation are small pure functions, so the centring, the shift that puts the selected line on the true geometry, numeric ordering ("2" before "10"), stability across redraws, and a path mapping onto its own reverse are covered by unit tests rather than only being visible on the map.
+- **`lib/routeSlots.ts` + tests** — the slot assignment is a small pure function, so the centring, the shift that puts the selected line on the true geometry, numeric ordering ("2" before "10") and stability across redraws are covered by unit tests rather than only being visible on the map.
 
 ---
 
