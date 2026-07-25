@@ -35,6 +35,9 @@
 
   /* Mobile bottom tab bar height, including its own padding (excludes safe-area inset) */
   --bottom-nav-h: 60px;
+
+  --version-badge-tag: #34d399;
+  --version-badge-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
 [data-theme='light'] {
@@ -54,6 +57,9 @@
   --bg-button-hover: rgba(148, 163, 184, 0.2);
   --border-button: rgba(148, 163, 184, 0.15);
   --border-button-hover: rgba(148, 163, 184, 0.3);
+
+  --version-badge-tag: #047857;
+  --version-badge-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
 }
 
 body {
@@ -655,16 +661,16 @@ body {
   display: flex;
   align-items: center;
   gap: 5px;
-  background: rgba(15, 23, 42, 0.85);
+  background: var(--bg-panel);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #64748b;
+  border: 1px solid var(--border-button);
+  color: var(--text-secondary);
   font-family: 'Courier New', monospace;
   font-size: 9px;
   padding: 4px 8px;
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--version-badge-shadow);
   pointer-events: auto;
   transition: opacity 0.2s;
   text-decoration: none;
@@ -673,26 +679,12 @@ body {
 
 .version-badge:hover {
   opacity: 0.9;
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--border-button-hover);
 }
 
 .version-badge__tag {
-  color: #34d399;
+  color: var(--version-badge-tag);
   font-weight: 700;
-}
-
-.version-badge__sha {
-  color: #94a3b8;
-  letter-spacing: 0.05em;
-}
-
-.version-badge__date {
-  color: #64748b;
-}
-
-.version-badge__sep {
-  color: rgba(255, 255, 255, 0.2);
-  user-select: none;
 }
 
 /* Metrics and Timeline Grid */
