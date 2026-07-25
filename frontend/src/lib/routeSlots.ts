@@ -37,3 +37,27 @@ export function assignRouteSlots(
   });
   return slots;
 }
+
+/**
+ * Flip a polyline so every path along the same corridor runs the same way.
+ *
+ * MapLibre's `line-offset` is signed relative to the line's own direction of
+ * travel, and the API returns one polyline per *pattern* — so a route's outbound
+ * and inbound patterns arrive as near-reverses of each other. Offset as-is they
+ * are pushed to opposite sides of the street and the single route reads as two
+ * parallel ribbons. Canonicalising the direction first (west-to-east, then
+ * south-to-north for a north/south path) maps a polyline and its reverse onto
+ * the same orientation, so they take the same offset and overlay as before.
+ *
+ * Nothing else depends on the stored direction: the paths are drawn with round
+ * caps, no arrows and no gradient.
+ */
+export function canonicalizeDirection(
+  coords: [number, number][]
+): [number, number][] {
+  if (coords.length < 2) return coords;
+  const [startLng, startLat] = coords[0];
+  const [endLng, endLat] = coords[coords.length - 1];
+  const flip = startLng > endLng || (startLng === endLng && startLat > endLat);
+  return flip ? [...coords].reverse() : coords;
+}
