@@ -16,7 +16,7 @@ import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint 
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
 import { getRouteColor, routeColorMatchExpression, ROUTE_COLORS, TRAM_GREEN } from '../lib/routeColors';
-import { assignRouteSlots, canonicalizeDirection } from '../lib/routeSlots';
+import { assignRouteSlots, canonicalizeDirection, dedupeOverlappingPaths } from '../lib/routeSlots';
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection } from '../types';
 
@@ -548,19 +548,16 @@ export const Map: React.FC<MapProps> = ({
       // HSL's mode green (which is identical for every tram line).
       const colorHex = getRouteColor(line);
       const selected = line === selectedLine;
-      // The API returns one polyline per pattern, so a route's two directions
-      // arrive as near-reverses. The backend dedupes on the raw string, which
-      // never matches a reverse — once canonicalised the exact pairs collapse,
-      // and drawing each only once keeps the translucent dimmed paths from
-      // compositing into a darker line than the rest.
-      const seen = new Set<string>();
+      // The API returns one polyline per pattern — each direction, plus short
+      // turns and branch variants — and the backend dedupes on the raw string,
+      // which no two of them ever share. They all take this line's slot, so any
+      // that retrace the same street have to be dropped rather than drawn on
+      // top of (or worse, beside) one another.
+      const paths = dedupeOverlappingPaths(
+        data.geometries.map((poly) => canonicalizeDirection(decodePolyline(poly)))
+      );
 
-      data.geometries.forEach((poly) => {
-        const coords = canonicalizeDirection(decodePolyline(poly));
-        const key = `${coords.length}:${coords[0]?.join()}:${coords[coords.length - 1]?.join()}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-
+      paths.forEach((coords) => {
         features.push({
           type: 'Feature',
           geometry: {

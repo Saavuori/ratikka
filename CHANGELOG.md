@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.47.4] - 2026-07-25
+
+### Fixed
+- **A line no longer draws a third ribbon on the far side of the street.** v0.47.3 collapsed a route's two directions by matching reversed *pairs*, which was too narrow: a route ships more than two patterns — each direction, plus short turns and branch variants — and a short turn is not the reverse of anything, it is a subset, so it survived the match. Every pattern of a line takes that line's offset slot, so any that disagreed about which way they ran ended up on opposite sides. Two changes. Direction is now canonicalised on the path's *dominant* axis rather than on longitude alone, which for a north/south route with a little sideways drift was close to a coin flip, so two patterns of one line could genuinely disagree. Then a line's paths are reduced to the ground they actually cover: quantised to a ~45m grid, longest first, keeping a path only if enough of its cells are ones nothing kept so far has visited. Comparing coverage rather than direction is what makes this robust — a reversed duplicate contributes nothing new whichever way it runs, a short turn is a subset, and a genuine branch survives. Coverage is tolerant of a neighbouring cell, so the two directions of a bus route — twenty-odd metres apart on opposite sides of the street — collapse into one ribbon instead of half-scoring as new ground and reappearing on the far side of the fan.
+
+---
+
 ## [v0.47.3] - 2026-07-25
 
 ### Fixed

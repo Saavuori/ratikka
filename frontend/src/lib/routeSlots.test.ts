@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assignRouteSlots, canonicalizeDirection } from './routeSlots';
+import { assignRouteSlots, canonicalizeDirection, dedupeOverlappingPaths } from './routeSlots';
 
 describe('assignRouteSlots', () => {
   it('returns an empty map for no lines', () => {
@@ -70,10 +70,75 @@ describe('canonicalizeDirection', () => {
     expect(inbound).toEqual(original);
   });
 
-  it('breaks a north/south tie on latitude', () => {
+  it('orients a north/south route on latitude', () => {
     const northbound: [number, number][] = [[24.94, 60.15], [24.94, 60.19]];
     const southbound: [number, number][] = [...northbound].reverse();
     expect(canonicalizeDirection(southbound)).toEqual(northbound);
+  });
+
+  it('still decides on latitude when a north/south route drifts sideways', () => {
+    // Deciding on longitude first made this a coin flip, so two patterns of the
+    // same line could disagree and land on opposite sides of the street.
+    const northbound: [number, number][] = [[24.94, 60.15], [24.945, 60.19]];
+    const southbound: [number, number][] = [...northbound].reverse();
+    expect(canonicalizeDirection(northbound)).toEqual(northbound);
+    expect(canonicalizeDirection(southbound)).toEqual(northbound);
+  });
+});
+
+describe('dedupeOverlappingPaths', () => {
+  // A corridor sampled every ~55 m, well inside one grid cell per point.
+  const corridor: [number, number][] = Array.from({ length: 20 }, (_, i) => [
+    24.92 + i * 0.001,
+    60.166,
+  ]);
+
+  it('keeps a single path', () => {
+    expect(dedupeOverlappingPaths([corridor])).toEqual([corridor]);
+  });
+
+  it('drops a reversed duplicate whichever way it runs', () => {
+    expect(dedupeOverlappingPaths([corridor, [...corridor].reverse()])).toEqual([corridor]);
+  });
+
+  it('drops a short turn, which is a subset rather than a reverse', () => {
+    const shortTurn = corridor.slice(0, 10);
+    expect(dedupeOverlappingPaths([corridor, shortTurn])).toEqual([corridor]);
+    // …and independently of the order they arrive in.
+    expect(dedupeOverlappingPaths([shortTurn, corridor])).toEqual([corridor]);
+  });
+
+  it('drops a return leg running down the other side of the same street', () => {
+    // What a bus route ships: the two directions are ~20 m apart, which a rigid
+    // grid would score as new ground for about half the points.
+    const otherSide: [number, number][] = corridor.map(([lng, lat]) => [lng, lat + 0.0002]);
+    expect(dedupeOverlappingPaths([corridor, [...otherSide].reverse()])).toEqual([corridor]);
+  });
+
+  it('keeps a branch that goes somewhere new', () => {
+    const branch: [number, number][] = [
+      ...corridor.slice(0, 10),
+      ...Array.from({ length: 10 }, (_, i) => [24.93, 60.17 + i * 0.001] as [number, number]),
+    ];
+    const kept = dedupeOverlappingPaths([corridor, branch]);
+    expect(kept).toHaveLength(2);
+    expect(kept).toContain(corridor);
+    expect(kept).toContain(branch);
+  });
+
+  it('collapses a full set of patterns to one ribbon per corridor', () => {
+    // What a route actually ships: both directions, plus a short turn in each.
+    const patterns = [
+      corridor,
+      [...corridor].reverse(),
+      corridor.slice(0, 12),
+      [...corridor.slice(0, 12)].reverse(),
+    ];
+    expect(dedupeOverlappingPaths(patterns)).toEqual([corridor]);
+  });
+
+  it('ignores empty paths', () => {
+    expect(dedupeOverlappingPaths([[], corridor])).toEqual([corridor]);
   });
 
   it('passes degenerate paths straight through', () => {
