@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.49.1] - 2026-07-25
+
+### Changed
+- **The version badge shows the version and nothing else, and follows the theme.** It used to carry the commit SHA and the build date alongside the tag — three fields in 9px monospace over a moving map, none of which mean anything without the changelog the badge already links to. The SHA and date are gone; the tag is the whole badge. Its panel, border and shadow now come from the theme tokens instead of being hardcoded dark, so in light mode it reads as a light chip on the light basemap rather than a dark smudge, and the version itself darkens from emerald to a deeper green so it stays legible on white.
+
+---
+
 ## [v0.49.0] - 2026-07-25
 
 ### Changed

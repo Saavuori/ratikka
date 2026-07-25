@@ -13,10 +13,6 @@ export const VersionBadge: React.FC = () => {
 
   if (!info) return null;
 
-  const buildDate = info.build_date && info.build_date !== 'unknown'
-    ? new Date(info.build_date).toLocaleDateString('fi-FI', { day: '2-digit', month: '2-digit', year: '2-digit' })
-    : null;
-
   return (
     <a
       className="version-badge"
@@ -26,14 +22,6 @@ export const VersionBadge: React.FC = () => {
       title="View changelog"
     >
       <span className="version-badge__tag">{info.version}</span>
-      <span className="version-badge__sep">·</span>
-      <span className="version-badge__sha">{info.git_sha.substring(0, 7)}</span>
-      {buildDate && (
-        <>
-          <span className="version-badge__sep">·</span>
-          <span className="version-badge__date">{buildDate}</span>
-        </>
-      )}
     </a>
   );
 };
