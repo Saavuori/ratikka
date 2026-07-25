@@ -2,12 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.46.1] - 2026-07-25
+
+### Fixed
+- **Map was not visible at all in production**: reverts the MapLibre GL 5 → 6 upgrade shipped in v0.46.0. v6 was verified against the layer specs — every layer and source is accepted, and `public/style.json` validates clean against style-spec 26.2.1 — but that check ran with the basemap tiles, sprites and glyphs stubbed, so it only ever proved the specs were *valid*, never that the map *renders* against the real Digitransit basemap. It does not. Pinned back to `maplibre-gl ^5.24.0` with the default import restored, so the map works while v6 is re-attempted properly.
+
+### Changed
+- **Dependency merges now release themselves**: the release tag comes from the top `CHANGELOG.md` heading and Dependabot cannot write an entry, so its merges landed on `main` and shipped nothing — visible right now as five dependency merges sitting on `main` with no tag past v0.46.0. When every new non-merge commit since the current tag is `chore(deps)`/`chore(deps-dev)`, `scripts/derive-release.sh` now generates the entry, bumps the patch and releases; a single human commit in the batch disables it. Logic lives in a script so it can be tested (`scripts/derive-release.test.sh`, 7 assertions, runs in CI).
+- **Embed placeholder is `.gitkeep`, not `index.html`**: the v0.46.0 placeholder sat at the exact path a frontend build writes its entry point to. Since that path was previously gitignored, git treated a real local build as expendable and silently overwrote it on checkout, leaving a stub page. Docker was unaffected (the image build copies the real `dist/` over it), but local checkouts were not.
+
+---
+
 ## [v0.46.0] - 2026-07-25
 
 ### Added
 - **CI actually runs the tests now**: `.github/workflows/ci.yml` gates every PR and push to `main` on `go vet`, `go test ./...`, a `go mod tidy` check, the frontend `lint`/`build`/`test`, and an amd64 Docker build. Previously a merge went straight to build → push → production with nothing verifying it.
 - **Map layer verification**: `scripts/verify-map-layers.mjs` boots the built frontend in headless Chromium and fails on any layer or source MapLibre rejects. MapLibre expressions are only validated at runtime in a browser, so neither `tsc` nor the unit tests can catch a bad one — and because most layers anchor to `trams-circles` via `beforeId`, a single invalid expression silently removes the stops, route path and journey overlay along with it (v0.44.7).
 - **Weekly grouped Dependabot updates** for Go modules, npm, GitHub Actions and Docker base images.
+- **Dependency merges now release themselves**: the release tag comes from the top `CHANGELOG.md` heading, and Dependabot cannot write an entry — so its merges would land on `main` and never ship, skipped precisely because the heading did not move. When every new non-merge commit since the current tag is `chore(deps)`/`chore(deps-dev)`, `scripts/derive-release.sh` now generates the entry, bumps the patch and releases. A single human commit in the batch disables it, so nothing ships that a human meant to hold back. The logic lives in a script rather than inline YAML so it can be tested — `scripts/derive-release.test.sh` covers all four paths and runs in CI.
 
 ### Changed
 - **MapLibre GL 5 → 6**: v6 is ESM-only and dropped the default export. It also requires WebGL2, and its stricter style-spec now *throws* on legacy expressions that v5 accepted silently — which is precisely the failure mode behind v0.44.7/v0.44.8. The production bundle shrinks from 1,346 kB to 1,270 kB (gzip 362 → 336 kB).
@@ -16,7 +28,7 @@ All notable changes to this project will be documented in this file.
 - **CI actions**: checkout v4 → v6, setup-node v4 → v6, configure-pages v4 → v5, upload-pages-artifact v3 → v4, and the Pages workflow off EOL Node 20.
 
 ### Fixed
-- **`go test ./...` failed on a clean checkout**: `//go:embed all:dist` needs at least one file in `backend/internal/api/dist/`, which only existed after a frontend build — so `internal/api` and `cmd/ratikka` both failed to build, taking `handlers_test.go` and `journey_test.go` with them. A tracked placeholder fixes it. `.gitignore` had intended exactly this, but the rule was dead: a blanket `dist/` pattern stops git descending into the directory, so the `!.../index.html` negation could never fire.
+- **`go test ./...` failed on a clean checkout**: `//go:embed all:dist` needs at least one file in `backend/internal/api/dist/`, which only existed after a frontend build — so `internal/api` and `cmd/ratikka` both failed to build, taking `handlers_test.go` and `journey_test.go` with them. A tracked `.gitkeep` fixes it (the `all:` embed prefix picks up dotfiles). `.gitignore` had intended a fix like this, but the rule was dead: a blanket `dist/` pattern stops git descending into the directory, so the `!.../index.html` negation could never fire. The placeholder is deliberately **not** an `index.html`: that is the exact path a frontend build writes to, and because the path was previously ignored, git silently overwrites the built file on checkout — leaving `assets/` intact but replacing the entry point with a stub, so the whole app (map included) disappears.
 - **Blank map instead of an explanation on devices without WebGL2**: MapLibre reports a failed context as an `error` event rather than by throwing, and `Map.tsx` had no error listener at all. Now surfaces a message.
 - **Two high npm advisories** (`postcss` path traversal, `brace-expansion` DoS), both build/lint-time transitives. `npm audit` is clean.
 

@@ -320,6 +320,17 @@ what it got wrong, and what turned up only once the work started.
   negation had been there all along; it could never fire, because the blanket
   `dist/` pattern above it stops git from descending into the directory at all.
   Narrowing that to `frontend/dist/` was the actual fix.
+- **Following that stale hint caused a regression.** The first attempt tracked
+  the placeholder as `index.html`, matching the dead negation line. That is the
+  exact path a frontend build writes its entry point to, and since the path was
+  previously ignored, git considers the built file expendable: checking out the
+  branch silently overwrites a real local build's `index.html` with the
+  placeholder — no warning, no conflict. `assets/` survives, so the backend
+  serves a stub page and the app disappears entirely. Option 1 as originally
+  written in §6.2 (`.gitkeep`) was correct and is what shipped: `all:dist`
+  only needs the directory non-empty, the `all:` prefix picks up dotfiles, and
+  `.gitkeep` is a name no build ever produces. Verified both ways — a real
+  build now survives checkout, and a clean checkout still compiles and tests.
 - §4 predicted MapLibre 6 would cost "roughly half a day" and be "medium-high"
   risk. The compile break was a single import line, and the feared
   expression-validation fallout was **zero** — every layer spec in `Map.tsx`

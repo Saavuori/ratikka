@@ -70,6 +70,25 @@ jobs:
       - name: Test
         run: npm test
 
+  release-logic:
+    name: Release logic (derive-release.sh)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # Exercises the four paths through the release decision against real
+      # throwaway repos: heading bumped, nothing new, dependency-only batch,
+      # and a mixed batch. A wrong answer here either ships nothing silently
+      # or releases something a human meant to hold back.
+      - name: Test
+        run: ./scripts/derive-release.test.sh
+
   docker:
     name: Docker image builds
     runs-on: ubuntu-latest
