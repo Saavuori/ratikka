@@ -50,7 +50,7 @@ services:
       - ratikka-cache
 
   ratikka-cache:
-    image: docker.io/library/redis:7-alpine
+    image: docker.io/library/redis:8-alpine
     restart: unless-stopped
     command: redis-server --appendonly no --maxmemory 64mb --maxmemory-policy allkeys-lru
 
@@ -70,7 +70,8 @@ services:
 
 
   ratikka-alloy:
-    image: docker.io/grafana/alloy:latest
+    # Pinned deliberately -- see the note in the repo's docker-compose.yml.
+    image: docker.io/grafana/alloy:v1.18.0
     restart: unless-stopped
     volumes:
       - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro,Z
