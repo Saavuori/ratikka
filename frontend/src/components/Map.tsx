@@ -1,6 +1,16 @@
 import React, { useEffect, useRef } from 'react';
-import maplibregl from 'maplibre-gl';
+// MapLibre GL 6 is ESM-only and dropped the default export.
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+// v6 splits the tile-parsing worker into its own chunk and locates it with
+// `new URL(\`./${name}\`, import.meta.url)` -- a template literal, which no
+// bundler can analyse statically. Vite therefore emits no worker chunk, the
+// request 404s into the SPA's index.html fallback, and the worker dies while
+// constructing. Nothing throws: the main thread still fetches every TileJSON
+// and the sprite, so the console stays clean, but no vector tile is ever
+// parsed and the map paints nothing. Handing MapLibre a URL Vite *did* emit
+// is what makes v6 render.
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import type { Feature, FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
@@ -8,6 +18,8 @@ import { decodePolyline } from '../lib/polyline';
 import { getRouteColor, routeColorMatchExpression, ROUTE_COLORS, TRAM_GREEN } from '../lib/routeColors';
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection } from '../types';
+
+maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 // The gold route segment drawn from a selected vehicle to its next stop relies
 // on closest-point matching against the trip polyline, which produced unreliable
@@ -1922,6 +1934,13 @@ export const Map: React.FC<MapProps> = ({
     });
 
     mapRef.current = map;
+
+    // Test hook. scripts/verify-map-renders.mjs sets __mlProbe before the app
+    // boots so it can read isStyleLoaded()/areTilesLoaded() back out -- the
+    // signals that were false the whole time v0.46.0 was shipping a blank map.
+    // Without the flag this is a no-op, so nothing is exposed in production.
+    const probe = window as unknown as { __mlProbe?: boolean; __mlMap?: maplibregl.Map };
+    if (probe.__mlProbe) probe.__mlMap = map;
 
     // MapLibre reports a failed WebGL2 context as a map `error` event rather
     // than by throwing, so without a listener the failure is entirely silent.

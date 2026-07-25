@@ -23,6 +23,9 @@ backend/internal/api/dist/*
 backend/internal/api/placeholder_dist/
 /ratikka
 
+# Screenshot written by scripts/verify-map-renders.mjs
+/map-render.png
+
 # IDE and OS files
 .idea/
 .vscode/

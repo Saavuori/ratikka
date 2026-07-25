@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.47.0] - 2026-07-25
+
+### Changed
+- **MapLibre GL upgraded to v6, this time with the blank map fixed.** The root cause of the v0.46.0 blackout was never the layer specs: v6 splits tile parsing into a separate worker chunk and locates it with ``new URL(`./${name}`, import.meta.url)``. That is a template literal, so no bundler can resolve it statically and Vite emitted no worker chunk at all. The request for `/assets/maplibre-gl-worker.mjs` then fell through the SPA's index.html fallback, the worker was handed HTML instead of JavaScript, and it died while constructing — silently. Nothing threw, because the main thread still fetched every TileJSON and the sprite successfully; only tile *parsing* was gone, so zero vector tiles and zero glyphs were ever requested and `isStyleLoaded()` stayed `false` forever. `Map.tsx` now calls `maplibregl.setWorkerUrl()` with a URL Vite actually emits (`?worker&url`), and v6 renders pixel-for-pixel identically to v5 — 63 tiles, 157 layers, same screenshot.
+
+### Added
+- **`scripts/verify-map-renders.mjs` — a render check, not a spec check.** Boots the built app against the real Digitransit basemap with a real subscription key and asserts that vector tiles came back and the style finished loading. The existing `verify-map-layers.mjs` stubs every external asset, which is why it passed on v0.46.0 while production was blank — with the worker dead it never parsed a tile, so it could not have caught anything downstream of one. It also surfaces `isStyleLoaded()`, the signal that was observed to differ between v5 and v6 before the v0.46.0 release and shipped unexplained; on the broken build it is the single clearest indicator, and it is now an assertion rather than a note.
+
+---
+
 ## [v0.46.1] - 2026-07-25
 
 ### Fixed
