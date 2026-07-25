@@ -120,6 +120,22 @@ Dependency updates arrive as weekly grouped Dependabot PRs
 (`.github/dependabot.yml`). MapLibre majors are deliberately excluded; see
 `docs/TECH_STACK_UPGRADE_PLAN.md`.
 
+### Verifying map layers
+
+MapLibre expressions are validated at runtime in a browser, not by `tsc` — so
+neither the build nor the tests can tell you a layer was rejected. Because most
+layers anchor to `trams-circles` via `beforeId`, one bad expression silently
+takes the stops, route path and journey overlay with it (this is what happened
+in v0.44.7). **After any change to layer specs in `Map.tsx`, run:**
+
+```bash
+cd frontend && npm run build && cd ..
+npx playwright@latest install chromium    # once
+node scripts/verify-map-layers.mjs        # exits non-zero on a rejected layer
+```
+
+Playwright is intentionally not a devDependency, to keep `npm install` lean.
+
 ## Conventions
 
 - Backend uses only the Go standard library plus a few pinned deps (`coder/websocket`,

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import maplibregl from 'maplibre-gl';
+// MapLibre GL 6 is ESM-only and dropped the default export.
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Feature, FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
@@ -88,6 +89,9 @@ export const Map: React.FC<MapProps> = ({
   }, [selectedTripDetails]);
 
   const [apiKey, setApiKey] = React.useState<string | null>(null);
+  // MapLibre 6 requires WebGL2 (WebGL 1 support was dropped). Without this the
+  // map would just be a blank rectangle on a device that cannot provide it.
+  const [webglFailed, setWebglFailed] = React.useState(false);
 
   useEffect(() => {
     fetch('/api/v1/config')
@@ -1920,6 +1924,16 @@ export const Map: React.FC<MapProps> = ({
 
     mapRef.current = map;
 
+    // MapLibre reports a failed WebGL2 context as a map `error` event rather
+    // than by throwing, so without a listener the failure is entirely silent.
+    map.on('error', (e) => {
+      const message = e?.error?.message ?? '';
+      if (/webgl/i.test(message)) {
+        setWebglFailed(true);
+      }
+      console.error('MapLibre error:', message || e);
+    });
+
     // Add GeolocateControl for mobile/user self-location tracking
     const geolocate = new maplibregl.GeolocateControl({
       positionOptions: {
@@ -2292,6 +2306,11 @@ export const Map: React.FC<MapProps> = ({
   return (
     <div className="map-wrapper">
       <div ref={mapContainerRef} className="map-container" />
+      {webglFailed && (
+        <div className="map-unsupported" role="alert">
+          <p>This map needs WebGL2, which this browser or device does not support.</p>
+        </div>
+      )}
     </div>
   );
 };
