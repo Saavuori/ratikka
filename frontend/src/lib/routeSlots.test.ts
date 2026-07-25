@@ -1,47 +1,123 @@
 import { describe, it, expect } from 'vitest';
-import { assignRouteSlots, canonicalizeDirection, dedupeOverlappingPaths } from './routeSlots';
+import { assignCorridorSlots, canonicalizeDirection, dedupeOverlappingPaths } from './routeSlots';
 
-describe('assignRouteSlots', () => {
-  it('returns an empty map for no lines', () => {
-    expect(assignRouteSlots([])).toEqual({});
+describe('assignCorridorSlots', () => {
+  // One east/west corridor, sampled every ~55 m…
+  const corridor = (lat = 60.166, from = 0, to = 20): [number, number][] =>
+    Array.from({ length: to - from }, (_, i) => [24.92 + (from + i) * 0.001, lat]);
+  // …and a street far enough away to share nothing with it.
+  const elsewhere = corridor(60.2);
+
+  const slotOf = (slotted: { line: string; slot: number }[], line: string) =>
+    slotted.find((p) => p.line === line)?.slot;
+
+  it('returns nothing for no paths', () => {
+    expect(assignCorridorSlots([])).toEqual([]);
   });
 
-  it('puts a lone line on the true geometry', () => {
-    expect(assignRouteSlots(['4'])).toEqual({ '4': 0 });
+  it('leaves a lone route on its true geometry', () => {
+    expect(assignCorridorSlots([{ line: '4', coords: corridor() }])[0].slot).toBe(0);
   });
 
-  it('centres the fan so it stays balanced over the shared track', () => {
-    expect(assignRouteSlots(['1', '2'])).toEqual({ '1': -0.5, '2': 0.5 });
-    expect(assignRouteSlots(['1', '2', '3'])).toEqual({ '1': -1, '2': 0, '3': 1 });
+  it('fans routes that share a corridor out either side', () => {
+    const slotted = assignCorridorSlots([
+      { line: '1', coords: corridor() },
+      { line: '2', coords: corridor() },
+      { line: '3', coords: corridor() },
+    ]);
+    expect(slotted.map((p) => p.slot).sort((a, b) => a - b)).toEqual([-1, 0, 1]);
+  });
+
+  it('does not push a route aside for a line it never meets', () => {
+    // The whole point of slotting per corridor: line 9 is somewhere else
+    // entirely, so line 4 keeps the street it actually runs down.
+    const slotted = assignCorridorSlots([
+      { line: '4', coords: corridor() },
+      { line: '9', coords: elsewhere },
+    ]);
+    expect(slotOf(slotted, '4')).toBe(0);
+    expect(slotOf(slotted, '9')).toBe(0);
+  });
+
+  it('keeps the fan only as wide as the corridor is busy', () => {
+    // Ten lines highlighted, two of them sharing a street: a global fan would
+    // have spread these over ten slots.
+    const paths = [
+      { line: '1', coords: corridor() },
+      { line: '2', coords: corridor() },
+      ...Array.from({ length: 8 }, (_, i) => ({
+        line: `${i + 3}`,
+        coords: corridor(60.2 + i * 0.01),
+      })),
+    ];
+    const slots = assignCorridorSlots(paths).map((p) => p.slot);
+    expect(Math.max(...slots) - Math.min(...slots)).toBe(1);
   });
 
   it('orders lines numerically, not lexically', () => {
-    // Lexical sorting would put "10" before "2" and shuffle the ribbons.
-    const slots = assignRouteSlots(['10', '2', '9']);
-    expect(slots['2']).toBeLessThan(slots['9']);
-    expect(slots['9']).toBeLessThan(slots['10']);
+    // Lexically "10" sorts before "2" and would take the middle slot.
+    const slotted = assignCorridorSlots([
+      { line: '10', coords: corridor() },
+      { line: '2', coords: corridor() },
+      { line: '9', coords: corridor() },
+    ]);
+    expect(slotOf(slotted, '2')).toBe(0);
+    expect(slotOf(slotted, '9')).toBe(1);
+    expect(slotOf(slotted, '10')).toBe(-1);
   });
 
   it('is stable across redraws of the same set, whatever the input order', () => {
-    expect(assignRouteSlots(['7', '4', '9'])).toEqual(assignRouteSlots(['9', '7', '4']));
+    const paths = [
+      { line: '7', coords: corridor() },
+      { line: '4', coords: corridor() },
+      { line: '9', coords: elsewhere },
+    ];
+    expect(assignCorridorSlots(paths)).toEqual(assignCorridorSlots([...paths].reverse()));
   });
 
-  it('places the selected line on the true geometry and shifts the rest aside', () => {
-    const slots = assignRouteSlots(['1', '2', '3', '4'], '3');
-    expect(slots['3']).toBe(0);
-    expect(slots['1']).toBe(-2);
-    expect(slots['2']).toBe(-1);
-    expect(slots['4']).toBe(1);
+  it('puts the selected line on the true geometry and fans the rest around it', () => {
+    const slotted = assignCorridorSlots(
+      [
+        { line: '1', coords: corridor() },
+        { line: '2', coords: corridor() },
+        { line: '3', coords: corridor() },
+      ],
+      '3'
+    );
+    expect(slotOf(slotted, '3')).toBe(0);
+    expect([slotOf(slotted, '1'), slotOf(slotted, '2')].sort()).toEqual([-1, 1]);
   });
 
-  it('keeps adjacent lines one slot apart after shifting', () => {
-    const slots = assignRouteSlots(['4', '6', '6T', '15'], '6T');
-    const values = Object.values(slots).sort((a, b) => a - b);
-    values.slice(1).forEach((v, i) => expect(v - values[i]).toBeCloseTo(1));
+  it('lets one line stack its own branches instead of fanning them', () => {
+    // A branch that shares the trunk is the same colour, so it belongs on top of
+    // the trunk — fanning it would draw line 4 as two parallel ribbons.
+    const branch: [number, number][] = [
+      ...corridor().slice(0, 10),
+      ...Array.from({ length: 10 }, (_, i) => [24.93, 60.17 + i * 0.001] as [number, number]),
+    ];
+    const slotted = assignCorridorSlots([
+      { line: '4', coords: corridor() },
+      { line: '4', coords: branch },
+      { line: '7', coords: corridor() },
+    ]);
+    expect(slotted.filter((p) => p.line === '4').map((p) => p.slot)).toEqual([0, 0]);
+    expect(slotOf(slotted, '7')).toBe(1);
   });
 
-  it('falls back to the centred fan when the selected line is not highlighted', () => {
-    expect(assignRouteSlots(['1', '2', '3'], '9')).toEqual(assignRouteSlots(['1', '2', '3']));
+  it('separates lines that share a street but were sampled at different points', () => {
+    // Both run down the same corridor; the second only has a vertex every ~275 m.
+    // Without walking the segments they would share no grid cell and stack.
+    const sparse: [number, number][] = [
+      [24.92, 60.166],
+      [24.925, 60.166],
+      [24.93, 60.166],
+      [24.935, 60.166],
+    ];
+    const slotted = assignCorridorSlots([
+      { line: '1', coords: corridor() },
+      { line: '2', coords: sparse },
+    ]);
+    expect(slotOf(slotted, '2')).not.toBe(slotOf(slotted, '1'));
   });
 });
 

@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useTramData } from './hooks/useTramData';
 import { useIsMobile } from './hooks/useIsMobile';
@@ -215,9 +215,38 @@ function App() {
   const [mapBearing, setMapBearing] = useState<number>(0);
   const [routeGeometries, setRouteGeometries] = useState<Record<string, { geometries: string[]; color?: string; stops?: string[] }>>({});
 
-  // Fetch route geometries when selectedLines filter, selectedTram, or selectedStopRoutes changes
+  // Every tram line currently running — the same set the filter panel offers as
+  // chips. Joined into a string first so the effect below re-runs when a line
+  // enters or leaves service, not on every position update.
+  const activeTramLinesKey = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          Object.values(trams)
+            .filter((t) => t.mode === 'tram' && t.desi)
+            .map((t) => t.desi)
+        )
+      )
+        .sort()
+        .join(','),
+    [trams]
+  );
+
+  // Fetch route geometries when selectedLines filter, selectedTram, or selectedStopRoutes changes.
+  //
+  // With no filter — the panel's "Show All" — that is every running tram line,
+  // so the map draws the same fanned, per-line-coloured ribbons it would if the
+  // user had ticked every chip by hand, rather than dropping to the flat
+  // mode-coloured tile network underneath. Buses are left to that network: the
+  // route endpoint only serves trams, and there are far too many bus lines to
+  // fetch a pattern each.
   useEffect(() => {
-    const linesToHighlight = [...selectedLines];
+    const linesToHighlight =
+      selectedLines.length > 0
+        ? [...selectedLines]
+        : showTrams && activeTramLinesKey
+        ? activeTramLinesKey.split(',')
+        : [];
     if (selectedTram && !linesToHighlight.includes(selectedTram.desi)) {
       linesToHighlight.push(selectedTram.desi);
     }
@@ -269,7 +298,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedLines, selectedTram, selectedStopRoutes]);
+  }, [selectedLines, selectedTram, selectedStopRoutes, activeTramLinesKey, showTrams]);
 
   const handleSelectTram = (tram: VehiclePosition | null) => {
     setSelectedStop(null);
