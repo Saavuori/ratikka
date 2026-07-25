@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.49.0] - 2026-07-25
+
+### Changed
+- **The mobile bottom bar is now "Settings" and "Lines", and every button toggles.** The old bar led with a "Map" tab whose only job was to close whatever sheet was open — a button that did nothing whenever the map was already visible, and a name for a destination you never left. Both remaining buttons now open and close their own sheet, so tapping the one that is already open takes you back to the map. The filter panel is split to match: "Lines" holds the service alerts, "Show All" and the line chips, "Settings" holds the legend and the theme / 3D / trams / buses toggles. Tapping across swaps the contents without closing the sheet. Desktop is untouched — the side drawer still shows lines and settings together.
+
+---
+
 ## [v0.48.0] - 2026-07-25
 
 ### Changed

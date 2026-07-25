@@ -114,6 +114,9 @@ function App() {
     typeof window !== 'undefined' ? window.innerWidth <= 768 : false
   );
 
+  // Which half of the filter panel the mobile sheet shows (desktop shows both).
+  const [mobileFilterSection, setMobileFilterSection] = useState<'lines' | 'settings'>('lines');
+
   // Auto-collapse sidebar when a tram, stop, or bike station is selected on mobile
   useEffect(() => {
     if ((selectedTram || selectedStop || selectedBikeStation) && isMobile) {
@@ -484,23 +487,29 @@ function App() {
     }
   };
 
-  // Bottom tab bar state (mobile only): drives which bottom sheet is expanded.
+  // Bottom tab bar state (mobile only): drives which bottom sheet is expanded, and
+  // null when none is — the map is then fully visible.
   const hasDetailSelection = !!(selectedTram || selectedStop || selectedBikeStation);
-  const activeMobileTab: MobileTab = !isFilterCollapsed
-    ? 'filters'
+  const activeMobileTab: MobileTab | null = !isFilterCollapsed
+    ? mobileFilterSection
     : hasDetailSelection && !isDetailCollapsed
     ? 'details'
-    : 'map';
+    : null;
 
+  // Every bar button toggles: tapping the open sheet closes it back to the map.
   const handleMobileTabSelect = (tab: MobileTab) => {
-    if (tab === 'map') {
-      setIsFilterCollapsed(true);
-      setIsDetailCollapsed(true);
-    } else if (tab === 'filters') {
-      setIsFilterCollapsed(false);
-    } else {
-      setIsDetailCollapsed(false);
+    if (tab === 'details') {
+      setIsDetailCollapsed(!isDetailCollapsed);
+      return;
     }
+    // 'settings' and 'lines' share one sheet, so tapping the other section swaps
+    // the contents while the sheet stays open.
+    if (!isFilterCollapsed && mobileFilterSection === tab) {
+      setIsFilterCollapsed(true);
+      return;
+    }
+    setMobileFilterSection(tab);
+    setIsFilterCollapsed(false);
   };
 
   return (
@@ -553,6 +562,7 @@ function App() {
         selectedTram={liveTram}
         selectedStop={selectedStop}
         selectedStopRoutes={selectedStopRoutes}
+        mobileSection={mobileFilterSection}
       />
 
       {/* Floating top-center tram telemetry card */}
@@ -623,7 +633,7 @@ function App() {
       {/* Version Badge */}
       <VersionBadge />
 
-      {/* Mobile bottom tab bar: switches between the map, filters, and details sheets */}
+      {/* Mobile bottom tab bar: toggles the settings, lines, and details sheets */}
       {isMobile && (
         <BottomNav
           active={activeMobileTab}
