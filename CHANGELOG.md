@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.46.0] - 2026-07-25
+
+### Added
+- **CI actually runs the tests now**: `.github/workflows/ci.yml` gates every PR and push to `main` on `go vet`, `go test ./...`, a `go mod tidy` check, the frontend `lint`/`build`/`test`, and an amd64 Docker build. Previously a merge went straight to build → push → production with nothing verifying it.
+- **Map layer verification**: `scripts/verify-map-layers.mjs` boots the built frontend in headless Chromium and fails on any layer or source MapLibre rejects. MapLibre expressions are only validated at runtime in a browser, so neither `tsc` nor the unit tests can catch a bad one — and because most layers anchor to `trams-circles` via `beforeId`, a single invalid expression silently removes the stops, route path and journey overlay along with it (v0.44.7).
+- **Weekly grouped Dependabot updates** for Go modules, npm, GitHub Actions and Docker base images.
+
+### Changed
+- **MapLibre GL 5 → 6**: v6 is ESM-only and dropped the default export. It also requires WebGL2, and its stricter style-spec now *throws* on legacy expressions that v5 accepted silently — which is precisely the failure mode behind v0.44.7/v0.44.8. The production bundle shrinks from 1,346 kB to 1,270 kB (gzip 362 → 336 kB).
+- **Backend dependencies**: go-redis v9.7.1 → v9.21.0, prometheus/client_golang v1.23.2 → v1.24.1, coder/websocket v1.8.12 → v1.8.15, paho.mqtt.golang v1.5.0 → v1.5.1, and `golang.org/x/net` v0.43.0 → v0.57.0 (which clears the 2026 CVE set; only `x/net/proxy` was ever linked here, so actual exposure was nil).
+- **Base images**: Node 22 → 24 (active LTS) for the frontend build stage, Alpine 3.21 → 3.24 for the runtime, Redis 7 → 8, and Grafana Alloy pinned to v1.18.0 instead of floating on `:latest`.
+- **CI actions**: checkout v4 → v6, setup-node v4 → v6, configure-pages v4 → v5, upload-pages-artifact v3 → v4, and the Pages workflow off EOL Node 20.
+
+### Fixed
+- **`go test ./...` failed on a clean checkout**: `//go:embed all:dist` needs at least one file in `backend/internal/api/dist/`, which only existed after a frontend build — so `internal/api` and `cmd/ratikka` both failed to build, taking `handlers_test.go` and `journey_test.go` with them. A tracked placeholder fixes it. `.gitignore` had intended exactly this, but the rule was dead: a blanket `dist/` pattern stops git descending into the directory, so the `!.../index.html` negation could never fire.
+- **Blank map instead of an explanation on devices without WebGL2**: MapLibre reports a failed context as an `error` event rather than by throwing, and `Map.tsx` had no error listener at all. Now surfaces a message.
+- **Two high npm advisories** (`postcss` path traversal, `brace-expansion` DoS), both build/lint-time transitives. `npm audit` is clean.
+
+---
+
 ## [v0.45.1] - 2026-07-24
 
 ### Fixed

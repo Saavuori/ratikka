@@ -2,6 +2,9 @@
 
 Snapshot taken 2026-07-25 against `main` (`8dbe67e`).
 
+> **Status: all four batches implemented** (released as v0.46.0). The analysis
+> below is kept as the rationale record. Outcomes are noted per batch in §7.
+
 This document inventories every moving part of the stack, states what is
 current vs. behind, and — for each proposed change — what the *effect* is:
 what breaks, what improves, and how much work it is.
@@ -305,7 +308,39 @@ ambiguous release docs cause.
 
 ---
 
-## 7. Proposed sequencing
+## 7. Sequencing — and what actually happened
+
+All four batches were implemented. Notes below record what the plan got right,
+what it got wrong, and what turned up only once the work started.
+
+**Corrections to the analysis above, found during implementation:**
+
+- §6.2 identified that `go test ./...` fails on a clean checkout, but not
+  *why* the existing `.gitignore` fix was inert. The `!backend/internal/api/dist/index.html`
+  negation had been there all along; it could never fire, because the blanket
+  `dist/` pattern above it stops git from descending into the directory at all.
+  Narrowing that to `frontend/dist/` was the actual fix.
+- §4 predicted MapLibre 6 would cost "roughly half a day" and be "medium-high"
+  risk. The compile break was a single import line, and the feared
+  expression-validation fallout was **zero** — every layer spec in `Map.tsx`
+  and the whole of `public/style.json` already validate against style-spec
+  26.2.1. The estimate was too pessimistic.
+- §4 did not anticipate that `Map.tsx` has **no `map.on('error')` handler at
+  all**. With v6 requiring WebGL2, that turns an unsupported device into a
+  silent blank rectangle. Fixed as part of the migration.
+- A latent robustness bug surfaced while stubbing the API for the browser
+  check: `VersionBadge.tsx:30` calls `info.git_sha.substring(0, 7)` with no
+  guard, so a `/api/v1/version` response missing `git_sha` crashes the entire
+  app at render. The backend always sets it, so this is not currently live —
+  left unfixed as out of scope, but worth a one-line guard.
+- `deploy.sh` still generates a `ratikka-watchtower` service, while
+  `docker-compose.yml` states Watchtower was replaced by an `update.sh` cron
+  because it is incompatible with rootless Podman on RHEL. Those two contradict
+  each other. Left alone — changing the deploy script is a separate decision.
+
+---
+
+### Original sequencing
 
 Four independent batches. Each is separately releasable and separately
 revertable.
