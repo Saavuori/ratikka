@@ -259,26 +259,179 @@ the top heading still republishes the site without cutting a release.
 
 ## 7. Dependency updates
 
-[`.github/dependabot.yml`](../.github/dependabot.yml) opens **grouped weekly**
-PRs across four ecosystems. Grouped rather than one-per-dependency because this
-stack has few direct deps and ungrouped updates would be mostly noise; CI gates
-every one, which is what makes them safe to merge on sight.
+### 7.1 How updates arrive
 
-| Ecosystem | Directory | Group | Notes |
-|---|---|---|---|
-| `gomod` | `/backend` | minor + patch | limit 5 open PRs |
-| `npm` | `/frontend` | minor + patch | MapLibre **majors excluded** |
-| `github-actions` | `/` | all patterns | prefix must stay `chore(deps)` |
-| `docker` | `/` | — | e.g. the pinned Grafana Alloy image |
+[`.github/dependabot.yml`](../.github/dependabot.yml) opens **weekly** PRs across
+four ecosystems. Grouping is per-ecosystem, and it decides how many PRs you get:
 
-MapLibre majors are deliberately ignored: they change map rendering behaviour and
-need a visual pass over `Map.tsx`. See
-[TECH_STACK_UPGRADE_PLAN.md](TECH_STACK_UPGRADE_PLAN.md). Minor and patch bumps
-still flow through the group.
+| Ecosystem | Directory | Grouped | Individual PRs for | Prefix |
+|---|---|---|---|---|
+| `gomod` | `/backend` | `go-minor-patch` (minor + patch) | **majors** | `chore(deps)` |
+| `npm` | `/frontend` | `npm-minor-patch` (minor + patch) | **majors** (except `maplibre-gl`, ignored) | `chore(deps)` / `chore(deps-dev)` |
+| `github-actions` | `/` | `actions` (`*` — all update types, majors included) | — | `chore(deps)` |
+| `docker` | `/` | none | every image bump | `chore(deps)` |
 
-The Alloy image is pinned rather than tracking `:latest` because an unattended
-restart could otherwise pull a new major and break metrics collection with no
-change on our side.
+The consequence worth internalising: **the groups only cover minor and patch, so
+majors arrive as their own PRs.** A typical week looks like the batch that landed
+before v0.47.0 — one grouped npm PR (#39), one grouped Go PR (#36), one grouped
+actions PR (#38), plus two standalone majors (`@types/node` 24 → 26 in #40, the
+`node:24-alpine` → `node:26-alpine` base image in #37). That is by design: the
+grouped PRs are the mergeable-on-sight ones, and anything that shows up alone is
+telling you it wants a look.
+
+`open-pull-requests-limit: 5` on gomod and npm caps the backlog — if five are
+already open, no new ones appear until you clear some.
+
+Grouped rather than one-per-dependency because this stack has few direct deps and
+ungrouped updates would be mostly noise. CI gates every one of them, which is
+what makes them safe to merge on sight.
+
+### 7.2 The routine flow
+
+For the ordinary weekly batch:
+
+1. **Dependabot opens the PRs** (weekly). [`ci.yml`](../.github/workflows/ci.yml)
+   runs on each: `go vet` + `go test` + the tidy check, `npm ci`/lint/build/test,
+   the release-logic tests, and an amd64 Docker build.
+2. **Read the PR body.** Dependabot includes the release notes and changelog for
+   each bump plus a compatibility score. For a grouped minor/patch PR with green
+   CI this is usually a ten-second skim; for a major, read it properly.
+3. **Merge.** This repo uses merge commits (`Merge pull request #39 from
+   Saavuori/dependabot/...`), which is the safest option here — see the caution in
+   §7.3.
+4. **Merge the rest of the batch.** Nothing ships per-PR; only the final state of
+   `main` matters.
+5. **The last merge cuts the release automatically.** Once every non-merge commit
+   since the current tag is `chore(deps)`/`chore(deps-dev)`,
+   [`derive-release.sh`](../scripts/derive-release.sh) generates a `### Changed`
+   entry listing the bumps, bumps the **patch**, commits, tags, and the image
+   builds. See [§3](#3-release-logic).
+6. **The host picks it up** within ~5 minutes. Confirm with
+   `curl -s https://hsl-live.duckdns.org/api/v1/version`.
+
+So the normal case is: merge the PRs, write nothing, and a patch release ships
+itself with a changelog entry recording exactly what went in.
+
+### 7.3 What breaks the automatic release
+
+The auto-release only fires when **every** non-merge commit since the current tag
+is dependency-prefixed. Two ways to lose it:
+
+- **A human commit lands in the same window.** Merge one bugfix between the
+  dependency merges and the whole batch stops shipping until someone writes a
+  changelog entry. This is deliberate — it means the human's change never ships
+  under an auto-generated "dependency updates" heading. If it happens, just write
+  a normal entry covering both and bump the heading yourself.
+- **The commit subject loses its prefix.** The check is a literal
+  `^chore\(deps(-dev)?\):` match. Merge commits are exempt (the script uses
+  `git log --no-merges`), so a merge-commit merge is always safe. **Squash-merging
+  is only safe if you leave the squash title alone** — GitHub seeds it from the PR
+  title, which carries the prefix; editing it to "bump deps" silently converts the
+  batch into a human commit.
+
+This is also why the `chore(deps)` prefix must stay on **every** ecosystem in
+`dependabot.yml`, including `github-actions`. It briefly used a generic `ci:`
+prefix, which made action bumps look like human commits — commit
+[`8a69be6`](https://github.com/Saavuori/ratikka/commit/8a69be6) `ci: bump the
+actions group with 10 updates` is exactly that, and it was part of the batch of
+five dependency merges that sat on `main` shipping nothing and prompted the
+auto-release in the first place.
+
+### 7.4 When CI fails on a Dependabot PR
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `go.mod/go.sum are not tidy` | the bump left an inconsistent module graph | `cd backend && go mod tidy`, commit onto the Dependabot branch |
+| `npm ci` fails on lockfile mismatch | `package.json` and `package-lock.json` disagree | `@dependabot recreate` |
+| Lint/type errors after a major | genuine API change | fix it on the branch, or drop the major and `@dependabot ignore this major version` |
+| Conflicts with `main` | another dep PR merged first | `@dependabot rebase` |
+| Docker build fails | new base image moved something | pin back and investigate separately |
+
+You can push commits directly onto a Dependabot branch; Dependabot stops force-
+pushing over a branch once you do. Useful comment commands:
+
+```
+@dependabot rebase                      # rebase on main
+@dependabot recreate                    # rebuild the PR from scratch
+@dependabot merge                       # merge once CI is green
+@dependabot ignore this major version   # stop offering this major
+```
+
+### 7.5 Major versions
+
+Majors arrive alone, so treat them one at a time:
+
+1. Read the upstream migration notes linked in the PR body.
+2. Check CI, then check what CI *can't* see — for anything touching the frontend
+   bundle or the map, run the two verification scripts in
+   [§8](#8-what-ci-does-not-cover). The v0.46.0 blank map shipped with green CI.
+3. If it needs code changes, push them onto the Dependabot branch rather than
+   opening a parallel PR.
+4. If it needs more than a small fix, close the PR, `@dependabot ignore this
+   major version`, and do it on a branch of your own with a hand-written
+   changelog entry — a major that needs a code change should not ship under an
+   auto-generated "dependency updates" heading.
+
+**`maplibre-gl` majors are ignored outright** in `dependabot.yml`: they change map
+rendering behaviour and need a visual pass over `Map.tsx`. Minor and patch bumps
+still flow through the `npm-minor-patch` group. The v5 → v6 attempt is the case
+study — it passed `tsc`, the unit tests, and the layer-spec check, and still
+shipped a completely blank map (v0.46.0), was reverted (v0.46.1), and only landed
+once `verify-map-renders.mjs` existed to prove pixels appeared (v0.47.0). See
+[TECH_STACK_UPGRADE_PLAN.md §4](TECH_STACK_UPGRADE_PLAN.md).
+
+The Grafana Alloy image is pinned to a concrete tag rather than `:latest` for the
+same class of reason: the host restarts containers unattended every five minutes,
+so a floating tag could pull a new major and break metrics collection with no
+change on our side. Dependabot's `docker` ecosystem proposes those bumps instead.
+
+### 7.6 Updating dependencies by hand
+
+Dependabot covers drift, not intent. Sweep manually when you want everything
+current at once, when chasing a specific advisory, or when a major needs code
+changes alongside it.
+
+```bash
+# backend/
+go get -u ./...                 # or name specific modules
+go get golang.org/x/net@latest  # indirect deps need naming; tidy won't raise them
+go mod tidy                     # required — CI fails if this would change anything
+go vet ./... && go test ./...
+```
+
+```bash
+# frontend/
+npm outdated                    # what's behind
+npm update                      # in-range bumps
+npm install <pkg>@latest        # a specific major
+npm audit fix
+npm run lint && npm run build && npm test
+```
+
+Then, if the frontend bundle or map changed:
+
+```bash
+node scripts/verify-map-layers.mjs
+DIGITRANSIT_API_KEY=... node scripts/verify-map-renders.mjs
+```
+
+A hand-made sweep is a **human commit**, so it does not auto-release: write a
+`CHANGELOG.md` entry and bump the heading, or it ships nothing. Prefix the commit
+`chore(deps):` for consistency if you like — but be aware that doing so on a
+branch that also carries real code changes lets the batch auto-release under a
+generated heading, which is usually not what you want. Keep sweeps separate from
+feature work.
+
+### 7.7 Changing the Dependabot config
+
+- **Never change a `commit-message.prefix` away from `chore(deps)` /
+  `chore(deps-dev)`.** The release keys off those exact strings.
+- Adding an ecosystem: copy an existing block, set the prefix, and decide whether
+  to group. No-group means one PR per bump.
+- Adding an `ignore` rule: say *why* in a comment next to it, as the `maplibre-gl`
+  entry does. An ignore with no rationale becomes permanent by accident.
+- After editing, `./scripts/derive-release.test.sh` still covers the release side;
+  the config itself is only validated by GitHub when Dependabot next runs.
 
 ---
 
@@ -328,10 +481,13 @@ Check `paths-ignore` in `docker-build.yml`. A push touching only `docs/**`,
 `README.md`, `monitoring/**`, `deploy.sh`, or `.gitignore` does not trigger it.
 
 **"Dependabot PRs merged but nothing shipped."**
-There is a human commit in the batch since the last tag — the auto-release
-deliberately stands down. Look at `git log --no-merges --format=%s vX.Y.Z..HEAD`;
-anything not prefixed `chore(deps)` / `chore(deps-dev)` disables it. Write a
-changelog entry to ship the batch.
+There is a non-dependency commit in the batch since the last tag — the
+auto-release deliberately stands down. Look at
+`git log --no-merges --format=%s vX.Y.Z..HEAD`; anything not prefixed
+`chore(deps)` / `chore(deps-dev)` disables it. Either a human commit landed in
+the same window, or a squash-merge title was edited and lost its prefix — see
+[§7.3](#73-what-breaks-the-automatic-release). Write a changelog entry to ship
+the batch.
 
 **"`/api/v1/version` shows an older version than the tag."**
 The host cron runs every five minutes; wait, then re-check. If it persists, the
