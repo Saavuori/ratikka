@@ -218,6 +218,8 @@ Renovate opens one grouped pull request every Monday morning covering every plac
 
 Each PR writes its own `CHANGELOG.md` entry: Renovate runs [`scripts/changelog-entry.js`](scripts/changelog-entry.js) as a post-upgrade task, which reads the pending diff and lists what moved. Since the top changelog heading *is* the release tag, that entry is what makes a dependency merge ship. The text is factual only — expand it by hand when a bump actually matters.
 
+The full flow — grouping rules, the generated entry, majors, hand sweeps, and what to do when a Monday passes with no PR — is [docs/CICD.md §7](docs/CICD.md#7-dependency-updates).
+
 ### Required setup
 
 The workflow runs as a **GitHub App**, and needs two repository secrets: `RENOVATE_APP_ID` and `RENOVATE_APP_PRIVATE_KEY`. The app needs `contents: write`, `pull-requests: write` and `workflows: write` on this repository, and has to be installed on it. The workflow mints a short-lived installation token per run, so nothing long-lived is stored.
