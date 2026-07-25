@@ -1,7 +1,9 @@
 name: CI
 
-# A merge to main builds an image that Watchtower pulls straight into
-# production, so this is the only gate between a PR and the live site.
+# A merge to main builds an image that the host's update.sh cron pulls straight
+# into production (every 5 min — Watchtower is incompatible with rootless Podman
+# on RHEL), so this is the only gate between a PR and the live site.
+# See docs/CICD.md.
 on:
   pull_request:
   push:

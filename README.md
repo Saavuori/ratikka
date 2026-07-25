@@ -57,7 +57,7 @@ A premium, high-performance web application mapping **all active Helsinki trams,
 * **Routing API**: Digitransit Routing API v2 (GraphQL proxied server-side so the API key never reaches the browser, including a fuzzy trip lookup fallback).
 * **Observability**: Prometheus metrics on `/metrics`, scraped by a Grafana Alloy sidecar and remote-written to Grafana Cloud.
 * **Reverse Proxy**: Caddy 2 (Alpine) with gzip/zstd compression.
-* **CI/CD**: GitHub Actions auto-tagging semver releases and building multi-arch images (`linux/amd64`, `linux/arm64`) to GitHub Packages, plus a Pages workflow publishing the changelog.
+* **CI/CD**: GitHub Actions auto-tagging semver releases and building multi-arch images (`linux/amd64`, `linux/arm64`) to GitHub Packages, plus a Pages workflow publishing the changelog. Full pipeline, release rules and runbook: [docs/CICD.md](docs/CICD.md).
 
 ---
 
@@ -97,6 +97,7 @@ ratikka/
 │   └── package.json
 ├── docs/                     # Detailed architectural documents
 │   ├── API_REFERENCE.md      # REST/WS/external endpoint specs
+│   ├── CICD.md               # Workflows, release rules, deploy path, runbook
 │   ├── ICONS_AND_ANIMATIONS.md # Tram/bus marker icons and animation reference
 │   ├── LOCAL_DEVELOPMENT.md  # How to run and test locally
 │   ├── MONITORING.md         # Metrics pipeline and dashboard import
