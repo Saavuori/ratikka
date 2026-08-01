@@ -19,7 +19,7 @@ export const VersionBadge: React.FC = () => {
       href="https://saavuori.github.io/ratikka/"
       target="_blank"
       rel="noopener noreferrer"
-      title="View changelog"
+      title="View changelog · Traffic-light junctions: Helsingin kaupunkiympäristön toimiala / Kaupunkimittauspalvelut, CC BY 4.0"
     >
       <span className="version-badge__tag">{info.version}</span>
     </a>

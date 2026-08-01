@@ -1,4 +1,4 @@
-import type { TripDetailsResponse, StopDetailsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyEndpoint } from '../types';
+import type { TripDetailsResponse, StopDetailsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyEndpoint } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -51,6 +51,20 @@ export async function fetchBikeStations(): Promise<BikeStationsFeatureCollection
   const res = await fetch(`${API_BASE}/bike-stations`);
   if (!res.ok) {
     throw new Error(`Failed to fetch bike stations: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/**
+ * Fetch every known signalized-junction location in Helsinki (traffic lights
+ * + pedestrian/cyclist warning lights) as a GeoJSON FeatureCollection. This is
+ * a static reference dataset (Helsinki open data, CC BY 4.0) — fetch once, no
+ * polling needed.
+ */
+export async function fetchTrafficLights(): Promise<TrafficLightsFeatureCollection> {
+  const res = await fetch(`${API_BASE}/traffic-lights`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch traffic lights: ${res.statusText}`);
   }
   return res.json();
 }

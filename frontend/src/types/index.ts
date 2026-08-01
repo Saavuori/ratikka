@@ -123,6 +123,24 @@ export interface BikeStationsFeatureCollection {
   features: BikeStationFeature[];
 }
 
+export interface TrafficLightFeature {
+  type: 'Feature';
+  geometry: {
+    type: 'Point';
+    coordinates: [number, number]; // [lon, lat]
+  };
+  properties: {
+    id: number;
+    type: 'traffic_light' | 'warning_light';
+    junction: string;
+  };
+}
+
+export interface TrafficLightsFeatureCollection {
+  type: 'FeatureCollection';
+  features: TrafficLightFeature[];
+}
+
 export interface AlertEntity {
   type: string; // "Route" or "Stop"
   gtfsId: string;

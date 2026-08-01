@@ -18,6 +18,7 @@
   - [REST — Route Details](#rest--route-details)
   - [REST — Bike Station Details](#rest--bike-station-details)
   - [REST — Bike Stations (All)](#rest--bike-stations-all)
+  - [REST — Traffic Lights (All)](#rest--traffic-lights-all)
   - [REST — Destination Search (Geocode)](#rest--destination-search-geocode)
   - [REST — Journey Plan](#rest--journey-plan)
   - [REST — Health Check](#rest--health-check)
@@ -542,6 +543,51 @@ live availability. Cached for 20 seconds server-side.
 
 Stations without coordinates are omitted. `coordinates` are `[lon, lat]` per the
 GeoJSON spec.
+
+---
+
+### REST — Traffic Lights (All)
+
+Get every known signalized-junction location in Helsinki (ordinary traffic
+lights and pedestrian/cyclist warning lights) as a GeoJSON `FeatureCollection`,
+sourced from Helsinki's open-data WFS (`avoindata:Liikennevalot_piste` and
+`avoindata:Varoitusvalot_piste`, CC BY 4.0 — Helsingin kaupunkiympäristön
+toimiala / Kaupunkimittauspalvelut). The frontend uses this, together with a
+tram's speed/door-state/stop-id, to label a stopped tram as "waiting at
+traffic lights" near a matching junction.
+
+**This is a static location dataset, not a live signal-state feed** — it does
+not say whether a given light is red right now, only where signalized
+junctions exist. Changes rarely, so it's cached for 24 hours server-side
+rather than refetched per request.
+
+| Property | Value |
+|---|---|
+| **Method** | `GET` |
+| **Path** | `/api/v1/traffic-lights` |
+| **Auth** | None |
+
+**Response** `200 OK`:
+
+```json
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [24.8823, 60.2016] },
+      "properties": {
+        "id": 27,
+        "type": "traffic_light",
+        "junction": "Huopalahdentie/Tietokuja"
+      }
+    }
+  ]
+}
+```
+
+`type` is `"traffic_light"` or `"warning_light"`. `coordinates` are `[lon, lat]`
+per the GeoJSON spec.
 
 ---
 

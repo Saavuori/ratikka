@@ -19,7 +19,8 @@ import { getRouteColor, routeColorMatchExpression, ROUTE_COLORS, TRAM_GREEN } fr
 import { assignCorridorSlots, canonicalizeDirection, dedupeOverlappingPaths } from '../lib/routeSlots';
 import type { RoutePath } from '../lib/routeSlots';
 import { fetchBikeStations } from '../lib/api';
-import type { BikeStationsFeatureCollection } from '../types';
+import type { BikeStationsFeatureCollection, TrafficLightFeature } from '../types';
+import { useTrafficLights } from '../hooks/useTrafficLights';
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -182,6 +183,12 @@ export const Map: React.FC<MapProps> = ({
   // ref so a theme/style reload can re-seed the recreated source without
   // waiting for the next fetch.
   const bikeStationsDataRef = useRef<BikeStationsFeatureCollection | null>(null);
+  // Latest signalized-junction features (static reference data, shared with
+  // the tram popup via useTrafficLights). Kept in a ref for the same reason
+  // as bikeStationsDataRef: re-seed the source immediately after a
+  // theme/style reload recreates it.
+  const trafficLightsDataRef = useRef<TrafficLightFeature[]>([]);
+  const trafficLightFeatures = useTrafficLights();
 
   const journeyLegsRef = useRef<JourneyLeg[] | null>(journeyLegs);
   const journeyEndpointsRef = useRef<{ from: JourneyEndpoint; to: JourneyEndpoint } | null>(journeyEndpoints);
@@ -1635,6 +1642,89 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
+    // 15. Traffic-light junction markers (Helsinki open data, CC BY 4.0 — see
+    // the "Waiting at traffic lights" popup badge). This is a static
+    // reference layer, so it's populated once from `trafficLightsDataRef`
+    // rather than polled like citybike availability.
+    if (!map.getSource('traffic-lights')) {
+      map.addSource('traffic-lights', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: trafficLightsDataRef.current },
+      });
+    }
+
+    if (!map.hasImage('traffic-light-icon')) {
+      const signalSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="24" viewBox="0 0 18 24" fill="none">
+          <rect x="4" y="1" width="10" height="17" rx="3" fill="#1f2937" stroke="#ffffff" stroke-width="1.2"/>
+          <circle cx="9" cy="5.5" r="2" fill="#ef4444"/>
+          <circle cx="9" cy="9.5" r="2" fill="#fcbc19"/>
+          <circle cx="9" cy="13.5" r="2" fill="#20bf6b"/>
+          <line x1="9" y1="18" x2="9" y2="23" stroke="#1f2937" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      `;
+      const signalImg = new Image(18, 24);
+      signalImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(signalSvg);
+      signalImg.onload = () => {
+        if (mapRef.current !== map) return;
+        if (!map.hasImage('traffic-light-icon')) map.addImage('traffic-light-icon', signalImg, { pixelRatio: 2 });
+      };
+    }
+
+    if (!map.hasImage('warning-light-icon')) {
+      const warningSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="24" viewBox="0 0 18 24" fill="none">
+          <path d="M9 1.5 L16.5 15.5 A2 2 0 0 1 14.7 18.5 L3.3 18.5 A2 2 0 0 1 1.5 15.5 Z" fill="#fcbc19" stroke="#ffffff" stroke-width="1.2"/>
+          <circle cx="9" cy="10" r="1.4" fill="#1f2937"/>
+          <rect x="8.2" y="5.5" width="1.6" height="3.5" rx="0.8" fill="#1f2937"/>
+          <line x1="9" y1="18.5" x2="9" y2="23" stroke="#1f2937" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      `;
+      const warningImg = new Image(18, 24);
+      warningImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(warningSvg);
+      warningImg.onload = () => {
+        if (mapRef.current !== map) return;
+        if (!map.hasImage('warning-light-icon')) map.addImage('warning-light-icon', warningImg, { pixelRatio: 2 });
+      };
+    }
+
+    // Street-level only: 557+ points citywide would clutter the overview.
+    if (!map.getLayer('traffic-lights-icons')) {
+      map.addLayer({
+        id: 'traffic-lights-icons',
+        type: 'symbol',
+        source: 'traffic-lights',
+        minzoom: 15,
+        layout: {
+          'icon-image': [
+            'match',
+            ['get', 'type'],
+            'warning_light', 'warning-light-icon',
+            'traffic-light-icon'
+          ],
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'icon-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15, 0.55,
+            18, 0.85
+          ]
+        },
+        paint: {
+          'icon-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15, 0,
+            15.5, 1
+          ]
+        }
+      }, 'trams-circles');
+    }
+
     // Source for selected vehicle to next stop route
     if (!map.getSource('next-stop-route')) {
       map.addSource('next-stop-route', {
@@ -2221,6 +2311,19 @@ export const Map: React.FC<MapProps> = ({
       clearInterval(timer);
     };
   }, []);
+
+  // Feed signalized-junction locations (from the shared useTrafficLights
+  // hook) into the 'traffic-lights' source once they arrive. This is static
+  // reference data with nothing to poll for, unlike bike availability above.
+  useEffect(() => {
+    if (trafficLightFeatures.length === 0) return;
+    trafficLightsDataRef.current = trafficLightFeatures;
+    const map = mapRef.current;
+    const src = map?.getSource('traffic-lights') as maplibregl.GeoJSONSource | undefined;
+    if (src && typeof src.setData === 'function') {
+      src.setData({ type: 'FeatureCollection', features: trafficLightFeatures } as unknown as FeatureCollection);
+    }
+  }, [trafficLightFeatures]);
 
   // Update selection ring filter
   useEffect(() => {
