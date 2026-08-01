@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.50.0] - 2026-08-01
+
+### Added
+- **Stopped trams can now tell you they're likely waiting at a traffic light.** A tram sitting still with its doors closed and no scheduled stop under it used to just read "Secured (Doors Closed)" with no further explanation. The map now loads Helsinki's open dataset of signalized-junction locations (`/api/v1/traffic-lights`, sourced from the city's `Liikennevalot_piste`/`Varoitusvalot_piste` WFS layers, CC BY 4.0) and shows small traffic-light markers on the map from street level up. When a stopped tram is within ~35m of one of those junctions, its detail panel now shows "Likely waiting at traffic lights — *cross street names*"; if it's stopped somewhere with no nearby junction, it reads "Stopped — possibly held in traffic" instead. This is a location dataset, not a live signal-state feed, so the label is offered as the likely explanation rather than a confirmed one — doors-open state still wins as the authoritative "at a stop" signal.
+
+---
+
 ## [v0.49.1] - 2026-07-25
 
 ### Changed

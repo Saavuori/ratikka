@@ -3,7 +3,9 @@ import React, { useEffect, useState } from 'react';
 import type { VehiclePosition, TripDetailsResponse, Alert } from '../types';
 import { AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Activity, Gauge, Compass, Cpu, Database, Users, ShieldCheck, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useTrafficLights } from '../hooks/useTrafficLights';
 import { getRouteColor } from '../lib/routeColors';
+import { classifyStopReason } from '../lib/trafficLights';
 
 interface TramPopupProps {
   tram: VehiclePosition;
@@ -171,6 +173,14 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   const speedKmh = Math.round(tram.spd * 3.6);
   const isDoorsOpen = tram.drst === 1;
   const isMoving = speedKmh > 0;
+
+  // Why is this tram stopped? Doors-open state is authoritative for "at a
+  // stop"; otherwise we check proximity to a known signalized junction
+  // (Helsinki open data). That dataset only records where junctions are, not
+  // live signal state, so "traffic_light" is offered as a likely reason, not
+  // a confirmed one.
+  const trafficLightFeatures = useTrafficLights();
+  const stopReason = classifyStopReason(tram, trafficLightFeatures);
   
   // Calculate wheel speed (seconds per rotation)
   const wheelSpeedCss = isMoving ? `${Math.max(0.1, 3.6 / tram.spd)}s` : '0s';
@@ -508,6 +518,31 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                   {isDoorsOpen ? 'Boarding Active (Doors Open)' : 'Secured (Doors Closed)'}
                 </span>
               </div>
+
+              {/* Why the tram is stopped, when it's not simply at a stop */}
+              {stopReason.reason === 'traffic_light' && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                  marginTop: '6px', padding: '4px 10px', borderRadius: '999px',
+                  background: 'rgba(252, 188, 25, 0.12)', border: '1px solid rgba(252, 188, 25, 0.3)',
+                }}>
+                  <span style={{ fontSize: '0.7rem' }}>🚦</span>
+                  <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#fcbc19' }}>
+                    Likely waiting at traffic lights — {stopReason.junction!.properties.junction}
+                  </span>
+                </div>
+              )}
+              {stopReason.reason === 'stopped' && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                  marginTop: '6px', padding: '4px 10px', borderRadius: '999px',
+                  background: 'rgba(148, 163, 184, 0.12)', border: '1px solid rgba(148, 163, 184, 0.25)',
+                }}>
+                  <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#94a3b8' }}>
+                    Stopped — possibly held in traffic
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Dials & Gauges Row */}

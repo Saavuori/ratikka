@@ -72,6 +72,8 @@ await page.route('**/api/v1/**', (r) => r.fulfill({ json: {} }));
 await page.route('**/api/v1/alerts', (r) => r.fulfill({ json: { alerts: [] } }));
 await page.route('**/api/v1/bike-station/**', (r) =>
   r.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
+await page.route('**/api/v1/traffic-lights', (r) =>
+  r.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
 // VersionBadge does info.git_sha.substring(0, 7) unguarded, so an incomplete
 // payload here crashes the whole app before the map ever initialises.
 await page.route('**/api/v1/version', (r) =>
