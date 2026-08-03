@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.50.1] - 2026-08-03
+
+### Changed
+- **Frontend packages updated**: `typescript` 6.0.2 → 7.0.0.
+
+---
+
 ## [v0.50.0] - 2026-08-01
 
 ### Added
