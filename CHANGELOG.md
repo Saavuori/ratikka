@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.50.2] - 2026-08-10
+
+### Changed
+- **GitHub Actions updated**: `renovatebot/github-action` v46.2.0 → v46.2.1.
+- **Go modules updated**: `github.com/redis/go-redis/v9` 9.21.0 → 9.22.0.
+- **Deploy stack images updated**: `docker.io/grafana/alloy` v1.18.0 → v1.18.1.
+- **Frontend packages updated**: `lucide-react` 1.18.0 → 1.29.0, `maplibre-gl` 6.0.0 → 6.2.0, `globals` 17.7.0 → 17.9.0, `typescript-eslint` 8.65.0 → 8.66.0, `vite` 8.1.5 → 8.2.1.
+
+---
+
 ## [v0.50.1] - 2026-08-03
 
 ### Changed
