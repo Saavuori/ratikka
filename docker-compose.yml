@@ -39,7 +39,8 @@ services:
   ratikka-alloy:
     # Pinned deliberately. On `:latest` an unattended restart could pull a new
     # Alloy major and break metrics collection with no change on our side.
-    # Dependabot (.github/dependabot.yml, docker ecosystem) proposes bumps.
+    # Renovate (renovate.json5, docker-compose manager) proposes bumps. The copy
+    # in deploy.sh's heredoc is invisible to it, so bump both together.
     image: docker.io/grafana/alloy:v1.18.1
     restart: unless-stopped
     volumes:
