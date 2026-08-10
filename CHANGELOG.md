@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.50.2] - 2026-08-10
+
+### Changed
+- **GitHub Actions updated**: `renovatebot/github-action` v46.2.0 → v46.2.1.
+- **Go modules updated**: `github.com/redis/go-redis/v9` 9.21.0 → 9.22.0. This release changes the client's default read/write timeouts, retry backoff and TCP keep-alive. `NewRedisCache` builds its client from `redis.ParseURL` and sets none of those explicitly, so it takes the new defaults — harmless for a co-located cache doing `HSET`/`HGETALL`, but worth knowing if the Redis ever moves off the host.
+- **Deploy stack images updated**: `docker.io/grafana/alloy` v1.18.0 → v1.18.1.
+- **Frontend packages updated**: `lucide-react` 1.28.0 → 1.29.0, `maplibre-gl` 6.1.0 → 6.2.0, `globals` 17.8.0 → 17.9.0, `typescript-eslint` 8.65.0 → 8.66.0, `vite` 8.2.0 → 8.2.1.
+
+---
+
 ## [v0.50.1] - 2026-08-03
 
 ### Changed

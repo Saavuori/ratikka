@@ -71,7 +71,7 @@ services:
 
   ratikka-alloy:
     # Pinned deliberately -- see the note in the repo's docker-compose.yml.
-    image: docker.io/grafana/alloy:v1.18.0
+    image: docker.io/grafana/alloy:v1.18.1
     restart: unless-stopped
     volumes:
       - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro,Z
