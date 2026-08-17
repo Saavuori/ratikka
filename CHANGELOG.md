@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.50.3] - 2026-08-17
+
+### Changed
+- **GitHub Actions updated**: `renovatebot/github-action` v46.2.1 → v46.2.2.
+- **Frontend packages updated**: `lucide-react` 1.18.0 → 1.31.0, `maplibre-gl` 6.0.0 → 6.3.0, `@types/node` 26.1.1 → 26.2.0, `eslint` 10.8.0 → 10.8.1, `eslint-plugin-react-refresh` 0.5.2 → 0.5.4, `globals` 17.7.0 → 17.11.0, `typescript-eslint` 8.65.0 → 8.67.0.
+
+---
+
 ## [v0.50.2] - 2026-08-10
 
 ### Changed
