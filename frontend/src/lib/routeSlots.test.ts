@@ -54,6 +54,19 @@ describe('assignCorridorSlots', () => {
     expect(Math.max(...slots) - Math.min(...slots)).toBe(1);
   });
 
+  it('caps how wide a busy corridor fans out', () => {
+    // Twelve lines down one street. Unbounded, the outermost would sit six slots
+    // out — far enough off the street at city zoom to land in the sea, and far
+    // enough to fold MapLibre's offsetting into blobs at the turning loops.
+    const slots = assignCorridorSlots(
+      Array.from({ length: 12 }, (_, i) => ({ line: `${i + 1}`, coords: corridor() }))
+    ).map((p) => p.slot);
+    expect(Math.min(...slots)).toBeGreaterThanOrEqual(-3);
+    expect(Math.max(...slots)).toBeLessThanOrEqual(3);
+    // The seven available slots are all used before any line doubles up.
+    expect(new Set(slots).size).toBe(7);
+  });
+
   it('orders lines numerically, not lexically', () => {
     // Lexically "10" sorts before "2" and would take the middle slot.
     const slotted = assignCorridorSlots([
