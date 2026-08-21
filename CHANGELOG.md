@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.50.3] - 2026-08-21
+
+### Fixed
+- **Highlighted routes no longer drift off their streets when zoomed out**: the parallel-ribbon fan uses MapLibre's `line-offset`, which is measured in *pixels*, so a route sitting several slots out covered more and more ground as the map zoomed out — with the whole network shown, lines ended up a block away from the street they follow, or out in the sea. The offset now tapers to zero below zoom 12, where the streets a fan separates are not distinguishable anyway, and the fan itself is capped at three slots either side of the true geometry. Beyond that the corridor is too crowded to fan out legibly, so lines share a slot (told apart by colour) instead. The cap also removes the blobs of solid colour that appeared at terminal loops, where an offset wider than the turn folded the offset geometry in on itself.
+
+### Added
+- **The map's placement is now checked, not just its validity**: `scripts/verify-route-offsets.mjs` draws synthetic route geometry with the app's own paint expressions and measures how far the painted ribbon lands from the coordinates it was given — the failure above passed both existing map checks, because every layer spec was valid and every tile rendered. The offset's zoom stops are additionally unit tested through MapLibre's style spec, so that half runs in CI on every PR.
+
+---
+
 ## [v0.50.2] - 2026-08-10
 
 ### Changed
