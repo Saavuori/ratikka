@@ -3,10 +3,11 @@
 How a commit becomes the running production site, what gates it passes on the
 way, and what to do when nothing ships.
 
-The short version: **`CHANGELOG.md` is the single source of truth for the
-version.** The release tag is whatever the top `## [vX.Y.Z]` heading says. Bump
-the heading to release; leave it alone and nothing is built. There is no
-automatic bump computation and no manual tagging.
+The short version: **the commit messages are the version.** On a push to `main`,
+`paulhatch/semantic-version` reads everything since the last `v*` tag and picks
+the bump — `feat:` minor, `!:`/`BREAKING CHANGE:` major, anything else patch —
+then tags, builds and publishes. Nothing has to be predicted, nothing has to be
+tagged by hand, and no file has to be edited for a merge to ship.
 
 ---
 
@@ -14,22 +15,18 @@ automatic bump computation and no manual tagging.
 
 ```mermaid
 graph TD
-    Human["Human PR<br/>(bump the heading by hand)"] --> Gate
-    Renovate["renovate.yml — Mondays 04:00 UTC<br/>changelog-entry.js writes the entry<br/>inside Renovate's own commit"] --> Gate
+    Human["Human PR<br/>(conventional commit message)"] --> Gate
+    Dependabot["Dependabot — Mondays 06:00 Helsinki<br/>one grouped PR per ecosystem<br/>chore(deps): ..."] --> Gate
 
-    Gate{"ci.yml — backend + frontend<br/>+ release-logic + docker"}
+    Gate{"ci.yml — backend + frontend<br/>+ changelog + docker"}
     Gate -->|green| Merge["Merge to main"]
     Gate -->|red| Fix["Fix and push again"]
 
     Merge -->|ci.yml again| MainCI["CI on main"]
-    Merge -->|docker-build.yml| Derive["scripts/derive-release.sh<br/>read top CHANGELOG heading"]
+    Merge -->|docker-build.yml| Version["paulhatch/semantic-version<br/>read commits since last v* tag"]
 
-    Derive -->|tag does not exist| Tag["git tag vX.Y.Z + push"]
-    Derive -->|tag exists, deps-only commits<br/>— fallback only| AutoBump["generate entry, bump patch,<br/>commit + tag atomically"]
-    Derive -->|tag exists, human commits| Skip["released=false — nothing ships"]
-
+    Version --> Tag["git tag vX.Y.Z + push"]
     Tag --> Build["Multi-arch buildx<br/>linux/amd64 + linux/arm64"]
-    AutoBump --> Build
     Build --> GHCR["ghcr.io/saavuori/ratikka<br/>:latest :vX.Y.Z :sha"]
 
     GHCR -->|update.sh cron, every 5 min| Host["Oracle host — podman<br/>pull :latest, down/up"]
@@ -38,19 +35,21 @@ graph TD
     Merge -->|deploy-pages.yml<br/>only if CHANGELOG.md changed| Pages["GitHub Pages changelog"]
 ```
 
-Note where the dependency path enters: **a Renovate PR already carries its
-changelog entry**, so it goes through the same front door as a human PR and
-releases through the ordinary path. The dependency branch inside
-`derive-release.sh` is a safety net, not the mechanism — see [§3](#3-release-logic).
+Note that the dependency path is not a special case any more. A Dependabot PR
+goes through the same front door as a human one and releases through the same
+single path — there is no fallback branch, because there is nothing for a
+dependency PR to forget to write.
 
-Four workflows, each with a distinct trigger:
+Three workflows, each with a distinct trigger:
 
 | Workflow | File | Triggers on | Does |
 |---|---|---|---|
 | CI | [`ci.yml`](../.github/workflows/ci.yml) | every PR, every push to `main` | test/lint/build gate |
 | CI/CD Build and Release | [`docker-build.yml`](../.github/workflows/docker-build.yml) | push to `main` (with `paths-ignore`) | tag + multi-arch image to GHCR |
 | Deploy Changelog to Pages | [`deploy-pages.yml`](../.github/workflows/deploy-pages.yml) | push to `main` touching `CHANGELOG.md` or the generator | publishes the changelog site |
-| Renovate | [`renovate.yml`](../.github/workflows/renovate.yml) | cron, Mondays 04:00 UTC + `workflow_dispatch` | opens the weekly dependency PR |
+
+Dependabot is not a workflow — GitHub runs it from
+[`.github/dependabot.yml`](../.github/dependabot.yml). See [§7](#7-dependency-updates).
 
 ---
 
@@ -67,7 +66,7 @@ Four jobs, all on `ubuntu-latest`, all in parallel:
 |---|---|
 | **Backend (go test)** | `go mod tidy` + `git diff --exit-code` on `go.mod`/`go.sum`, then `go vet ./...`, then `go test ./...` (working dir `backend/`) |
 | **Frontend (lint, build, test)** | `npm ci`, `npm run lint`, `npm run build`, `npm test` (working dir `frontend/`, Node 24) |
-| **Release logic** | `./scripts/derive-release.test.sh` (the release decision) then `./scripts/changelog-entry.test.sh` (the entry Renovate writes) — see [§3](#3-release-logic) |
+| **Changelog (renders, no placeholder)** | rejects an `[Unreleased]` heading, then runs `scripts/build-changelog.js` |
 | **Docker image builds** | amd64-only `docker/build-push-action` with `push: false` |
 
 Notes on why each is shaped the way it is:
@@ -78,6 +77,9 @@ Notes on why each is shaped the way it is:
 - **`go test ./...` works on a clean checkout** because
   `backend/internal/api/dist/index.html` is tracked — the `//go:embed all:dist`
   pattern needs at least one file to exist or the package will not compile.
+- **The changelog job no longer guards a release**, because the changelog no
+  longer decides one. It guards the *published site*: a heading left as
+  `[Unreleased]`, or a file the generator chokes on, would go live on Pages.
 - **The Docker job does not push.** It builds amd64 only, purely to catch a
   broken `Dockerfile` before it reaches `main`; the real multi-arch build lives
   in the release workflow. Both use `type=gha` buildx cache.
@@ -86,125 +88,79 @@ Notes on why each is shaped the way it is:
 
 ---
 
-## 2. Release — the CHANGELOG is the version
+## 2. Release — the commit messages are the version
 
-**To cut a release, bump the top `## [vX.Y.Z]` heading in `CHANGELOG.md`.** That
-is the entire trigger.
+**To cut a release, merge to `main`.** That is the entire trigger. Every merge
+that touches something shippable releases; the commit prefixes decide how big a
+release it is.
 
 [`docker-build.yml`](../.github/workflows/docker-build.yml) runs on every push to
-`main` except doc/infra-only paths (`README.md`, `docs/**`, `monitoring/**`,
-`deploy.sh`, `.gitignore` are in `paths-ignore`). Its `tag` job runs
-[`scripts/derive-release.sh`](../scripts/derive-release.sh), which emits
-`tag=` and `released=` to `$GITHUB_OUTPUT`. The `build-and-push` job is gated on
-`needs.tag.outputs.released == 'true'`.
-
-Because the tag is derived from the heading rather than computed, **the deployed
-version and the changelog cannot drift** — the running app always equals the
-changelog's top entry.
-
-The flip side: **a merge to `main` that forgets the changelog bump ships nothing,
-silently.** CI is green, the workflow runs, the build is skipped because the tag
-already exists. This has bitten before — v0.44.9 had to be re-cut as v0.44.10 for
-exactly this reason. If you merged and the site did not change, check the
-heading first.
+`main` except doc/infra-only paths (`README.md`, `CLAUDE.md`, `CHANGELOG.md`,
+`docs/**`, `monitoring/**`, `scripts/**`, `.claude/**`, `deploy.sh`, `.gitignore`
+are in `paths-ignore`). Its `tag` job runs
+[`paulhatch/semantic-version`](https://github.com/PaulHatch/semantic-version)
+against the full history (`fetch-depth: 0` is required — a shallow clone cannot
+see the last tag), then pushes the tag it computed. `build-and-push` follows
+unconditionally.
 
 ### Choosing the number
 
-Semantically, guided by the conventional-commit prefix of the change:
+You don't. You choose the **prefix**, and the prefix chooses the number:
 
-| Change | Bump | Example |
+| Commit contains | Bump | Example |
 |---|---|---|
-| `fix:` | patch | v0.47.0 → v0.47.1 |
-| `feat:` | minor | v0.47.1 → v0.48.0 |
-| `feat!:` / `BREAKING CHANGE:` | major | v0.48.0 → v1.0.0 |
+| `!:` or `BREAKING CHANGE:` | major | v0.48.0 → v1.0.0 |
+| `feat:` / `feat(scope):` | minor | v0.47.1 → v0.48.0 |
+| anything else, incl. `chore(deps):` | patch | v0.47.0 → v0.47.1 |
 
-The prefix guides the number you write, but the **heading is authoritative** —
-the tag matches it verbatim. Commit messages no longer drive the version at all;
-they are how the changelog gets written.
+The patterns are configured on the action as `major_pattern` and `minor_pattern`;
+the highest match across all commits in the batch wins. This makes Conventional
+Commits **load-bearing** rather than decorative — a `feat:` that should have been
+a `fix:` cuts a minor, and there is no second place to catch it.
 
 ### Do not
 
-- **Do not create tags manually.** CI owns tag creation.
+- **Do not create tags manually.** CI owns tag creation, and a hand-made tag
+  changes what the next release computes from.
 - **Do not hardcode version strings.** They are injected via build args.
-- **Do not write a heading whose number doesn't match the intended bump** — you
-  will get a tag that says `patch` for a breaking change.
+- **Do not squash a `feat:` and a `fix:` into a commit titled `chore:`** — the
+  release will under-report.
 
 ---
 
-## 3. Release logic
+## 3. Why this replaced the CHANGELOG-driven release
 
-The decision lives in [`scripts/derive-release.sh`](../scripts/derive-release.sh)
-rather than inline YAML specifically so it can be tested outside CI —
-[`scripts/derive-release.test.sh`](../scripts/derive-release.test.sh) builds
-throwaway git repos with real bare remotes and exercises every path. It runs as
-its own CI job. Release logic that silently ships nothing is exactly the kind of
-bug that hides for weeks, so it gets tests.
+Until v0.50.4 the release tag was whatever the top `## [vX.Y.Z]` heading in
+`CHANGELOG.md` said, resolved by `scripts/derive-release.sh`. The appeal was
+real — the deployed version and the changelog could not drift, because they were
+the same string. But coupling them made the version a *shared mutable resource*,
+and that produced two failure modes that both actually happened:
 
-The script greps the version with:
+**A merge that forgot the bump shipped nothing, silently.** CI green, workflow
+ran, build skipped because the tag already existed. v0.44.9 had to be re-cut as
+v0.44.10 for exactly this.
 
-```
-^##\s*\[\s*v?\K[0-9]+\.[0-9]+\.[0-9]+
-```
+**Every open PR had to predict the next number, so PRs collided.** Two branches
+in flight both wrote the same heading and conflicted in `CHANGELOG.md` by
+construction — not because they touched the same feature, but because they
+touched the same counter. PR #59 hit this against #60. The conflict was not a
+merge accident; it was the design working as specified.
 
-`scripts/changelog-entry.js` and `scripts/bump-changelog-for-deps.mjs` use the
-same pattern deliberately, so none of the three can disagree about what "the
-current version" is.
+A stack of machinery existed to paper over the second problem:
+`scripts/changelog-entry.js` (a Renovate post-upgrade task that wrote the entry
+inside the bot's own commit), a dependency-only fallback inside
+`derive-release.sh` that bumped the patch when every commit in the batch was
+`chore(deps)`, `scripts/bump-changelog-for-deps.mjs`, and a `release-logic` CI
+job testing all of it. That was a lot of tested, working code in service of a
+number that did not need to live in a file. Deriving the version from the commit
+messages removes the shared resource, and with it every one of those pieces —
+`renovate.json5` and the self-hosted Renovate workflow included, since the only
+reason Renovate had to be self-hosted was running that post-upgrade command.
 
-### Decision table
-
-| State of `main` | Result | `released` |
-|---|---|---|
-| Top heading names a tag that does **not** exist | tag it, build it | `true` |
-| Tag exists, **no** new non-merge commits since it | nothing to do | `false` |
-| Tag exists, every new commit is `chore(deps):` / `chore(deps-dev):` | *(fallback)* generate entry, bump patch, commit + tag, build | `true` |
-| Tag exists, **any** human commit in the batch | skip — a human should write the entry | `false` |
-| No `## [vX.Y.Z]` heading found at all | `::error::` and exit 1 | — |
-
-Since Renovate writes the entry on the branch, a dependency PR normally hits the
-**first** row, exactly like a human PR. The third row is the safety net below.
-
-### The dependency fallback
-
-**This is no longer the mechanism — it is the backstop.** It was written for
-Dependabot, which could not author a changelog entry, so its merges would land on
-`main` and never ship, skipped precisely because the heading did not move. That
-fix generated the entry *after* the merge and committed it straight to `main`,
-which meant the only description of what shipped lived behind the merge where
-nobody reviews it. Renovate writes the entry in the PR instead — see
-[§7](#7-dependency-updates).
-
-The fallback stays for the branch that arrives with its heading unmoved: the
-post-upgrade task failed, someone hand-wrote a dependency commit, or the bot got
-swapped out again. When *every* new non-merge commit since the current tag is
-prefixed `chore(deps)` or `chore(deps-dev)`,
-[`scripts/bump-changelog-for-deps.mjs`](../scripts/bump-changelog-for-deps.mjs)
-inserts a `### Changed` entry above the current top entry, bumps the **patch**,
-and the script commits and tags it.
-
-A single human commit in the batch disables this — the heading stays put and
-nothing ships until a human writes an entry.
-
-Two details worth knowing:
-
-- **The push is atomic.** `git push --atomic origin HEAD:main refs/tags/vX.Y.Z`
-  lands the commit and its tag together, so the workflow run triggered by that
-  push always sees the tag already present and skips, instead of racing the
-  current run to build the same thing twice.
-- **`build-and-push` checks out the tag, not `github.sha`.** On an automatic
-  dependency release the tag points at the CHANGELOG-bump commit, which is one
-  commit ahead of the SHA that triggered the run. Building `github.sha` would
-  publish an image whose embedded version does not match the tag it is published
-  under. For a normal release the tag *is* `github.sha` and this is a no-op.
-
-This is also why [`renovate.json5`](../renovate.json5) must keep the
-`chore(deps)` commit prefix on **every** manager, including `github-actions` —
-the fallback keys off that exact string. A prettier `ci(deps)` for action bumps
-would make them look like human commits and silently disable it. Under
-Dependabot that was not hypothetical: the config briefly used a `ci:` prefix for
-actions, and commit
-[`8a69be6`](https://github.com/Saavuori/ratikka/commit/8a69be6) `ci: bump the
-actions group with 10 updates` was part of the batch of five dependency merges
-that sat on `main` shipping nothing.
+What is lost: the changelog heading and the tag can now drift, and nothing
+enforces that an entry exists at all. That is a documentation defect rather than
+a shipping defect — the release is correct either way — and it is the cheaper of
+the two failure modes by a wide margin.
 
 ---
 
@@ -216,7 +172,7 @@ The `build-and-push` job builds [`Dockerfile`](../Dockerfile) for
 ```
 ghcr.io/saavuori/ratikka:latest
 ghcr.io/saavuori/ratikka:vX.Y.Z
-ghcr.io/saavuori/ratikka:<sha of the tagged commit>
+ghcr.io/saavuori/ratikka:<merge commit sha>
 ```
 
 The repository name is lowercased in a `meta` step (`${GITHUB_REPOSITORY,,}`)
@@ -229,7 +185,7 @@ Three build args are threaded into the Go binary via `-ldflags`:
 |---|---|---|
 | `VERSION` | the release tag | `ratikka/internal/api.Version` |
 | `BUILD_DATE` | `date -u +'%Y-%m-%dT%H:%M:%SZ'` at build time | `.BuildDate` |
-| `GIT_SHA` | `git rev-parse HEAD` of the checked-out tag | `.GitCommit` |
+| `GIT_SHA` | `github.sha`, the merge commit the tag points at | `.GitCommit` |
 
 Defaults are `dev` / `unknown` / `unknown` for local builds. They are declared in
 [`backend/internal/api/handlers.go:20`](../backend/internal/api/handlers.go#L20)
@@ -285,210 +241,99 @@ the top heading still republishes the site without cutting a release.
 
 ## 7. Dependency updates
 
-Renovate opens **one grouped pull request every Monday**, and that PR arrives
-with its own `CHANGELOG.md` entry already written. Merging it releases a patch
-through the ordinary path — no special case, no post-merge commit to `main`.
+**Dependabot** opens grouped pull requests every Monday, one per ecosystem,
+configured entirely in [`.github/dependabot.yml`](../.github/dependabot.yml).
+Merging one releases a patch through the ordinary path — no special case, no
+post-merge commit to `main`, no generated changelog entry.
 
-Two files define it:
+### 7.1 Why it replaced self-hosted Renovate
 
-- [`renovate.json5`](../renovate.json5) — what gets updated, how it is grouped,
-  and the post-upgrade task that writes the entry.
-- [`.github/workflows/renovate.yml`](../.github/workflows/renovate.yml) — when it
-  runs and under what identity.
+Renovate was chosen originally because it could run a command after updating the
+manifests, and that command — `scripts/changelog-entry.js` — wrote the
+`CHANGELOG.md` entry that a dependency PR needed in order to ship at all. The
+Mend-hosted app will not run post-upgrade commands, so the bot had to be
+self-hosted from a scheduled workflow, authenticating as a GitHub App with two
+repository secrets (`RENOVATE_APP_ID`, `RENOVATE_APP_PRIVATE_KEY`).
 
-JSON5 rather than `renovate.json` so the config can carry comments: Renovate
-rejects unknown keys, so `_comment` fields would raise config warnings.
+All of that existed to satisfy one requirement: *a dependency merge must move
+the changelog heading, or it ships nothing.* Once the version came from commit
+messages that requirement disappeared, and with it the case for the whole
+apparatus. Dependabot needs no secrets, no App installation and no workflow —
+GitHub runs it — and the one thing it cannot do stopped mattering.
 
-### 7.1 Why self-hosted, and why it replaced Dependabot
+Two things genuinely got worse, and they are worth naming:
 
-`CHANGELOG.md` is the release trigger, and **Dependabot could not write an
-entry.** The workaround (v0.46.1) generated the entry *after* the merge, from
-`derive-release.sh`, committing it straight to `main`. It worked, but the only
-description of what shipped landed behind the merge where nobody reviews it, and
-CI needed push access to `main` to do it.
-
-Renovate runs [`scripts/changelog-entry.js`](../scripts/changelog-entry.js) as a
-**`postUpgradeTask`** — after the manifests are updated but *before* the commit —
-so the entry is part of Renovate's own commit. By the time the PR opens, the
-heading has already moved. The entry is reviewable in the diff, and a dependency
-merge ships through the same path as any other PR.
-
-`postUpgradeTasks` runs arbitrary commands, which the Mend-hosted app does not
-allow (`allowedCommands` is self-hosted only). That is the whole reason this runs
-as a workflow rather than as the hosted GitHub App.
-
-The switch also brought three things Dependabot did not have here: a single PR
-across all managers instead of one per ecosystem, coverage of the
-`docker-compose.yml` images, and `minimumReleaseAge`.
+- **No `minimumReleaseAge`.** Renovate held a release for three days before
+  proposing it, so a version yanked shortly after publishing never reached a PR.
+  Dependabot has no equivalent; the defence is now noticing by hand.
+- **No changelog entry.** Dependency bumps arrive unannotated. Fold them into
+  the next hand-written entry.
 
 ### 7.2 What gets updated
 
-Every place the repo pins a version:
+Every place the repo pins a version, one `updates:` block each:
 
-| Manager | Files |
-|---|---|
-| `gomod` | `backend/go.mod` |
-| `npm` | `frontend/package.json` |
-| `github-actions` | `.github/workflows/*.yml` |
-| `dockerfile` | `Dockerfile` (build + runtime stages) |
-| `docker-compose` | `docker-compose.yml`, `docker-compose.override.yml` |
+| Ecosystem | Directory | Files |
+|---|---|---|
+| `gomod` | `/backend` | `backend/go.mod` |
+| `npm` | `/frontend` | `frontend/package.json` |
+| `github-actions` | `/` | `.github/workflows/*.yml` |
+| `docker` | `/` | `Dockerfile` (build + runtime stages) |
+| `docker-compose` | `/` | `docker-compose.yml`, `docker-compose.override.yml` |
 
-Grouping and exclusions, all in `packageRules`:
+Grouping and exclusions:
 
-- **`minor`, `patch` and `digest` updates are one group** — `all non-major
-  dependencies`, branch slug `all-minor-patch`. One PR means one predicted
-  version heading, so sibling PRs cannot claim the same number.
-- **Majors are split out** (Renovate's default). Each gets its own PR, because
-  each needs a real look.
-- **`maplibre-gl` majors are disabled entirely** — `enabled: false`. They change
-  map rendering behaviour and need both map checks run by hand; v0.46.0 shipped a
-  blank map through green CI. Minor and patch still flow through the group.
-- **`ghcr.io/saavuori/ratikka` is disabled** — our own image, pinned to `:latest`
-  by design, because the host's `update.sh` cron is what pulls it. Without this
-  rule Renovate would keep trying to pin our own deploy tag.
+- **Minor and patch updates are grouped per ecosystem** (`groups:` with
+  `update-types: [minor, patch]`). Dependabot cannot group across ecosystems the
+  way Renovate could, so expect up to five PRs on a busy Monday rather than one.
+  That is now harmless: they no longer compete for a version number.
+- **Majors come as their own PR**, one per dependency, because each needs a real
+  look.
+- **`maplibre-gl` majors are ignored entirely** — a `version-update:semver-major`
+  ignore rule. They change map rendering behaviour and need all three map checks
+  run by hand; v0.46.0 shipped a blank map through green CI. Minor and patch
+  still flow through the group.
+- **`open-pull-requests-limit: 5`** per ecosystem is the backlog cap.
 
-Two global settings shape the flow as much as the rules do:
+Every ecosystem sets `commit-message.prefix: "chore(deps)"` (and
+`prefix-development: "chore(deps-dev)"` where the distinction exists). This no
+longer decides whether a release happens, but it keeps dependency commits out of
+the `feat:` pattern, so a batch of them cuts a **patch**, not a minor.
 
-- **`minimumReleaseAge: '3 days'`** — a release is not proposed until it has
-  survived three days in the wild, so a version yanked shortly after publishing
-  never reaches a PR. Dependabot had no equivalent; the only defence was noticing
-  by hand.
-- **`prConcurrentLimit: 5`** — the backlog cap. If five dependency PRs are
-  already open, nothing new appears until some are cleared.
-
-The schedule lives **only** in the workflow cron. `renovate.json5` deliberately
-sets no `schedule` — two schedules would have to intersect for anything to
-happen, which is a confusing way to get silence.
+Our own image `ghcr.io/saavuori/ratikka` is pinned to `:latest` by design in
+`docker-compose.yml` — the host's `update.sh` cron is what pulls it. Dependabot's
+docker-compose ecosystem does not propose bumps for a floating tag, so unlike
+Renovate it needs no explicit rule to leave it alone.
 
 ### 7.3 The routine flow
 
-1. **Monday 04:00 UTC** (07:00 Helsinki in summer, 06:00 in winter) the cron in
-   `renovate.yml` runs. `workflow_dispatch` triggers it manually, with `dryRun`
-   and `logLevel` inputs.
-2. **Renovate updates the manifests**, runs `changelog-entry.js`, commits both
-   together as `chore(deps): ...`, and opens one PR labelled `dependencies`.
-3. **CI runs on the PR** — this is why the workflow authenticates as a GitHub App
-   rather than `GITHUB_TOKEN`; see [§7.5](#75-the-github-app-requirement).
-4. **Review the diff**, including the changelog entry. The generated text is
-   factual — what moved, between which versions. Expand it by hand when a bump
-   actually matters; that is the only part a script cannot know.
-5. **Merge.** The heading has already moved, so `derive-release.sh` takes its
-   normal first-row path: tag, build, push.
-6. **The host picks it up** within ~5 minutes. Confirm with
+1. **Monday 06:00 Helsinki** Dependabot runs and opens the week's PRs.
+2. **CI runs on each one.** Dependabot PRs trigger `pull_request` workflows
+   normally — this was the other reason Renovate needed an App rather than
+   `GITHUB_TOKEN`, and it is not a concern here.
+3. **Review the diff.** For a frontend PR, check what CI cannot see: if the
+   bundle or the map moved, run the checks in [§8](#8-what-ci-does-not-cover).
+4. **Merge.** The `chore(deps):` commits cut a patch; the tag, build and deploy
+   follow automatically.
+5. **The host picks it up** within ~5 minutes. Confirm with
    `curl -s https://hsl-live.duckdns.org/api/v1/version`.
+6. **Note it in `CHANGELOG.md`** with the next hand-written entry, if the bump
+   is worth a reader knowing about.
 
-### 7.4 The generated changelog entry
-
-[`changelog-entry.js`](../scripts/changelog-entry.js) reads the **pending git
-diff** rather than Renovate's template data. That keeps it runnable and testable
-outside Renovate, and it survives changing or dropping the bot — at the cost of
-per-manifest patterns that need extending when a new kind of pinned version
-enters the repo. It recognises five manifest shapes: `backend/go.mod`,
-`frontend/package.json`, `uses:` lines in workflows, `FROM` lines in the
-`Dockerfile`, and `image:` lines in the compose files.
-
-Details that matter when reading or debugging it:
-
-- **A name must appear on both sides at different versions** to count as an
-  upgrade. That drops reordering noise and added-then-removed lines.
-- **The list is capped at 8 per group**, with `and N more` — a long tail buries
-  the bumps worth reading.
-- **The version is a prediction**: the base branch's top heading, patch + 1.
-  Renovate regenerates it on every rebase, so it corrects itself when a sibling
-  PR merges first and takes that number.
-- **It reads the heading from `origin/main`**, not the working copy — a rerun
-  would otherwise bump off its own previous entry and climb a version each time.
-- **It is idempotent**: a rerun replaces the section it wrote last time instead of
-  stacking a second copy.
-- **It no-ops loudly**: no pending changes, or no recognised version movement, and
-  it leaves `CHANGELOG.md` alone and says so.
-
-Those no-op paths are exactly why
-[`scripts/changelog-entry.test.sh`](../scripts/changelog-entry.test.sh) exists and
-runs in CI: inside Renovate, a silent no-op is indistinguishable from "nothing to
-report", and the failure mode is a PR that merges and ships nothing. Its 14
-assertions cover the predicted version, all five manifest kinds, the rerun
-behaviour, the leave-it-alone cases, and finally that `derive-release.sh`
-actually ships the heading it produced.
-
-### 7.5 The GitHub App requirement
-
-The workflow needs two repository secrets:
-
-| Secret | What |
-|---|---|
-| `RENOVATE_APP_ID` | the GitHub App's numeric ID |
-| `RENOVATE_APP_PRIVATE_KEY` | its private key (PEM) |
-
-The app needs `contents: write`, `pull-requests: write` and `workflows: write` on
-this repository, and must be installed on it. Each run mints a short-lived
-installation token via `actions/create-github-app-token`, so nothing long-lived is
-stored. The first step of the workflow fails loudly if either secret is missing,
-because a run that looks green and silently does nothing is worse.
-
-**Why not `GITHUB_TOKEN`:** pull requests opened with the built-in token do not
-trigger `pull_request` workflows, so `ci.yml` would never run on a dependency PR.
-CI is the only thing that makes these safe to merge on sight, and a merge to
-`main` deploys itself — an unverified dependency PR is the one thing this flow
-cannot afford. An App installation token does trigger them.
-
-Two further wrinkles the config already handles:
-
-- **Commit identity has to be handed to Renovate.** An installation token cannot
-  call `/user`, so the workflow resolves the bot's numeric id via `gh api` and
-  sets `RENOVATE_USERNAME` / `RENOVATE_GIT_AUTHOR`. The numeric id is what makes
-  GitHub attribute the commits to the app rather than to a ghost account.
-- **Renovate's own commit statuses are turned off** (`statusCheckNames` set to
-  `null`). The app has no `statuses: write`, and a 403 there is not a soft
-  failure: Renovate reads it as the repo changing underneath it and aborts the run
-  *after* pushing the branch but *before* opening the PR. Disabling the
-  informational statuses is cheaper than widening the app's permissions.
-
-`RENOVATE_ALLOWED_COMMANDS` in the workflow is the real security boundary for the
-post-upgrade task — Renovate runs nothing unless the fully resolved command
-matches an entry. It is anchored and exact
-(`^node scripts/changelog-entry\.js$`) and must be kept in sync with
-`postUpgradeTasks.commands` in `renovate.json5`; the config block alone does not
-grant permission to run anything.
-
-The `renovatebot/github-action` version is pinned to a full semver tag because
-that action publishes no floating major tag — `@v46` fails to resolve before the
-job even starts. Renovate's own `github-actions` manager keeps the line current.
-
-### 7.6 When something goes wrong
-
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| No PR on Monday | run failed, or nothing passed `minimumReleaseAge` | check the Renovate run log; re-run with `workflow_dispatch` |
-| Workflow fails on the first step | `RENOVATE_APP_ID` / `RENOVATE_APP_PRIVATE_KEY` missing | add the secrets ([§7.5](#75-the-github-app-requirement)) |
-| Branch pushed but no PR opened | the 403-on-statuses abort | confirm `statusCheckNames` are still `null` in `renovate.json5` |
-| PR has no changelog entry | post-upgrade task did not run or found nothing | check `RENOVATE_ALLOWED_COMMANDS` matches the command exactly; the fallback in [§3](#3-release-logic) will still ship it |
-| Entry predicts a version that already exists | a sibling PR merged first | rebase the PR — the entry regenerates |
-| `go.mod/go.sum are not tidy` in CI | the bump left an inconsistent module graph | `cd backend && go mod tidy`, push onto the branch |
-| Lint/type errors after a major | genuine API change | fix on the branch, or disable that major in `renovate.json5` |
-
-To debug without side effects, dispatch the workflow with `dryRun: true` and
-`logLevel: debug` — it resolves everything and opens nothing.
-
-You can also drive Renovate from the PR itself: tick the rebase checkbox in the
-PR body, or add the `dependencies` PR to the Dependency Dashboard issue's
-checkboxes if one is enabled.
-
-### 7.7 Major versions
+### 7.4 Major versions
 
 Majors arrive alone, so treat them one at a time:
 
 1. Read the upstream migration notes linked in the PR body.
 2. Check CI, then check what CI *can't* see — for anything touching the frontend
-   bundle or the map, run the two verification scripts in
+   bundle or the map, run the verification scripts in
    [§8](#8-what-ci-does-not-cover). The v0.46.0 blank map shipped with green CI.
-3. If it needs code changes, push them onto the Renovate branch. Renovate will
-   still rebase the branch (the changelog edit is its own commit, not a foreign
-   push) — so keep an eye on it, or take the branch over entirely.
-4. If it needs real work, close the PR, disable that update in `renovate.json5`
-   with a comment saying why, and do it on your own branch with a hand-written
-   entry. A major that needs a code change should not ship under a generated
-   "dependency updates" heading.
+3. If it needs code changes, push them onto the Dependabot branch, or take the
+   branch over entirely (`@dependabot` comment commands still work).
+4. If it needs real work, close the PR, add an `ignore` rule in
+   `.github/dependabot.yml` with a comment saying why, and do it on your own
+   branch — under a `feat:` or `fix:` prefix, so it releases as the change it
+   actually is rather than as a patch.
 
 `maplibre-gl` is the standing example: v5 → v6 passed `tsc`, the unit tests and
 the layer-spec check, shipped a completely blank map (v0.46.0), was reverted
@@ -499,11 +344,11 @@ appeared (v0.47.0). See
 The Grafana Alloy image is pinned to a concrete tag for the same class of reason:
 the host restarts containers unattended every five minutes, so a floating tag
 could pull a new major and break metrics collection with no change on our side.
-Renovate's `docker-compose` manager proposes those bumps instead.
+Dependabot's docker-compose ecosystem proposes those bumps instead.
 
-### 7.8 Updating dependencies by hand
+### 7.5 Updating dependencies by hand
 
-Renovate covers drift, not intent. Sweep manually when you want everything
+Dependabot covers drift, not intent. Sweep manually when you want everything
 current at once, when chasing a specific advisory, or when a major needs code
 changes alongside it.
 
@@ -529,33 +374,23 @@ Then, if the frontend bundle or map changed:
 ```bash
 node scripts/verify-map-layers.mjs
 DIGITRANSIT_API_KEY=... node scripts/verify-map-renders.mjs
+node scripts/verify-route-offsets.mjs
 ```
 
-You can generate the changelog entry the same way Renovate does, from the pending
-diff, before committing:
+Commit the sweep under `chore(deps):` so it cuts a patch. Unlike before, a sweep
+that writes no changelog entry still ships — and a branch mixing a sweep with
+feature work now simply takes the higher bump, rather than misclassifying the
+whole batch.
 
-```bash
-node scripts/changelog-entry.js
-```
+### 7.6 Changing the Dependabot config
 
-Otherwise write the entry by hand and bump the heading — a hand-made sweep that
-moves no heading ships nothing. Keep sweeps separate from feature work: a branch
-carrying both, committed under `chore(deps):`, can trip the fallback in
-[§3](#3-release-logic) and ship your code under a generated dependency heading.
-
-### 7.9 Changing the Renovate config
-
-- **Never change `semanticCommitType` / `semanticCommitScope` away from
-  `chore` / `deps`.** The fallback in `derive-release.sh` greps for exactly
-  `^chore\(deps(-dev)?\):`.
-- **Keep `postUpgradeTasks.commands` and `RENOVATE_ALLOWED_COMMANDS` in sync.**
-  They are two separate gates and the allow-list is the one that decides.
-- **Comment every `enabled: false`** the way the `maplibre-gl` and
-  `ghcr.io/saavuori/ratikka` rules do. An exclusion with no rationale becomes
-  permanent by accident.
-- **Validate before merging a config change** — dispatch the workflow with
-  `dryRun: true`, and run `./scripts/changelog-entry.test.sh` plus
-  `./scripts/derive-release.test.sh` if you touched anything the release reads.
+- **Keep the `chore(deps)` / `chore(deps-dev)` prefixes on every ecosystem.**
+  They are what stops dependency commits from matching `minor_pattern`.
+- **Comment every `ignore` rule** the way the `maplibre-gl` one does. An
+  exclusion with no rationale becomes permanent by accident.
+- **Dependabot validates its own config**: a malformed `.github/dependabot.yml`
+  shows up on the repository's Insights → Dependency graph → Dependabot tab, not
+  as a failing CI job. Check there after editing it.
 
 ---
 
@@ -595,28 +430,26 @@ See [VERIFICATION.md](VERIFICATION.md) for the wider quality-gate plan.
 ## 9. Runbook
 
 **"I merged to `main` and the site didn't change."**
-Check the top heading in `CHANGELOG.md` against the existing tags. If the tag
-already exists, the build was skipped by design — that is the single most common
-cause. Bump the heading and push; the `docker-build.yml` run log says exactly
-which branch of the decision it took.
+Check whether `docker-build.yml` ran at all, then whether the `tag` job created a
+new tag. Unlike the old CHANGELOG-driven pipeline, a merge that touches shippable
+code always releases — so "nothing shipped" now means the workflow was skipped or
+failed, not that a heading was forgotten.
 
 **"The workflow didn't even run."**
 Check `paths-ignore` in `docker-build.yml`. A push touching only `docs/**`,
-`README.md`, `monitoring/**`, `deploy.sh`, or `.gitignore` does not trigger it.
+`README.md`, `CLAUDE.md`, `CHANGELOG.md`, `monitoring/**`, `scripts/**`,
+`.claude/**`, `deploy.sh`, or `.gitignore` does not trigger it. This is why a
+changelog edit republishes Pages without cutting a release.
 
-**"The Renovate PR merged but nothing shipped."**
-Its changelog entry is missing, so the heading never moved. Check whether the PR
-diff actually contained a `CHANGELOG.md` change — if not, the post-upgrade task
-did not run (see [§7.6](#76-when-something-goes-wrong)). The fallback should have
-caught it, so also check whether a human commit landed in the same window:
-`git log --no-merges --format=%s vX.Y.Z..HEAD`, where anything not prefixed
-`chore(deps)` / `chore(deps-dev)` disables it. Either way, writing an entry by
-hand and bumping the heading ships the batch.
+**"It cut a minor and I expected a patch"** (or vice versa).
+Some commit in the batch matched `minor_pattern` — `feat:` or `feat(scope):`.
+`git log --no-merges --format=%s vX.Y.Z..HEAD` shows the batch the action read.
+Squash-merging a PR uses the PR title as the commit subject, so a PR titled
+`feat: …` cuts a minor even if every commit inside it was a `fix:`.
 
-**"The Renovate PR wants a version that already exists."**
-A sibling PR merged first and claimed that number. Rebase the Renovate branch —
-`changelog-entry.js` reads the heading from `origin/main` and regenerates the
-prediction, so it corrects itself.
+**"The tag job failed with `fatal: no tag found`" or produced `v0.0.1`.**
+`fetch-depth: 0` is missing or the history is shallow — `paulhatch/semantic-version`
+needs the full history to find the previous tag, and computes from zero without it.
 
 **"`/api/v1/version` shows an older version than the tag."**
 The host cron runs every five minutes; wait, then re-check. If it persists, the
@@ -626,22 +459,17 @@ pull or the container restart failed on the host — see memory
 **"The tag exists but no image was published."**
 The `tag` job succeeded and `build-and-push` failed. Multi-arch arm64 builds go
 through QEMU and are the slowest, most failure-prone step. Re-running the
-workflow is safe: `derive-release.sh` sees the existing tag, and if there are no
-new commits it reports `released=false` — so **re-running will not rebuild**.
-Delete the tag and re-push it, or bump to the next patch.
+workflow will fail at the tag step (the tag already exists) — so re-run only the
+`build-and-push` job from the Actions UI, or delete the tag and re-push.
 
-**"I need to verify the release logic before changing it."**
+**"A Dependabot PR is behind `main` / conflicts."**
+Comment `@dependabot rebase` on it. Dependency PRs no longer conflict over the
+version, so a conflict now means a genuine overlap in a manifest or lockfile.
 
-```bash
-./scripts/derive-release.test.sh
-```
-
-```bash
-./scripts/changelog-entry.test.sh
-```
-
-Both run against throwaway repos; they touch nothing real. For the Renovate
-config itself, dispatch `renovate.yml` with `dryRun: true`.
+**"Dependabot didn't open anything on Monday."**
+Check Insights → Dependency graph → Dependabot for the last run and any config
+error. A malformed `.github/dependabot.yml` fails there, not in CI. Each
+ecosystem also stops at `open-pull-requests-limit: 5` — clear the backlog.
 
 ---
 
@@ -650,16 +478,10 @@ config itself, dispatch `renovate.yml` with `dryRun: true`.
 | Path | Role |
 |---|---|
 | [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | the PR gate |
-| [`.github/workflows/docker-build.yml`](../.github/workflows/docker-build.yml) | tag → multi-arch build → GHCR |
+| [`.github/workflows/docker-build.yml`](../.github/workflows/docker-build.yml) | version → tag → multi-arch build → GHCR |
 | [`.github/workflows/deploy-pages.yml`](../.github/workflows/deploy-pages.yml) | changelog site |
-| [`.github/workflows/renovate.yml`](../.github/workflows/renovate.yml) | when Renovate runs, and as whom |
-| [`renovate.json5`](../renovate.json5) | what it updates, grouping, the post-upgrade task |
-| [`scripts/changelog-entry.js`](../scripts/changelog-entry.js) | writes the entry **in the PR** (post-upgrade task) |
-| [`scripts/changelog-entry.test.sh`](../scripts/changelog-entry.test.sh) | its tests (a CI job) |
-| [`scripts/derive-release.sh`](../scripts/derive-release.sh) | the release decision |
-| [`scripts/derive-release.test.sh`](../scripts/derive-release.test.sh) | its tests (a CI job) |
-| [`scripts/bump-changelog-for-deps.mjs`](../scripts/bump-changelog-for-deps.mjs) | the after-the-merge fallback entry |
+| [`.github/dependabot.yml`](../.github/dependabot.yml) | what gets updated, grouping, ignores |
 | [`scripts/build-changelog.js`](../scripts/build-changelog.js) | `CHANGELOG.md` → `dist-changelog/` |
-| [`CHANGELOG.md`](../CHANGELOG.md) | **the version** |
+| [`CHANGELOG.md`](../CHANGELOG.md) | the human record — **not** the version |
 | [`Dockerfile`](../Dockerfile) | 3-stage build, accepts the version build args |
 | [`docker-compose.yml`](../docker-compose.yml) | the production stack shape |

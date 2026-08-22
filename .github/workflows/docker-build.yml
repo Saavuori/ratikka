@@ -1,12 +1,26 @@
 name: CI/CD Build and Release
 
+# The version comes from the commit messages, not from CHANGELOG.md.
+# paulhatch/semantic-version reads every commit since the last v* tag and picks
+# the bump: `feat:` → minor, `!:`/`BREAKING CHANGE:` → major, anything else
+# (including `chore(deps):`) → patch. Nothing has to predict the next number,
+# so two PRs in flight can never collide over it, and a merge can never
+# silently ship nothing because someone forgot to move a heading.
+#
+# CHANGELOG.md is documentation now: it is in paths-ignore below, it does not
+# gate the build, and a changelog-only push republishes the Pages site without
+# cutting a release. See docs/CICD.md.
 on:
   push:
     branches: [ "main" ]
     paths-ignore:
       - 'README.md'
+      - 'CLAUDE.md'
+      - 'CHANGELOG.md'
       - 'docs/**'
       - 'monitoring/**'
+      - 'scripts/**'
+      - '.claude/**'
       - 'deploy.sh'
       - '.gitignore'
 
@@ -18,50 +32,33 @@ jobs:
   tag:
     runs-on: ubuntu-latest
     outputs:
-      new_tag: ${{ steps.changelog_version.outputs.tag }}
-      released: ${{ steps.changelog_version.outputs.released }}
+      new_tag: ${{ steps.version.outputs.version_tag }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      # CHANGELOG.md is the single source of truth for the version. The release
-      # tag is whatever the top `## [vX.Y.Z]` heading says — so the deployed
-      # version and the changelog can never drift. To cut a release, bump the
-      # heading in CHANGELOG.md; if the heading is unchanged (e.g. a docs-only
-      # push) the tag already exists and we skip the build entirely.
-      #
-      # The one exception is dependency updates. Dependabot cannot write a
-      # changelog entry, so without the fallback below its merges would land on
-      # main and never ship — the build is skipped precisely because the heading
-      # did not move. When the only new commits since the current tag are
-      # dependency updates, we generate the entry, bump the patch, and release.
-      # Logic lives in scripts/derive-release.sh so it can be tested outside
-      # CI — see scripts/derive-release.test.sh. Release logic that silently
-      # ships nothing has bitten this repo before (v0.44.9).
-      - name: Derive version from CHANGELOG
-        id: changelog_version
-        run: ./scripts/derive-release.sh
+      - name: Determine next version
+        id: version
+        uses: paulhatch/semantic-version@v6.0.3
+        with:
+          tag_prefix: "v"
+          major_pattern: '/!:|BREAKING CHANGE:/'
+          minor_pattern: '/feat(\(.+\))?:/'
+          version_format: "${major}.${minor}.${patch}"
+
+      - name: Create and push tag
+        run: |
+          git tag ${{ steps.version.outputs.version_tag }}
+          git push origin ${{ steps.version.outputs.version_tag }}
 
   build-and-push:
     needs: tag
-    if: needs.tag.outputs.released == 'true'
     runs-on: ubuntu-latest
     steps:
-      # Check out the tag rather than the triggering SHA. On an automatic
-      # dependency release the tag points at the CHANGELOG-bump commit, which
-      # is one ahead of github.sha — so building github.sha would ship an image
-      # whose embedded version does not match the tag it is published under.
-      # For a normal release the tag is at github.sha and this is a no-op.
       - name: Checkout Code
         uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.tag.outputs.new_tag }}
-
-      - name: Resolve tagged commit
-        id: commit
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -76,7 +73,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # --- Added Step to handle the uppercase repository name ---
+      # ghcr.io needs a lowercase repository path; GITHUB_REPOSITORY is not.
       - name: Prepare Repository Name and Metadata
         id: meta
         run: |
@@ -90,15 +87,13 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          # Using the lowercase repo variable here:
           tags: |
             ghcr.io/${{ steps.meta.outputs.repo_lower }}:latest
             ghcr.io/${{ steps.meta.outputs.repo_lower }}:${{ needs.tag.outputs.new_tag }}
-            ghcr.io/${{ steps.meta.outputs.repo_lower }}:${{ steps.commit.outputs.sha }}
+            ghcr.io/${{ steps.meta.outputs.repo_lower }}:${{ github.sha }}
           build-args: |
             VERSION=${{ needs.tag.outputs.new_tag }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
-            GIT_SHA=${{ steps.commit.outputs.sha }}
+            GIT_SHA=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          

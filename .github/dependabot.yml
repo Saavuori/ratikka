@@ -1,0 +1,100 @@
+# Dependabot replaces the self-hosted Renovate bot. The trade is deliberate:
+# Renovate could run a post-upgrade script (it wrote its own CHANGELOG entry,
+# because the changelog heading used to *be* the release tag) but needed a
+# GitHub App, two secrets and a cron workflow of its own. Now that the version
+# comes from commit messages, nothing has to write a changelog entry for a
+# dependency PR to ship — so the one thing Dependabot cannot do stopped
+# mattering, and the App can go away.
+#
+# Every ecosystem uses the `chore(deps)` prefix. That is no longer load-bearing
+# for the release decision, but it keeps `chore(deps):` out of the `feat:`
+# pattern, so a batch of dependency merges cuts a patch rather than a minor.
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Helsinki
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Helsinki
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      # A MapLibre major shipped a blank map through a green CI once (v0.46.0).
+      # Majors need `scripts/verify-map-layers.mjs`, `verify-map-renders.mjs`
+      # and `verify-route-offsets.mjs` run by hand, so they are raised
+      # deliberately rather than proposed by a bot. See CLAUDE.md.
+      - dependency-name: maplibre-gl
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Helsinki
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Helsinki
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+
+  # docker-compose.yml / docker-compose.override.yml pin the deploy stack
+  # (Caddy, Redis, Grafana Alloy). Dependabot treats compose as its own
+  # ecosystem rather than folding it into the Dockerfile above.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Helsinki
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      compose-minor-patch:
+        update-types: [minor, patch]
