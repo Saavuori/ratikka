@@ -75,91 +75,89 @@ docker compose up --build   # override file builds the backend image locally
 
 ## Versioning & Release
 
-Full pipeline reference (all three workflows, the release decision table,
-the deploy path, and a runbook): `docs/CICD.md`. Summary below.
+Full pipeline reference (all three workflows, the deploy path, and a runbook):
+`docs/CICD.md`. Summary below.
 
-**`CHANGELOG.md` is the single source of truth for the version.** The release
-tag is whatever the top `## [vX.Y.Z]` heading says, so the deployed version and
-the changelog cannot drift apart. Do **not** create tags manually.
+**The version comes from the commit messages.** On a push to `main`,
+`.github/workflows/docker-build.yml` runs `paulhatch/semantic-version`, which
+reads every commit since the last `v*` tag and picks the bump:
 
-**To cut a release: bump the heading in `CHANGELOG.md`.** That is the whole
-trigger. If the heading is unchanged, the tag already exists and
-`.github/workflows/docker-build.yml` skips the build entirely — so a merge to
-`main` that forgets the changelog bump ships nothing, silently. (This has
-bitten before: v0.44.9 had to be re-cut as v0.44.10 for exactly this reason.)
+| commit contains | bump |
+|---|---|
+| `!:` or `BREAKING CHANGE:` | major |
+| `feat:` / `feat(scope):` | minor |
+| anything else, incl. `chore(deps):` | patch |
 
-- On push to `main`, `docker-build.yml` greps the first `## [vX.Y.Z]` heading
-  out of `CHANGELOG.md` and tags the commit `vX.Y.Z`. There is no automatic
-  bump computation — you choose the number by writing the heading.
-- Pick the number semantically: new feature → minor, bugfix → patch,
-  breaking change → major.
-- The same workflow then builds a multi-arch image (`linux/amd64`, `linux/arm64`)
-  and pushes to `ghcr.io/saavuori/ratikka` tagged `latest`, `vX.Y.Z`, and the commit SHA.
-  The build injects `VERSION` / `BUILD_DATE` / `GIT_SHA` via `-ldflags`, surfaced at
-  `GET /api/v1/version` and in the frontend `VersionBadge`.
-- An auto-update cron on the host pulls the new `latest` image (see `deploy.sh` /
-  `docker-compose.yml`), so a merge to `main` with a bumped changelog deploys itself.
-- Doc/infra-only changes are skipped (`paths-ignore` for `README.md`, `docs/**`,
-  `monitoring/**`, `deploy.sh`, `.gitignore`) — they don't cut a release.
+It then tags the commit `vX.Y.Z`, builds a multi-arch image (`linux/amd64`,
+`linux/arm64`) and pushes it to `ghcr.io/saavuori/ratikka` tagged `latest`,
+`vX.Y.Z`, and the commit SHA. The build injects `VERSION` / `BUILD_DATE` /
+`GIT_SHA` via `-ldflags`, surfaced at `GET /api/v1/version` and in the frontend
+`VersionBadge`. An auto-update cron on the host pulls the new `latest` image
+(see `deploy.sh` / `docker-compose.yml`), so a merge to `main` deploys itself.
 
-Commit messages still follow Conventional Commits (`feat:`, `fix:`, `docs:`,
-`chore:`, scopes allowed) — they are how the changelog gets written, they just
-no longer drive the version number.
+This means **Conventional Commits are load-bearing** — the prefix is not a
+style preference, it is the version number. A `feat:` that should have been a
+`fix:` ships a minor.
 
-**Dependency updates write their own entry.** Renovate runs
-`scripts/changelog-entry.js` as a post-upgrade task, so the entry — and
-therefore the bumped heading — is part of Renovate's own commit on the branch.
-A dependency PR then releases itself through the ordinary path above, and the
-text is reviewable before it ships rather than after. The version is a
-prediction (base heading, patch + 1); Renovate regenerates it on every rebase,
-so it corrects itself if another PR merges first and takes that number.
+Doc-only changes are skipped (`paths-ignore` for `README.md`, `CLAUDE.md`,
+`CHANGELOG.md`, `docs/**`, `monitoring/**`, `scripts/**`, `.claude/**`,
+`deploy.sh`, `.gitignore`) — they don't cut a release.
 
-**The fallback in `scripts/derive-release.sh` is now a safety net, not the
-mechanism.** If a dependency branch reaches `main` with the heading unmoved —
-the post-upgrade task failed, or the bot was swapped out — then when *every*
-new non-merge commit since the current tag is prefixed `chore(deps)` or
-`chore(deps-dev)`, it generates the entry, bumps the **patch**, and releases. A
-single human commit in the batch disables it: the heading stays put and nothing
-ships until a human writes an entry. This is why `renovate.json5` must keep the
-`chore(deps)` commit prefix on **every** manager, GitHub Actions included — the
-fallback keys off that exact string, and a prettier `ci(deps)` would silently
-disable it.
+**Do not create tags manually.** The workflow owns them.
 
-Both scripts are release-critical, so both are tested outside CI's YAML and run
-in the `release-logic` job: `scripts/derive-release.test.sh` covers the four
-release-decision paths, `scripts/changelog-entry.test.sh` covers what the
-generated entry says and the no-op cases.
+### Why it is no longer the changelog
+
+Until v0.50.4 the release tag was whatever the top `## [vX.Y.Z]` heading in
+`CHANGELOG.md` said. That coupling had two failure modes, and both actually
+happened:
+
+- A merge that forgot to bump the heading shipped **nothing**, silently — the
+  tag already existed, so the build skipped itself. v0.44.9 had to be re-cut as
+  v0.44.10 for exactly this reason.
+- Every open PR had to *predict* the next number, so two PRs in flight both
+  wrote the same heading and conflicted in `CHANGELOG.md` by construction. PR
+  #59 hit this against #60.
+
+The scaffolding built to work around the second problem — Renovate's
+`scripts/changelog-entry.js` post-upgrade task, the dependency-only fallback in
+`scripts/derive-release.sh`, and the tests for both — was all in service of a
+version number that no longer lives there. It is gone.
 
 ### CHANGELOG
 
-- `CHANGELOG.md` is maintained **by hand**. Add an entry under a new
-  `## [vX.Y.Z] - YYYY-MM-DD` heading with `### Added` / `### Fixed` /
-  `### Changed` sections, separated from the entry below it by `---`.
-- The sole exception is dependency PRs, where Renovate writes the entry. That
-  text is factual only — what moved, between which versions — so expand it by
+`CHANGELOG.md` is documentation now, not machinery. It does not gate the build
+and it does not choose the version, so it can never conflict over one.
+
+- Maintained **by hand**. Add an entry under a new `## [vX.Y.Z] - YYYY-MM-DD`
+  heading with `### Added` / `### Fixed` / `### Changed` sections, separated
+  from the entry below it by `---`.
+- Write the heading to match the tag the commits will produce. If it drifts,
+  nothing breaks — but the published changelog is then wrong about which
+  release carried what, so fix it in a follow-up.
+- Dependabot does not write entries. A dependency merge still releases (patch),
+  it just arrives unannotated; fold it into the next entry, and expand it by
   hand when a bump actually matters.
 - Pushing a changed `CHANGELOG.md` to `main` triggers `deploy-pages.yml`, which
   compiles it via `scripts/build-changelog.js` and publishes to GitHub Pages.
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every PR and on `main`: `go vet` + `go test ./...`
-+ a `go mod tidy` check for the backend, `npm run lint`/`build`/`test` for the
-frontend, and an amd64-only Docker build. A merge to `main` deploys itself, so
-this is the gate — keep it green.
+`.github/workflows/ci.yml` runs on every PR and on `main`: `go vet` +
+`go test ./...` + a `go mod tidy` check for the backend, `npm run lint`/`build`
+/`test` for the frontend, an `[Unreleased]`-placeholder guard plus a render of
+`scripts/build-changelog.js`, and an amd64-only Docker build. A merge to `main`
+deploys itself, so this is the gate — keep it green.
 
-Dependency updates arrive as **one** grouped Renovate PR every Monday covering
-every pinned surface — `backend/go.mod`, `frontend/package.json`, the GitHub
-Actions, the `Dockerfile` stages and the `docker-compose.yml` images. Config is
-`renovate.json5`; the schedule is the cron in `.github/workflows/renovate.yml`.
-Majors come as their own PR, and MapLibre majors are disabled outright — v0.46.0
-shipped a blank map through a green CI, so those need both map checks run by
-hand. Adding a new kind of pinned version means adding a pattern to `SOURCES` in
-`scripts/changelog-entry.js`, or its bump lands in the PR with no changelog line.
+Dependency updates arrive as **Dependabot** PRs every Monday, configured in
+`.github/dependabot.yml`, one grouped minor/patch PR per ecosystem:
+`backend/go.mod`, `frontend/package.json`, the GitHub Actions, the `Dockerfile`
+stages and the `docker-compose.yml` images. Majors come as their own PR, and
+MapLibre majors are ignored outright — v0.46.0 shipped a blank map through a
+green CI, so those need all three map checks run by hand.
 
-Renovate is self-hosted (the Mend-hosted app won't run post-upgrade commands)
-and authenticates as a GitHub App — see README, "Dependency updates", for the
-two secrets it needs and why `GITHUB_TOKEN` cannot be used.
+Every ecosystem uses the `chore(deps)` / `chore(deps-dev)` commit prefix. That
+no longer decides whether a release happens, but it keeps dependency commits
+out of the `feat:` pattern so a batch of them cuts a patch, not a minor.
 
 ### Verifying the map
 
@@ -227,3 +225,5 @@ renderer agrees.
   CSS variables in the frontend.
 - Tests live beside code (`*_test.go`, `*.test.ts`). Run them before pushing to `main`,
   since a merge ships to production.
+- Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`,
+  scopes allowed) and the prefix **is** the version bump — see "Versioning & Release".

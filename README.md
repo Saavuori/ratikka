@@ -214,18 +214,10 @@ curl -sSL -O https://raw.githubusercontent.com/Saavuori/ratikka/main/deploy.sh &
 
 ## 🔄 Dependency updates
 
-Renovate opens one grouped pull request every Monday morning covering every place the repo pins a version — `backend/go.mod`, `frontend/package.json`, the GitHub Actions in `.github/workflows/`, the `Dockerfile` build and runtime stages, and the images in `docker-compose.yml`. Major updates come as their own PR; MapLibre majors are disabled entirely, because they need both map checks run by hand (see `CLAUDE.md`). Config lives in [`renovate.json5`](renovate.json5); the schedule is the cron in [`.github/workflows/renovate.yml`](.github/workflows/renovate.yml).
+**Dependabot** opens one grouped minor/patch pull request per ecosystem every Monday morning, covering every place the repo pins a version — `backend/go.mod`, `frontend/package.json`, the GitHub Actions in `.github/workflows/`, the `Dockerfile` build and runtime stages, and the images in `docker-compose.yml`. Major updates come as their own PR; MapLibre majors are ignored entirely, because they need all three map checks run by hand (see `CLAUDE.md`). Config lives in [`.github/dependabot.yml`](.github/dependabot.yml).
 
-Each PR writes its own `CHANGELOG.md` entry: Renovate runs [`scripts/changelog-entry.js`](scripts/changelog-entry.js) as a post-upgrade task, which reads the pending diff and lists what moved. Since the top changelog heading *is* the release tag, that entry is what makes a dependency merge ship. The text is factual only — expand it by hand when a bump actually matters.
+Dependabot needs no secrets, no GitHub App and no scheduled workflow of its own — GitHub runs it. That is the whole reason it replaced the self-hosted Renovate setup. Renovate was self-hosted only because it had to run a post-upgrade command to write a `CHANGELOG.md` entry, and that entry was required because the top changelog heading *was* the release tag. The version now comes from the commit messages instead, so nothing has to be written for a dependency merge to ship, and the App could go away.
 
-The full flow — grouping rules, the generated entry, majors, hand sweeps, and what to do when a Monday passes with no PR — is [docs/CICD.md §7](docs/CICD.md#7-dependency-updates).
+Dependency PRs use the `chore(deps)` / `chore(deps-dev)` commit prefix, which keeps them out of the `feat:` pattern — a batch of them cuts a patch release, not a minor. They write no changelog entry; fold them into the next hand-written one, and expand it when a bump actually matters.
 
-### Required setup
-
-The workflow runs as a **GitHub App**, and needs two repository secrets: `RENOVATE_APP_ID` and `RENOVATE_APP_PRIVATE_KEY`. The app needs `contents: write`, `pull-requests: write` and `workflows: write` on this repository, and has to be installed on it. The workflow mints a short-lived installation token per run, so nothing long-lived is stored.
-
-It **cannot** run as `GITHUB_TOKEN`: pull requests opened with the built-in token don't trigger `pull_request` workflows, so `ci.yml` would never run on a dependency PR. CI is the only thing that makes these safe to merge on sight, and a merge to `main` deploys itself. App-opened PRs do trigger it. (A classic PAT with `repo` scope works too, but then the token is long-lived and commits are attributed to a human.)
-
-Because an installation token can't call `/user`, Renovate can't infer its own commit identity — the workflow resolves the app's `[bot]` user and passes it as `RENOVATE_GIT_AUTHOR` / `RENOVATE_USERNAME`.
-
-Renovate has to be **self-hosted** from the scheduled workflow rather than run as the Mend-hosted app, because generating the changelog entry means running a command and the hosted app doesn't permit that. Until both secrets are set, the workflow fails with an explicit message rather than running to a silent no-op — no dependency PRs will open at all.
+The full flow — grouping rules, majors, hand sweeps, and what to do when a Monday passes with no PR — is [docs/CICD.md §7](docs/CICD.md#7-dependency-updates).

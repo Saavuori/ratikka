@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.51.0] - 2026-08-22
+
+### Changed
+- **The version now comes from the commit messages, not from this file**: on a push to `main`, `paulhatch/semantic-version` reads every commit since the last `v*` tag and picks the bump — `feat:` minor, `!:`/`BREAKING CHANGE:` major, anything else patch — then tags and builds. Previously the release tag was whatever the top `## [vX.Y.Z]` heading here said, which made the version a shared counter that every open pull request had to predict: two branches in flight wrote the same heading and conflicted in `CHANGELOG.md` by construction, and a merge that forgot to move the heading shipped nothing at all, silently. Both had happened. The changelog is documentation again — it no longer gates the build and can no longer collide.
+- **Dependency updates moved from self-hosted Renovate to Dependabot** (`.github/dependabot.yml`): one grouped minor/patch pull request per ecosystem every Monday, majors separately, MapLibre majors ignored. Renovate was self-hosted only so it could run a post-upgrade command that wrote this file's entry — the thing that made a dependency merge ship. With the version derived from commit messages that requirement is gone, and so are the GitHub App, its two secrets and its scheduled workflow. Two things got worse and are worth knowing: there is no `minimumReleaseAge` holding a fresh release back for three days, and dependency PRs arrive with no changelog entry.
+
+### Removed
+- **The CHANGELOG-driven release machinery**: `scripts/derive-release.sh` and its tests, `scripts/changelog-entry.js` and its tests, `scripts/bump-changelog-for-deps.mjs`, `renovate.json5`, and `.github/workflows/renovate.yml`. The `release-logic` CI job that tested them is replaced by a `changelog` job that only checks the file renders and carries no `[Unreleased]` placeholder — the changelog still publishes to GitHub Pages, it just no longer decides anything.
+
+---
+
 ## [v0.50.3] - 2026-08-21
 
 ### Fixed

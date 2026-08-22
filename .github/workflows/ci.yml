@@ -1,9 +1,9 @@
 name: CI
 
-# A merge to main builds an image that the host's update.sh cron pulls straight
-# into production (every 5 min — Watchtower is incompatible with rootless Podman
-# on RHEL), so this is the only gate between a PR and the live site.
-# See docs/CICD.md.
+# A merge to main tags a version from the commit messages and builds an image
+# that the host's update.sh cron pulls straight into production (every 5 min —
+# Watchtower is incompatible with rootless Podman on RHEL), so this is the only
+# gate between a PR and the live site. See docs/CICD.md.
 on:
   pull_request:
   push:
@@ -72,8 +72,8 @@ jobs:
       - name: Test
         run: npm test
 
-  release-logic:
-    name: Release logic (release + changelog scripts)
+  changelog:
+    name: Changelog (renders, no placeholder)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -84,18 +84,18 @@ jobs:
         with:
           node-version: 24
 
-      # Exercises the four paths through the release decision against real
-      # throwaway repos: heading bumped, nothing new, dependency-only batch,
-      # and a mixed batch. A wrong answer here either ships nothing silently
-      # or releases something a human meant to hold back.
-      - name: Release decision
-        run: ./scripts/derive-release.test.sh
+      # The changelog no longer carries the version — commit messages do — but
+      # it is still what the Pages site publishes, so a heading that reads
+      # `[Unreleased]` would go live as-is.
+      - name: Reject [Unreleased] placeholder
+        run: |
+          if grep -qiE '^#+ \[Unreleased\]' CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::CHANGELOG.md must use a real versioned heading (## [vX.Y.Z] - date), not [Unreleased]."
+            exit 1
+          fi
 
-      # The entry Renovate writes is what moves the heading, and the heading is
-      # the release. This script runs inside Renovate where a silent no-op looks
-      # exactly like "nothing to report", so the no-op cases are asserted too.
-      - name: Dependency changelog entry
-        run: ./scripts/changelog-entry.test.sh
+      - name: Render changelog
+        run: node scripts/build-changelog.js
 
   docker:
     name: Docker image builds
