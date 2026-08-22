@@ -11,8 +11,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "lucide-react": "^1.18.0",
-    "maplibre-gl": "^6.0.0",
+    "lucide-react": "^1.33.0",
+    "maplibre-gl": "^6.4.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
@@ -31,6 +31,6 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.65.0",
     "vite": "^8.1.5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }
