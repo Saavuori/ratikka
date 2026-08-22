@@ -18,6 +18,13 @@ import { decodePolyline } from '../lib/polyline';
 import { getRouteColor, routeColorMatchExpression, ROUTE_COLORS, TRAM_GREEN } from '../lib/routeColors';
 import { assignCorridorSlots, canonicalizeDirection, dedupeOverlappingPaths } from '../lib/routeSlots';
 import type { RoutePath } from '../lib/routeSlots';
+import {
+  ROUTE_LINE_WIDTH,
+  ROUTE_CASING_WIDTH,
+  ROUTE_LINE_OFFSET,
+  ROUTE_LINE_OPACITY,
+  ROUTE_LINE_SORT_KEY,
+} from '../lib/routeLineStyle';
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection, TrafficLightFeature } from '../types';
 import { useTrafficLights } from '../hooks/useTrafficLights';
@@ -30,46 +37,8 @@ maplibregl.setWorkerUrl(maplibreWorkerUrl);
 // next-stop signpost highlight itself is unaffected and remains enabled.
 const HIGHLIGHT_NEXT_STOP_ROUTE = false;
 
-// Paint expressions shared by the highlighted route path and its casing. All
-// three are zoom-and-property expressions: the zoom stops keep the ribbons
-// readable from the whole-city view down to street level, while the inner
-// `case`/`*` reads the per-feature slot written by `drawRouteGeometries`.
-//
-// The offset spacing is deliberately a touch wider than the line width at every
-// zoom, so parallel routes stay separated by a sliver of map instead of merging
-// back into one thick band.
-const routeLineWidth = (selected: number, other: number): maplibregl.ExpressionSpecification =>
-  ['case', ['get', 'selected'], selected, other];
-
-const ROUTE_LINE_WIDTH: maplibregl.DataDrivenPropertyValueSpecification<number> = [
-  'interpolate', ['linear'], ['zoom'],
-  10, routeLineWidth(3.5, 2),
-  13, routeLineWidth(5.5, 3.2),
-  16, routeLineWidth(8, 4.5),
-];
-
-const ROUTE_CASING_WIDTH: maplibregl.DataDrivenPropertyValueSpecification<number> = [
-  'interpolate', ['linear'], ['zoom'],
-  10, routeLineWidth(5.5, 3.6),
-  13, routeLineWidth(8, 5),
-  16, routeLineWidth(11, 6.8),
-];
-
-const ROUTE_LINE_OFFSET: maplibregl.DataDrivenPropertyValueSpecification<number> = [
-  'interpolate', ['linear'], ['zoom'],
-  10, ['*', ['get', 'offsetIndex'], 3],
-  13, ['*', ['get', 'offsetIndex'], 6.5],
-  16, ['*', ['get', 'offsetIndex'], 10],
-];
-
-// Non-selected routes fade back so the clicked vehicle's line reads first.
-const ROUTE_LINE_OPACITY: maplibregl.DataDrivenPropertyValueSpecification<number> =
-  ['case', ['get', 'dim'], 0.4, 0.95];
-
-// The selected line is drawn last within the layer, so it wins where the
-// ribbons still cross.
-const ROUTE_LINE_SORT_KEY: maplibregl.DataDrivenPropertyValueSpecification<number> =
-  ['case', ['get', 'selected'], 2, 1];
+// Paint expressions for the highlighted route paths live in lib/routeLineStyle,
+// where the zoom stops of the offset fan are unit-tested against the style spec.
 
 interface MapProps {
   trams: Record<string, VehiclePosition>;

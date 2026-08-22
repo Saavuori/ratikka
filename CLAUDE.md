@@ -36,7 +36,9 @@ HSL MQTT broker ──▶ backend (Go) ──▶ Redis (live coord cache)
 ### Frontend — `frontend/` (React 19, TypeScript, Vite 8, MapLibre GL 5)
 - `src/components/` — Map plus glassmorphic panels/popups (`Map.tsx`, `FilterPanel.tsx`, `TramPopup.tsx`, `StopPopup.tsx`, `BikePopup.tsx`, `JourneySearch.tsx`, `BottomNav.tsx`, `VersionBadge.tsx`).
 - `src/hooks/` — `useWebSocket`, `useTramData`, `useGeolocation`, `useIsMobile`, `useSwipeGestures`, `useCollapsiblePanel`.
-- `src/lib/` — `api.ts` (backend client), `lerp.ts` (60fps interpolation), `polyline.ts`, `trip.ts`.
+- `src/lib/` — `api.ts` (backend client), `lerp.ts` (60fps interpolation), `polyline.ts`, `trip.ts`,
+  `routeSlots.ts` (which offset slot each highlighted route takes) and `routeLineStyle.ts`
+  (the paint expressions that turn a slot into pixels — see "Verifying the map").
 - Vanilla CSS with theme variables in `index.css` / `App.css`.
 
 ## HTTP API
@@ -161,9 +163,9 @@ two secrets it needs and why `GITHUB_TOKEN` cannot be used.
 
 ### Verifying the map
 
-Nothing about the map is checked by `tsc` or the unit tests. There are two
-separate failure modes and a script for each — **run both**; passing one proves
-nothing about the other.
+Nothing about the map is checked by `tsc` or the unit tests. There are three
+separate failure modes and a script for each — **run all three**; passing one
+proves nothing about the others.
 
 ```bash
 cd frontend && npm run build && cd ..
@@ -172,6 +174,7 @@ npm i --no-save playwright                # from the repo root, once per checkou
 
 node scripts/verify-map-layers.mjs        # 1. are the layer specs valid?
 DIGITRANSIT_API_KEY=... node scripts/verify-map-renders.mjs   # 2. does it draw?
+node scripts/verify-route-offsets.mjs     # 3. does it draw in the right place?
 ```
 
 Playwright is intentionally not a devDependency, to keep `npm install` lean.
@@ -191,6 +194,28 @@ so nothing downstream of the worker was exercised. "The specs are valid" and
 
 Get the key from the deploy host's `.env` (see memory `oracle-host-multi-app-deploy`).
 This check is not in CI — it needs a real key as a secret.
+
+**3. Placement** (`verify-route-offsets.mjs`) — draws synthetic route geometry
+with the app's own paint expressions and measures, pixel by pixel, how far the
+painted ribbon lands from the coordinates it was given. Needs no key: the
+basemap is blank and the geometry is made up.
+
+This exists because a map can pass both checks above and still be wrong. Routes
+sharing a street are fanned into parallel ribbons with MapLibre's `line-offset`
+(`frontend/src/lib/routeLineStyle.ts`, slots assigned in `routeSlots.ts`), and
+**`line-offset` is measured in pixels** — the same nudge covers more and more
+*ground* the further you zoom out. In v0.50.2 an uncapped fan therefore drew
+tram lines a block off the street they follow at city zoom, several of them out
+in the sea, plus blobs of solid colour at the terminal loops, where an offset
+wider than the turn folds the offset geometry in on itself. Every layer spec was
+valid and every tile rendered.
+
+Two rules keep it honest, and both are asserted by the script: the fan tapers to
+zero below zoom 12, and the slot is capped so the outermost ribbon stays within
+about a street of its route. The offset expression's zoom stops are also unit
+tested in CI (`routeLineStyle.test.ts`, evaluated through MapLibre's own style
+spec), so the arithmetic is guarded on every PR; the script is what proves the
+renderer agrees.
 
 ## Conventions
 

@@ -1,3 +1,5 @@
+import { MAX_SLOT } from './routeLineStyle';
+
 // Layout of the highlighted route paths: which slot a line occupies, which way
 // round its paths run, and which of its paths are worth drawing at all.
 //
@@ -110,6 +112,17 @@ export interface SlottedPath extends RoutePath {
 const slotCandidate = (i: number): number =>
   i === 0 ? 0 : i % 2 === 1 ? (i + 1) / 2 : -(i / 2);
 
+// … but only so far. The slot becomes a *pixel* `line-offset` on the map, so a
+// deep slot puts a route a block off the street it follows — the deeper the
+// slot, the more ground that offset covers as you zoom out, until routes sit in
+// the sea. Offsets that large also break MapLibre's own offsetting where the
+// geometry turns tighter than the offset is wide: the terminal loops fold into
+// solid blobs of colour. So the fan stops at MAX_SLOT; past that the corridor is
+// too crowded to fan out legibly anyway, and lines double up in a slot — still
+// told apart by colour — rather than drifting off their street. The cap is
+// shared with the paint expression that turns a slot into pixels.
+const SLOT_CANDIDATES = Array.from({ length: MAX_SLOT * 2 + 1 }, (_, i) => slotCandidate(i));
+
 /**
  * Give every path the offset slot it should be drawn in.
  *
@@ -146,12 +159,18 @@ export function assignCorridorSlots(
     const cells = cellsOf(path.coords);
     const taken = new Set<number>(); // held nearby by another line
     const own = new Set<number>(); // held nearby by this same line
+    const crowding = new Map<number, number>(); // slot → other lines holding it nearby
     for (const cell of cells) {
       for (const near of neighboursOf(cell)) {
         const held = claims.get(near);
         if (!held) continue;
         for (const [slot, line] of held) {
-          (line === path.line ? own : taken).add(slot);
+          if (line === path.line) {
+            own.add(slot);
+          } else {
+            taken.add(slot);
+            crowding.set(slot, (crowding.get(slot) ?? 0) + 1);
+          }
         }
       }
     }
@@ -161,10 +180,13 @@ export function assignCorridorSlots(
         .sort((a, b) => Math.abs(a) - Math.abs(b))
         .find((s) => !taken.has(s));
       if (reuse !== undefined) return reuse;
-      for (let i = 0; ; i++) {
-        const candidate = slotCandidate(i);
-        if (!taken.has(candidate)) return candidate;
-      }
+      const free = SLOT_CANDIDATES.find((candidate) => !taken.has(candidate));
+      if (free !== undefined) return free;
+      // Every slot in the fan is spoken for: share the least crowded one,
+      // nearest the true geometry on a tie (SLOT_CANDIDATES is in that order).
+      return SLOT_CANDIDATES.reduce((best, candidate) =>
+        (crowding.get(candidate) ?? 0) < (crowding.get(best) ?? 0) ? candidate : best
+      );
     };
     const slot = pick();
 
