@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "postinstall": "node scripts/link-ts6-for-eslint.cjs"
   },
   "dependencies": {
     "lucide-react": "^1.33.0",
@@ -28,7 +29,8 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.7.0",
-    "typescript": "~6.0.2",
+    "typescript": "~7.0.2",
+    "typescript-6": "npm:typescript@~6.0.3",
     "typescript-eslint": "^8.65.0",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"
