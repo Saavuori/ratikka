@@ -5,24 +5,27 @@ import type { DataDrivenPropertyValueSpecification, ExpressionSpecification } fr
 // readable from the whole-city view down to street level, while the inner
 // `case`/`*` reads the per-feature slot written by `drawRouteGeometries`.
 //
-// The offset spacing is deliberately a touch wider than the line width at every
-// zoom, so parallel routes stay separated by a sliver of map instead of merging
-// back into one thick band.
+// The ribbons are kept slim so that the fan around a shared street stays a
+// bundle of parallel lines rather than a band: at close zoom the spacing clears
+// the casing and leaves a sliver of map between neighbours. Further out the
+// offset is bounded by *ground* distance instead (see ROUTE_LINE_OFFSET), so
+// the ribbons close up and eventually merge — being on the right street matters
+// more there than being told apart.
 const routeLineWidth = (selected: number, other: number): ExpressionSpecification =>
   ['case', ['get', 'selected'], selected, other];
 
 export const ROUTE_LINE_WIDTH: DataDrivenPropertyValueSpecification<number> = [
   'interpolate', ['linear'], ['zoom'],
-  10, routeLineWidth(3.5, 2),
-  13, routeLineWidth(5.5, 3.2),
-  16, routeLineWidth(8, 4.5),
+  10, routeLineWidth(3, 1.8),
+  13, routeLineWidth(4.6, 2.8),
+  16, routeLineWidth(6.8, 3.8),
 ];
 
 export const ROUTE_CASING_WIDTH: DataDrivenPropertyValueSpecification<number> = [
   'interpolate', ['linear'], ['zoom'],
-  10, routeLineWidth(5.5, 3.6),
-  13, routeLineWidth(8, 5),
-  16, routeLineWidth(11, 6.8),
+  10, routeLineWidth(4.6, 3),
+  13, routeLineWidth(6.6, 4.2),
+  16, routeLineWidth(9.2, 5.6),
 ];
 
 //
@@ -37,11 +40,23 @@ export const ROUTE_CASING_WIDTH: DataDrivenPropertyValueSpecification<number> = 
 // therefore the widest offset this expression ever has to produce.
 export const MAX_SLOT = 3;
 
+// Tapering to zero below zoom 12 is not on its own enough. A *constant* pixel
+// spacing above that point still covers more and more ground the further out
+// you are: the 5 px/slot this used to ramp to by zoom 13 put the outermost
+// ribbon 15 px — about 140 m at that latitude and scale — from the street it
+// follows, which reads as the wrong street even though the fan technically
+// "tapers". So the stops now roughly halve with each zoom level on the way out,
+// which is exactly how a metre grows in pixels, holding the outermost ribbon to
+// about 45 m of ground from zoom 12 up to 14 and tightening from there. The
+// spacing itself is also a little narrower than it was at every zoom, matched
+// to the slimmer ribbons above: neighbouring routes sit a sliver of map apart
+// rather than a lane apart.
 export const ROUTE_LINE_OFFSET: DataDrivenPropertyValueSpecification<number> = [
   'interpolate', ['linear'], ['zoom'],
   11, 0,
-  13, ['*', ['get', 'offsetIndex'], 5],
-  16, ['*', ['get', 'offsetIndex'], 7.5],
+  13, ['*', ['get', 'offsetIndex'], 1.5],
+  14, ['*', ['get', 'offsetIndex'], 3],
+  16, ['*', ['get', 'offsetIndex'], 6.5],
 ];
 
 // Non-selected routes fade back so the clicked vehicle's line reads first.
