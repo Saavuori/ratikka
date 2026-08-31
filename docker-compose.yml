@@ -41,7 +41,7 @@ services:
     # Alloy major and break metrics collection with no change on our side.
     # Dependabot (.github/dependabot.yml, docker-compose ecosystem) proposes bumps. The copy
     # in deploy.sh's heredoc is invisible to it, so bump both together.
-    image: docker.io/grafana/alloy:v1.18.1
+    image: docker.io/grafana/alloy:v1.19.2
     restart: unless-stopped
     volumes:
       - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro,Z
