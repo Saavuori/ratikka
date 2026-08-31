@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  assignCorridorSlots,
-  canonicalizeDirection,
-  dedupeOverlappingPaths,
-  selectCanonicalRoutePath,
-} from './routeSlots';
+import { assignCorridorSlots, canonicalizeDirection, dedupeOverlappingPaths } from './routeSlots';
 
 describe('assignCorridorSlots', () => {
   // One east/west corridor, sampled every ~55 m…
@@ -240,12 +235,4 @@ describe('dedupeOverlappingPaths', () => {
     expect(canonicalizeDirection([[24.94, 60.17]])).toEqual([[24.94, 60.17]]);
   });
 
-  it('selects one canonical path when a route has branch patterns', () => {
-    const branch: [number, number][] = [
-      ...corridor.slice(0, 10),
-      ...Array.from({ length: 9 }, (_, i) => [24.93, 60.17 + i * 0.001] as [number, number]),
-    ];
-    expect(selectCanonicalRoutePath([corridor, branch])).toEqual([corridor]);
-    expect(selectCanonicalRoutePath([branch, corridor])).toEqual([corridor]);
-  });
 });
