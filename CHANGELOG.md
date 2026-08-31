@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.51.1] - 2026-08-31
+
+### Fixed
+- **Highlighted routes sit closer to the street they actually follow when zoomed out**: tapering the parallel-ribbon fan to zero below zoom 12 fixed the whole-city view, but between there and street level the spacing was still a *constant* pixel offset, and a pixel covers more ground the further out you are — at zoom 13 the outermost ribbon was about 140 m from its route, i.e. a couple of streets over. The offset's zoom stops now roughly halve per level on the way out (1.5 px per slot at z13, 3 at z14, 6.5 at z16), which is how a metre shrinks in pixels, holding the outermost ribbon inside about 45 m of ground everywhere the fan is drawn at all. A unit test asserts that bound in metres rather than pixels, which is the property that kept breaking.
+
+### Changed
+- **Route ribbons are slightly slimmer and fan out more tightly**, at both the line and its casing. Zoomed in, the narrower spacing still clears the casing and leaves a sliver of map between neighbouring routes; further out the ribbons close up and eventually merge, on the basis that being on the right street matters more there than being told apart — the colours still distinguish them.
+
+---
+
 ## [v0.51.0] - 2026-08-22
 
 ### Changed

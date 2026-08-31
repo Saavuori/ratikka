@@ -40,6 +40,20 @@ describe('ROUTE_LINE_OFFSET', () => {
     }
   });
 
+  it('keeps the outermost ribbon within a street of *ground* at every zoom', () => {
+    // The check above is in pixels, which is not the property that broke: a
+    // fixed pixel offset is a growing metre offset on the way out. Web-Mercator
+    // ground resolution at Helsinki's latitude, so the bound is in metres of
+    // real map — a ribbon further off than this is reading as another street.
+    const metresPerPixel = (zoom: number) =>
+      (156543.03392 * Math.cos((60.17 * Math.PI) / 180)) / 2 ** zoom;
+
+    for (const zoom of [12, 13, 14, 15, 16, 18]) {
+      const metres = Math.abs(offsetAt(zoom, MAX_SLOT)) * metresPerPixel(zoom);
+      expect(metres).toBeLessThanOrEqual(50);
+    }
+  });
+
   it('fans symmetrically either side of the true geometry', () => {
     expect(offsetAt(16, 2)).toBe(-offsetAt(16, -2));
     expect(offsetAt(16, 0)).toBe(0);
