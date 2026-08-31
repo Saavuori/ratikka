@@ -248,3 +248,20 @@ export function dedupeOverlappingPaths(
   }
   return kept;
 }
+
+/**
+ * Select the single canonical geometry used to draw a route.
+ *
+ * Transit feeds can contain branch patterns for historical or operational
+ * variants of the same line. Showing all of them makes one route appear to
+ * serve several unrelated termini, so the map uses the longest pattern after
+ * overlap de-duplication as the line's representative path.
+ */
+export function selectCanonicalRoutePath(
+  paths: [number, number][][]
+): [number, number][][] {
+  const canonical = [...paths]
+    .filter((path) => path.length > 0)
+    .sort((a, b) => b.length - a.length)[0];
+  return canonical ? [canonical] : [];
+}
