@@ -16,12 +16,7 @@ import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint 
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
 import { getRouteColor, routeColorMatchExpression, ROUTE_COLORS, TRAM_GREEN } from '../lib/routeColors';
-import {
-  assignCorridorSlots,
-  canonicalizeDirection,
-  dedupeOverlappingPaths,
-  selectCanonicalRoutePath,
-} from '../lib/routeSlots';
+import { assignCorridorSlots, canonicalizeDirection, dedupeOverlappingPaths } from '../lib/routeSlots';
 import type { RoutePath } from '../lib/routeSlots';
 import {
   ROUTE_LINE_WIDTH,
@@ -517,8 +512,8 @@ export const Map: React.FC<MapProps> = ({
   const routePathsOf = (line: string, src: string[]): [number, number][][] => {
     const cached = routePathsCacheRef.current[line];
     if (cached && cached.src === src) return cached.paths;
-    const paths = selectCanonicalRoutePath(
-      dedupeOverlappingPaths(src.map((poly) => canonicalizeDirection(decodePolyline(poly))))
+    const paths = dedupeOverlappingPaths(
+      src.map((poly) => canonicalizeDirection(decodePolyline(poly)))
     );
     routePathsCacheRef.current[line] = { src, paths };
     return paths;
