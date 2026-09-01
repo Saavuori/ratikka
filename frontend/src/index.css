@@ -204,14 +204,6 @@ body {
   letter-spacing: 0.05em;
 }
 
-.legend-list {
-  display: flex;
-  flex-direction: row;
-  justify-content: flex-start;
-  align-items: center;
-  gap: 12px;
-}
-
 .stats-active-vehicles-compact {
   display: none;
 }
@@ -539,13 +531,6 @@ body {
   opacity: 0.4;
 }
 
-/* Legend Styling */
-.legend-section {
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  margin-top: 8px;
-}
-
 .legend-title {
   font-size: 0.6rem;
   font-weight: 700;
@@ -553,31 +538,6 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 6px;
-}
-
-.legend-list {
-  display: flex;
-  flex-direction: row;
-  justify-content: flex-start;
-  align-items: center;
-  gap: 12px;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 0.58rem;
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-
-.legend-color {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  border: 1px solid #ffffff;
-  flex-shrink: 0;
 }
 
 /* Map Settings Section */
