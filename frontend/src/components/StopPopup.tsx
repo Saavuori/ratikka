@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import type { StopDetailsResponse, Alert } from '../types';
 import { fetchStopDetails } from '../lib/api';
 import { getRouteColor } from '../lib/routeColors';
+import { relevantStopAlerts } from '../lib/stopAlerts';
 import { X, Clock, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
 
@@ -37,6 +38,10 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [touchStart, setTouchStart] = useState<number | null>(null);
+  // The timetable is what the panel is for, so alerts stay folded away until
+  // asked for — a stop served by many routes can otherwise collect enough of
+  // them to fill the panel on its own.
+  const [alertsExpanded, setAlertsExpanded] = useState<boolean>(false);
   const isMobile = useIsMobile();
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -64,12 +69,9 @@ export const StopPopup: React.FC<StopPopupProps> = ({
     setTouchStart(null);
   };
 
-  const relevantAlerts = alerts.filter(alert =>
-    alert.entities?.some(entity =>
-      (entity.type === 'Stop' && entity.gtfsId === stopId) ||
-      (entity.type === 'Route' && details && details.routes?.includes(entity.shortName || ''))
-    )
-  );
+  // Sorted worst-first, so the head of the list sets the summary's colour.
+  const relevantAlerts = relevantStopAlerts(alerts, stopId, details?.routes);
+  const worstSeverity = relevantAlerts[0]?.severityLevel ?? 'INFO';
 
   useEffect(() => {
     // Guard against a slow response for a previously selected stop landing
@@ -78,6 +80,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
     let active = true;
     setLoading(true);
     setError(null);
+    setAlertsExpanded(false);
 
     fetchStopDetails(stopId, 8)
       .then((data) => {
@@ -187,67 +190,49 @@ export const StopPopup: React.FC<StopPopupProps> = ({
         </button>
       </div>
 
-      {/* Service Alert Warnings */}
+      {/* Service alerts — a one-line summary that expands into a scrollable
+          list, so the timetable below always keeps its share of the panel. */}
       {relevantAlerts.length > 0 && (
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '6px',
-          marginTop: '6px',
-          marginBottom: '10px'
-        }}>
-          {relevantAlerts.map((alert, idx) => {
-            const severityColor =
-              alert.severityLevel === 'SEVERE'
-                ? '#ef4444'
-                : alert.severityLevel === 'WARNING'
-                ? '#f59e0b'
-                : '#3b82f6';
-            return (
-              <div
-                key={idx}
-                style={{
-                  background: 'rgba(239, 68, 68, 0.04)',
-                  border: '1px solid rgba(239, 68, 68, 0.12)',
-                  borderLeft: `3px solid ${severityColor}`,
-                  padding: '8px 10px',
-                  borderRadius: '6px',
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '8px',
-                }}
-              >
-                <AlertTriangle size={14} style={{ color: severityColor, flexShrink: 0, marginTop: '2px' }} />
-                <div style={{ flex: 1 }}>
-                  <h4 style={{ margin: 0, fontSize: '0.65rem', fontWeight: 700, color: '#f1f5f9' }}>
-                    {alert.headerText}
-                  </h4>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '0.6rem', color: '#94a3b8', lineHeight: 1.3 }}>
-                    {alert.descriptionText}
-                  </p>
+        <div className="stop-alerts">
+          <button
+            className={`stop-alerts-summary severity-${worstSeverity.toLowerCase()}`}
+            onClick={() => setAlertsExpanded((v) => !v)}
+            aria-expanded={alertsExpanded}
+          >
+            <AlertTriangle size={14} className="stop-alerts-icon" />
+            <span className="stop-alerts-count">
+              {relevantAlerts.length === 1
+                ? '1 service alert'
+                : `${relevantAlerts.length} service alerts`}
+            </span>
+            {!alertsExpanded && (
+              <span className="stop-alerts-preview">{relevantAlerts[0].headerText}</span>
+            )}
+            {alertsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+
+          {alertsExpanded && (
+            <div className="stop-alerts-list">
+              {relevantAlerts.map((alert, idx) => (
+                <div key={idx} className={`stop-alert severity-${alert.severityLevel.toLowerCase()}`}>
+                  <h4 className="stop-alert-title">{alert.headerText}</h4>
+                  {alert.descriptionText && (
+                    <p className="stop-alert-desc">{alert.descriptionText}</p>
+                  )}
                   {alert.url && (
                     <a
                       href={alert.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '2px',
-                        color: '#38bdf8',
-                        textDecoration: 'none',
-                        marginTop: '4px',
-                        fontWeight: 600,
-                        fontSize: '0.55rem',
-                      }}
+                      className="stop-alert-link"
                     >
                       Official Info <ExternalLink size={8} />
                     </a>
                   )}
                 </div>
-              </div>
-            );
-          })}
+              ))}
+            </div>
+          )}
         </div>
       )}
 
