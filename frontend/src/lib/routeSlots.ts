@@ -67,11 +67,13 @@ const CELL = 0.0004;
 // the street rather than wherever the polyline happened to be sampled.
 const STEP = CELL / 2;
 
+const cellAt = (lng: number, lat: number): string =>
+  `${Math.round(lng / CELL)}:${Math.round(lat / CELL)}`;
+
 const cellsOf = (coords: [number, number][]): Set<string> => {
   const cells = new Set<string>();
   if (coords.length === 0) return cells;
-  const add = (lng: number, lat: number) =>
-    cells.add(`${Math.round(lng / CELL)}:${Math.round(lat / CELL)}`);
+  const add = (lng: number, lat: number) => cells.add(cellAt(lng, lat));
 
   add(coords[0][0], coords[0][1]);
   for (let i = 1; i < coords.length; i++) {
@@ -209,41 +211,136 @@ export function assignCorridorSlots(
 const isCovered = (cell: string, covered: Set<string>): boolean =>
   neighboursOf(cell).some((near) => covered.has(near));
 
+// Rough metres per degree at Helsinki's latitude — the longitude scale is the
+// same 0.5 the direction check uses. Only ever used to compare lengths against
+// the thresholds below, so the approximation is well inside what it has to be.
+const M_PER_DEG = 111_320;
+
+const metresBetween = (
+  [lng0, lat0]: [number, number],
+  [lng1, lat1]: [number, number]
+): number => Math.hypot((lng1 - lng0) * 0.5, lat1 - lat0) * M_PER_DEG;
+
+const lengthOf = (coords: [number, number][]): number => {
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) total += metresBetween(coords[i - 1], coords[i]);
+  return total;
+};
+
+// A branch has to be worth drawing: shorter fresh stretches are a pattern
+// wobbling across a cell boundary or clipping a corner the trunk cut, and drawn
+// they read as stray flecks of route colour rather than as anywhere the line
+// goes.
+const MIN_BRANCH_M = 150;
+
+// Two fresh stretches separated by less ground than this are one branch that
+// happened to graze the trunk — bridging the gap keeps the ribbon continuous
+// instead of dashed.
+const BRIDGE_M = 120;
+
+// Vertices arrive as far apart as the street is straight, so a covered/not-covered
+// test taken only at them can miss the middle of a long segment entirely. Every
+// path is resampled to the same half-cell step the coverage grid uses, so the
+// decision follows the ground rather than wherever the polyline was sampled.
+const densify = (coords: [number, number][]): [number, number][] => {
+  if (coords.length < 2) return coords;
+  const out: [number, number][] = [coords[0]];
+  for (let i = 1; i < coords.length; i++) {
+    const [lng0, lat0] = coords[i - 1];
+    const [lng1, lat1] = coords[i];
+    const steps = Math.max(
+      1,
+      Math.ceil(Math.max(Math.abs(lng1 - lng0), Math.abs(lat1 - lat0)) / STEP)
+    );
+    for (let s = 1; s <= steps; s++) {
+      out.push([lng0 + ((lng1 - lng0) * s) / steps, lat0 + ((lat1 - lat0) * s) / steps]);
+    }
+  }
+  return out;
+};
+
 /**
- * Drop the paths of one line that cover ground another of its paths already
- * covers, keeping the ones that actually go somewhere new.
+ * Cut out the stretches of a path that run where an already-kept path runs,
+ * returning the pieces that go somewhere new.
+ *
+ * Each piece keeps the covered vertex just before and just after it, so a branch
+ * stays joined to the trunk it leaves rather than floating beside it.
+ */
+const freshStretches = (
+  coords: [number, number][],
+  covered: Set<string>
+): [number, number][][] => {
+  const points = densify(coords);
+  const fresh = points.map(([lng, lat]) => !isCovered(cellAt(lng, lat), covered));
+
+  // Bridge the short covered gaps first: a branch that grazes the trunk for a
+  // few metres is one branch, not two.
+  for (let i = 0; i < fresh.length; i++) {
+    if (fresh[i]) continue;
+    let j = i;
+    while (j < fresh.length && !fresh[j]) j++;
+    const flanked = i > 0 && j < fresh.length;
+    if (flanked && lengthOf(points.slice(i - 1, j + 1)) < BRIDGE_M) {
+      for (let k = i; k < j; k++) fresh[k] = true;
+    }
+    i = j;
+  }
+
+  const stretches: [number, number][][] = [];
+  for (let i = 0; i < fresh.length; i++) {
+    if (!fresh[i]) continue;
+    let j = i;
+    while (j < fresh.length && fresh[j]) j++;
+    // One vertex of overlap either side, so the branch meets the trunk.
+    const stretch = points.slice(Math.max(0, i - 1), Math.min(points.length, j + 1));
+    if (stretch.length >= 2 && lengthOf(stretch) >= MIN_BRANCH_M) stretches.push(stretch);
+    i = j;
+  }
+  return stretches;
+};
+
+/**
+ * Reduce a line's patterns to one ribbon per stretch of street it runs on: the
+ * longest pattern whole, then only the parts of the others that go somewhere it
+ * does not.
  *
  * A route ships several patterns — each direction, plus short turns and branch
  * variants — and they nearly all retrace the same corridor. Every pattern of a
  * line takes the same offset slot, so any two that disagree about which way they
- * run end up on opposite sides of the street and the line reads as two or three
- * ribbons. Matching reversed *pairs* is not enough: a short turn is not the
- * reverse of anything, it is a subset.
+ * run end up on opposite sides of the street and the line reads as two ribbons.
+ * Matching reversed *pairs* is not enough: a short turn is not the reverse of
+ * anything, it is a subset.
  *
- * Comparing coverage rather than direction sidesteps that entirely. Paths are
- * reduced to the grid cells they occupy, longest first; a path earns its place
- * only if enough of its cells are ones nothing kept so far has visited. A
- * reversed duplicate contributes nothing new and is dropped whichever way it
- * runs, a short turn is a subset and is dropped, and a genuine branch survives.
+ * Comparing coverage rather than direction sidesteps that. Paths are reduced to
+ * the grid cells they occupy, longest first, and a later path is drawn only
+ * where its cells are ones nothing kept so far has visited.
+ *
+ * Judging that per *path* — keep it whole or drop it whole — was not enough
+ * either. A pattern that shares the trunk and then turns off to its own terminus
+ * (tram 3's two directions run a common loop and split at the south end) is
+ * mostly duplicate and partly new: kept whole, its duplicate half is redrawn
+ * beside the trunk it copies, so one line reads as two routes running alongside
+ * each other. Dropped whole, its terminus disappears. Cutting the duplicated
+ * stretches out of it and keeping the rest is the only answer that is right
+ * about both halves — so a reversed duplicate contributes nothing and vanishes
+ * entirely, a short turn is a subset and vanishes, and a genuine branch survives
+ * as just the branch.
  */
-export function dedupeOverlappingPaths(
-  paths: [number, number][][],
-  minNewFraction = 0.15
+export function distinctPathSegments(
+  paths: [number, number][][]
 ): [number, number][][] {
   const ordered = [...paths].sort((a, b) => b.length - a.length);
   const covered = new Set<string>();
   const kept: [number, number][][] = [];
 
   for (const path of ordered) {
-    const cells = cellsOf(path);
-    if (cells.size === 0) continue;
-    let fresh = 0;
-    for (const cell of cells) if (!isCovered(cell, covered)) fresh++;
-    // The longest path is always kept — it is the one everything else is
+    if (path.length === 0) continue;
+    // The longest path is drawn whole — it is the one everything else is
     // measured against.
-    if (kept.length === 0 || fresh / cells.size >= minNewFraction) {
-      kept.push(path);
-      for (const cell of cells) covered.add(cell);
+    const pieces = kept.length === 0 ? [path] : freshStretches(path, covered);
+    for (const piece of pieces) {
+      kept.push(piece);
+      for (const cell of cellsOf(piece)) covered.add(cell);
     }
   }
   return kept;

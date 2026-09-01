@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assignCorridorSlots, canonicalizeDirection, dedupeOverlappingPaths } from './routeSlots';
+import { assignCorridorSlots, canonicalizeDirection, distinctPathSegments } from './routeSlots';
 
 describe('assignCorridorSlots', () => {
   // One east/west corridor, sampled every ~55 m…
@@ -175,7 +175,7 @@ describe('canonicalizeDirection', () => {
   });
 });
 
-describe('dedupeOverlappingPaths', () => {
+describe('distinctPathSegments', () => {
   // A corridor sampled every ~55 m, well inside one grid cell per point.
   const corridor: [number, number][] = Array.from({ length: 20 }, (_, i) => [
     24.92 + i * 0.001,
@@ -183,36 +183,79 @@ describe('dedupeOverlappingPaths', () => {
   ]);
 
   it('keeps a single path', () => {
-    expect(dedupeOverlappingPaths([corridor])).toEqual([corridor]);
+    expect(distinctPathSegments([corridor])).toEqual([corridor]);
   });
 
   it('drops a reversed duplicate whichever way it runs', () => {
-    expect(dedupeOverlappingPaths([corridor, [...corridor].reverse()])).toEqual([corridor]);
+    expect(distinctPathSegments([corridor, [...corridor].reverse()])).toEqual([corridor]);
   });
 
   it('drops a short turn, which is a subset rather than a reverse', () => {
     const shortTurn = corridor.slice(0, 10);
-    expect(dedupeOverlappingPaths([corridor, shortTurn])).toEqual([corridor]);
+    expect(distinctPathSegments([corridor, shortTurn])).toEqual([corridor]);
     // …and independently of the order they arrive in.
-    expect(dedupeOverlappingPaths([shortTurn, corridor])).toEqual([corridor]);
+    expect(distinctPathSegments([shortTurn, corridor])).toEqual([corridor]);
   });
 
   it('drops a return leg running down the other side of the same street', () => {
     // What a bus route ships: the two directions are ~20 m apart, which a rigid
     // grid would score as new ground for about half the points.
     const otherSide: [number, number][] = corridor.map(([lng, lat]) => [lng, lat + 0.0002]);
-    expect(dedupeOverlappingPaths([corridor, [...otherSide].reverse()])).toEqual([corridor]);
+    expect(distinctPathSegments([corridor, [...otherSide].reverse()])).toEqual([corridor]);
   });
 
-  it('keeps a branch that goes somewhere new', () => {
-    const branch: [number, number][] = [
-      ...corridor.slice(0, 10),
-      ...Array.from({ length: 10 }, (_, i) => [24.93, 60.17 + i * 0.001] as [number, number]),
-    ];
-    const kept = dedupeOverlappingPaths([corridor, branch]);
+  it('keeps only the part of a branch that goes somewhere new', () => {
+    // A pattern that shares the corridor and then turns off. Drawn whole, the
+    // shared half is a second ribbon of the same colour running alongside the
+    // first — one line reading as two routes, which is what tram 3 looked like.
+    const spur = Array.from(
+      { length: 10 },
+      (_, i) => [24.93, 60.17 + i * 0.001] as [number, number]
+    );
+    const branch: [number, number][] = [...corridor.slice(0, 10), ...spur];
+    const kept = distinctPathSegments([corridor, branch]);
+
     expect(kept).toHaveLength(2);
-    expect(kept).toContain(corridor);
-    expect(kept).toContain(branch);
+    expect(kept[0]).toEqual(corridor);
+    // The spur survives; the stretch it shared with the corridor does not.
+    const drawn = kept[1];
+    expect(drawn.every(([, lat]) => lat >= 60.166)).toBe(true);
+    expect(drawn[drawn.length - 1]).toEqual(spur[spur.length - 1]);
+    // …and it still meets the corridor it leaves, rather than floating beside it.
+    const [startLng, startLat] = drawn[0];
+    expect(Math.hypot((startLng - 24.93) * 0.5, startLat - 60.166) * 111_320).toBeLessThan(100);
+  });
+
+  it('cuts a duplicated trunk out of a pattern that keeps its own terminus', () => {
+    // Tram 3's shape: two directions round a common loop, splitting at one end.
+    // Neither keeping nor dropping the second pattern whole is right — one
+    // redraws the loop beside itself, the other loses the terminus.
+    const shared = corridor;
+    const ownTail: [number, number][] = Array.from(
+      { length: 6 },
+      (_, i) => [24.939 + i * 0.001, 60.158] as [number, number]
+    );
+    // The variant runs its own tail, then back up most of the shared corridor —
+    // shorter overall, so the shared corridor is the one measured against.
+    const variant: [number, number][] = [...ownTail, ...[...shared].reverse().slice(0, 12)];
+    const kept = distinctPathSegments([shared, variant]);
+
+    expect(kept[0]).toEqual(shared);
+    expect(kept).toHaveLength(2);
+    expect(kept[1].some(([, lat]) => Math.abs(lat - 60.158) < 1e-9)).toBe(true);
+    // Nothing of the shared corridor is drawn a second time.
+    expect(kept[1].filter(([, lat]) => Math.abs(lat - 60.166) < 1e-9).length).toBeLessThan(3);
+  });
+
+  it('drops a stub too short to be anywhere the line goes', () => {
+    // A pattern clipping a corner the trunk cut: fresh ground, but a few dozen
+    // metres of it — drawn, it is a fleck of route colour beside the ribbon.
+    const stub: [number, number][] = [
+      [24.925, 60.1665],
+      [24.9255, 60.1666],
+      ...corridor.slice(6),
+    ];
+    expect(distinctPathSegments([corridor, stub])).toEqual([corridor]);
   });
 
   it('collapses a full set of patterns to one ribbon per corridor', () => {
@@ -223,11 +266,11 @@ describe('dedupeOverlappingPaths', () => {
       corridor.slice(0, 12),
       [...corridor.slice(0, 12)].reverse(),
     ];
-    expect(dedupeOverlappingPaths(patterns)).toEqual([corridor]);
+    expect(distinctPathSegments(patterns)).toEqual([corridor]);
   });
 
   it('ignores empty paths', () => {
-    expect(dedupeOverlappingPaths([[], corridor])).toEqual([corridor]);
+    expect(distinctPathSegments([[], corridor])).toEqual([corridor]);
   });
 
   it('passes degenerate paths straight through', () => {
