@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.54.0] - 2026-09-01
+
+### Changed
+- **The Settings section is gone; its switches live on the map**: light/dark and 3D now sit as their own translucent chip pair in the top-left corner of the map, mirroring the mode chips already in the top-right, and the four vehicle-mode toggles are only in that corner row rather than duplicated in the panel. Every switch that was two taps behind a drawer — a bottom sheet on a phone — is one tap on the map, the filter panel is just the line list plus service alerts, and the phone's bottom bar loses its Settings tab.
+
+---
+
 ## [v0.53.1] - 2026-09-01
 
 ### Fixed

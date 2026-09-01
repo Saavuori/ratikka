@@ -16,12 +16,11 @@ interface ModeTogglesProps {
 const ICON_SIZE = 16;
 
 /**
- * Floating corner shortcut for the four vehicle-mode toggles. These live in the
- * filter panel's settings section too, but that is two taps away behind a
- * drawer (a bottom sheet on mobile) — and switching a mode on or off is the
- * single most-used control, since it is also what makes the backend subscribe
- * to that mode's HFP feed. Same state, same effect: this is a shortcut, not a
- * second source of truth.
+ * Floating corner shortcut for the four vehicle-mode toggles, and the only place
+ * they live: switching a mode on or off is the single most-used control (it is
+ * also what makes the backend subscribe to that mode's HFP feed), so it belongs
+ * one tap away on the map rather than behind a drawer. ViewToggles mirrors it in
+ * the opposite corner with the theme and 3D switches.
  */
 export const ModeToggles: React.FC<ModeTogglesProps> = ({
   showTrams,
@@ -69,12 +68,12 @@ export const ModeToggles: React.FC<ModeTogglesProps> = ({
   ];
 
   return (
-    <div className="mode-toggles" role="group" aria-label="Vehicle modes">
+    <div className="corner-toggles mode-toggles" role="group" aria-label="Vehicle modes">
       {modes.map((mode) => (
         <button
           key={mode.key}
           type="button"
-          className={`mode-toggle ${mode.active ? 'active' : ''}`}
+          className={`corner-toggle ${mode.active ? 'active' : ''}`}
           onClick={mode.toggle}
           aria-pressed={mode.active}
           aria-label={`${mode.active ? 'Hide' : 'Show'} ${mode.label}`}
