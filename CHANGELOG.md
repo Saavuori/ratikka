@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.53.1] - 2026-09-01
+
+### Fixed
+- **Both directions of a route are drawn again**: a line ships a dozen-odd pattern polylines — each direction, plus short turns and branch variants — and they were collapsed to a single path so the repeats would not stack on top of each other. That took the return leg with them, and outside the centre the two directions do not share a track: trams heading one way were drawn beside their route line rather than on it, and on the metro, where positions are projected onto the route geometry itself, half the trains ran along a tunnel that was not drawn at all. The patterns are now split into their two directions and thinned within each, so the short turns and duplicates still go but the other direction survives. It is kept only where it actually has its own alignment, measured on a grid fine enough (about 11 m) to tell one track from the other, so a single-track section is still drawn once rather than twice over. Both directions share their line's offset slot and run the same way round, so they stay the real distance apart on screen instead of being thrown to opposite sides of the fan.
+
+---
+
 ## [v0.53.0] - 2026-09-01
 
 ### Added
