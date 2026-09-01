@@ -687,6 +687,10 @@ body {
   flex-direction: column;
   max-height: calc(100vh - 300px);
   max-height: calc(100dvh - 300px);
+  /* Without this the container refuses to shrink below its content, so
+     anything above it (service alerts) pushes the timetable out of the panel
+     instead of the list simply scrolling. */
+  min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -796,6 +800,128 @@ body {
 .timeline-delay {
   font-size: 0.65rem;
   margin-top: 2px;
+}
+
+/* Stop Service Alerts — collapsed to a single summary row by default so the
+   timetable stays visible however many alerts a busy stop collects. */
+.stop-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 4px 0;
+  flex-shrink: 0;
+}
+
+.stop-alerts-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid var(--border-glow);
+  border-left: 3px solid #3b82f6;
+  color: var(--text-primary);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+}
+
+.stop-alerts-summary:hover {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.stop-alerts-summary.severity-warning {
+  border-left-color: #f59e0b;
+}
+
+.stop-alerts-summary.severity-severe {
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.07);
+}
+
+.stop-alerts-summary .stop-alerts-icon {
+  flex-shrink: 0;
+  color: #3b82f6;
+}
+
+.stop-alerts-summary.severity-warning .stop-alerts-icon {
+  color: #f59e0b;
+}
+
+.stop-alerts-summary.severity-severe .stop-alerts-icon {
+  color: #ef4444;
+}
+
+.stop-alerts-count {
+  flex-shrink: 0;
+}
+
+/* The first alert's header, as a hint of what is folded away. Truncated to a
+   single line so the summary can never grow taller than one row. */
+.stop-alerts-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.stop-alerts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 34vh;
+  max-height: 34dvh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.stop-alert {
+  background: rgba(148, 163, 184, 0.05);
+  border: 1px solid var(--border-glow);
+  border-left: 3px solid #3b82f6;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
+.stop-alert.severity-warning {
+  border-left-color: #f59e0b;
+}
+
+.stop-alert.severity-severe {
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.stop-alert-title {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.stop-alert-desc {
+  margin: 2px 0 0 0;
+  font-size: 0.6rem;
+  color: #94a3b8;
+  line-height: 1.3;
+}
+
+.stop-alert-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: #38bdf8;
+  text-decoration: none;
+  margin-top: 4px;
+  font-weight: 600;
+  font-size: 0.55rem;
 }
 
 /* Stop Timetable Details */

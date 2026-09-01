@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.52.1] - 2026-09-01
+
+### Fixed
+- **The stop timetable is visible again at stops with service alerts**: alerts are published once per affected route, so an interchange served by a dozen lines stacked a dozen warning cards — often the same disruption repeated — above the departures and pushed them out of the panel entirely. Identical alerts are now collapsed into one, and the whole set is folded into a single summary row ("3 service alerts", worst-first, with the first headline as a preview) that expands into its own scrollable list. The departures list keeps its share of the panel either way.
+
+---
+
 ## [v0.52.0] - 2026-09-01
 
 ### Added
