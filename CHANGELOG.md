@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.53.0] - 2026-09-01
+
+### Added
+- **Mode switches in the corner of the map**: tram, bus, metro and commuter train each get a small translucent chip in the top-right corner, tinted with that mode's own colour when it is on and greyed when it is off — so the row doubles as a legend for what is currently on the map. They drive exactly the same state as the Settings toggles (which stay where they are), including the WebSocket mode request that makes the backend subscribe to a feed; switching a mode was two taps behind a drawer, or a bottom sheet on a phone, and it is the control people reach for most. The row sits beside the destination search on desktop and stacks vertically on phones, where the centre of the screen is the search pill's.
+
+---
+
 ## [v0.52.2] - 2026-09-01
 
 ### Fixed
