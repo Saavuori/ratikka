@@ -42,6 +42,9 @@ HSL MQTT broker ──▶ backend (Go) ──▶ Redis (live coord cache)
 - `src/lib/` — `api.ts` (backend client), `lerp.ts` (60fps interpolation), `polyline.ts`, `trip.ts`,
   `metroTracks.ts` (projects the metro's dead-reckoned tunnel positions onto the line's
   own geometry, and reads positions back off it for along-track animation),
+  `deadReckon.ts` (integrates a vehicle's reported speed and acceleration forward,
+  so a metro train carries on down its track through the seconds the tunnel feed
+  is silent instead of freezing and then lurching),
   `routeSlots.ts` (which offset slot each highlighted route takes) and `routeLineStyle.ts`
   (the paint expressions that turn a slot into pixels — see "Verifying the map").
 - Vanilla CSS with theme variables in `index.css` / `App.css`.

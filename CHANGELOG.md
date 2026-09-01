@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.53.1] - 2026-09-01
+
+### Fixed
+- **Metro trains keep moving between position reports instead of freezing and lurching**: the metro feed is the sparsest on the map — the trains spend most of their run in tunnel, and while they do, HFP goes quiet for seconds at a time while the backend keeps rebroadcasting the last known point every second. The animation had nothing to say about that silence: it eased into the last reported point, arrived, and froze; the next report then landed several seconds of travel further down the line and was crammed into one second of glide. A metro train is the easiest vehicle here to predict, though — it is on rails, it cannot leave them, and every report carries the speed and acceleration measured on board. Those are now integrated forward along the train's own track, so a five-second gap draws five seconds of travel and the next report only corrects a small error rather than delivering a jump. The prediction is deliberately conservative: a reported acceleration is trusted for four seconds and then coasts, speed is clamped to the line's, and after twenty seconds of silence the train stops rather than being carried off on a twenty-second-old reading.
+- **A metro train covers each second at the rate it is actually travelling**: the within-update motion was shaped by a generic ease-in/ease-out curve picked from the sign of the acceleration. It now follows the same speed profile that placed the target, which also means a window opened four seconds into a gap in the feed is animated with the speed the train has by then, not the speed it had when it last spoke.
+
+---
+
 ## [v0.53.0] - 2026-09-01
 
 ### Added
