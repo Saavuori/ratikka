@@ -28,6 +28,8 @@ import {
   METRO_ORANGE,
   TRAIN_PURPLE,
 } from '../lib/routeColors';
+import { buildTracks, placeOnTracks, pointOnTrack } from '../lib/metroTracks';
+import type { MetroTrack, TrackPlacement } from '../lib/metroTracks';
 import { assignCorridorSlots, canonicalizeDirection, dedupeOverlappingPaths } from '../lib/routeSlots';
 import type { RoutePath } from '../lib/routeSlots';
 import {
@@ -103,7 +105,17 @@ interface RenderPosition {
   lat: number;
   lng: number;
   hdg: number;
+  // Metro only: where this position sits on the line's own track geometry, so
+  // the animation can slide a train *along* its tunnel between two snapshots
+  // instead of cutting across the ground between them. See lib/metroTracks.
+  track?: TrackPlacement;
 }
+
+// A metro position is only pulled onto the tracks if it is within this far of
+// them. Underground, HFP positions are dead-reckoned and drift by a couple of
+// hundred metres; past that the message is more likely stale or bogus than a
+// train, and snapping it would invent a confident-looking position.
+const METRO_SNAP_MAX_OFFSET = 400;
 
 export const Map: React.FC<MapProps> = ({
   trams,
@@ -743,9 +755,49 @@ export const Map: React.FC<MapProps> = ({
     }
   };
 
+  // Indexed metro track geometry, per line. Rebuilt only when a line's
+  // polylines actually change: indexing walks every point of every pattern.
+  const metroTracksRef = useRef<Record<string, MetroTrack[]>>({});
+  const metroGeometrySourceRef = useRef<Record<string, string[]>>({});
+
+  useEffect(() => {
+    const tracks: Record<string, MetroTrack[]> = {};
+    Object.entries(routeGeometries).forEach(([line, data]) => {
+      // Metro lines are the only ones we snap to, and they are the only ones
+      // named "M<something>" — trams are numbers, trains single letters.
+      if (!/^M\d/i.test(line)) return;
+      if (metroGeometrySourceRef.current[line] === data.geometries) {
+        tracks[line] = metroTracksRef.current[line];
+        return;
+      }
+      metroGeometrySourceRef.current[line] = data.geometries;
+      tracks[line] = buildTracks(data.geometries);
+    });
+    metroTracksRef.current = tracks;
+  }, [routeGeometries]);
+
+  /**
+   * Pull a reported metro position onto its line's tracks. Returns null when
+   * the line's geometry has not loaded yet, or the position is too far off the
+   * network to trust — in both cases the caller draws the raw position,
+   * exactly as before.
+   */
+  const placeOnMetroTrack = (tram: VehiclePosition, previous: TrackPlacement | undefined) => {
+    const tracks = metroTracksRef.current[tram.desi];
+    if (!tracks || tracks.length === 0) return null;
+    return placeOnTracks(tram.desi, tracks, tram, previous, {
+      maxOffset: METRO_SNAP_MAX_OFFSET,
+    });
+  };
+
   // Animation references to run independent of React re-renders
   const prevPositionsRef = useRef<Record<string, RenderPosition>>({});
   const targetPositionsRef = useRef<Record<string, RenderPosition>>({});
+  // What was actually drawn on the last frame. A new snapshot interpolates from
+  // here rather than from the previous *target*, so a correction that arrives
+  // mid-glide is eased in from where the vehicle currently is instead of
+  // yanking it back to where the last snapshot ended.
+  const renderedPositionsRef = useRef<Record<string, RenderPosition>>({});
   const lastUpdateRef = useRef<number>(0);
   // Wall-clock of the last vehicle-feature rebuild, used to adaptively throttle
   // the (O(n)) per-frame rebuild when the map is crowded (see tickFrame).
@@ -798,6 +850,10 @@ export const Map: React.FC<MapProps> = ({
       }
       lastRenderRef.current = now;
 
+      // Rebuilt from scratch each frame so vehicles that left the feed do not
+      // linger in it.
+      const rendered: Record<string, RenderPosition> = {};
+
       const features = Object.entries(targetPositionsRef.current).map(([id, target]) => {
         const prev = prevPositionsRef.current[id] || target;
 
@@ -809,9 +865,43 @@ export const Map: React.FC<MapProps> = ({
         // mirrors the physical vehicle: ease-in while accelerating away from a
         // stop, ease-out while braking into one. Heading eases smoothly.
         const tPos = easeByAccel(t, acc);
-        const lat = lerp(prev.lat, target.lat, tPos);
-        const lng = lerp(prev.lng, target.lng, tPos);
-        const hdg = lerpAngle(prev.hdg, target.hdg, smoothstep(t));
+        let lat = lerp(prev.lat, target.lat, tPos);
+        let lng = lerp(prev.lng, target.lng, tPos);
+        let hdg = lerpAngle(prev.hdg, target.hdg, smoothstep(t));
+        let renderTrack: TrackPlacement | undefined;
+
+        // A metro train that stayed on the same track between two snapshots is
+        // moved *along* it: interpolating arc length and reading the position
+        // back off the geometry keeps the train in its tunnel through curves,
+        // where interpolating the endpoints would cut straight across them.
+        if (
+          target.track &&
+          prev.track &&
+          prev.track.line === target.track.line &&
+          prev.track.index === target.track.index
+        ) {
+          const track = metroTracksRef.current[target.track.line]?.[target.track.index];
+          if (track) {
+            const distance = lerp(prev.track.distance, target.track.distance, tPos);
+            const point = pointOnTrack(track, distance);
+            lat = point.lat;
+            lng = point.lng;
+            // Face along the track. A standing train keeps the heading it had:
+            // the tangent alone cannot say which end is the front.
+            hdg = target.track.forward ? point.bearing : (point.bearing + 180) % 360;
+            renderTrack = { ...target.track, distance };
+          }
+        } else if (target.track) {
+          // No shared track to slide along — the train has only just appeared,
+          // or it changed pattern — so this frame falls back to the straight
+          // interpolation above. The placement is still carried forward so the
+          // next snapshot can resume along-track motion immediately; a line's
+          // patterns run within a few metres of each other, so the distance is
+          // at most that far out for the one frame it is used.
+          renderTrack = target.track;
+        }
+
+        rendered[id] = { lat, lng, hdg, track: renderTrack };
 
         const doorsOpen = tramInfo?.drst === 1;
         // Normalise speed to 0..1 for the aura sizing. Capped low (~8 m/s ≈ 29 km/h)
@@ -838,6 +928,8 @@ export const Map: React.FC<MapProps> = ({
           },
         };
       });
+
+      renderedPositionsRef.current = rendered;
 
       const source = map.getSource('trams') as maplibregl.GeoJSONSource;
       if (source) {
@@ -1010,14 +1102,21 @@ export const Map: React.FC<MapProps> = ({
     });
 
     filteredTrams.forEach(([id, tram]) => {
-      // If we already have a previous target, that becomes the start position for the next transition
-      const currentPrev = targetPositionsRef.current[id];
-      if (currentPrev) {
-        newPrev[id] = currentPrev;
-      } else {
-        newPrev[id] = { lat: tram.lat, lng: tram.lng, hdg: tram.hdg };
-      }
-      newTarget[id] = { lat: tram.lat, lng: tram.lng, hdg: tram.hdg };
+      const previous = targetPositionsRef.current[id];
+
+      // Metro trains are drawn on their tracks, not where the (largely
+      // underground, therefore dead-reckoned) feed claims they are.
+      const snapped =
+        tram.mode === 'metro' ? placeOnMetroTrack(tram, previous?.track) : null;
+      const target: RenderPosition = snapped
+        ? { lat: snapped.lat, lng: snapped.lng, hdg: snapped.hdg, track: snapped.track }
+        : { lat: tram.lat, lng: tram.lng, hdg: tram.hdg };
+
+      // Start the next glide from what is on screen right now — mid-glide when
+      // an update lands early, the last target when it lands on time — so a
+      // correction is eased in rather than snapped back to.
+      newPrev[id] = renderedPositionsRef.current[id] || previous || target;
+      newTarget[id] = target;
     });
 
     prevPositionsRef.current = newPrev;
@@ -1079,20 +1178,31 @@ export const Map: React.FC<MapProps> = ({
       </svg>
     `;
 
-    // Metro: a long, square-shouldered rail car in HSL's metro orange. Wider
-    // than a tram (the trains are two coupled units) and with a full-width
-    // windshield band, so the mode reads even at overview zooms.
+    // Metro: a coupled pair of units, drawn as what it is — one long, flat-
+    // fronted train split across the middle by the coupling gap between its two
+    // halves, in HSL's metro orange with the white bands the M-stock carries.
+    // The seam and the doubled length are the cue that reads at a glance:
+    // nothing else on the map is shaped like this. Both ends get a cab
+    // windshield, because a metro train has a driver's cab at each end and
+    // reverses at the terminus rather than turning around — the leading one is
+    // brighter, so the direction of travel still reads.
     const metroBody = (open: boolean, color: string = METRO_ORANGE) => `
       <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
-        <path d="M20 2.6 L25 8.2 L15 8.2 Z" fill="${color}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
-        <rect x="11.5" y="7" width="17" height="28" rx="3.5" fill="${color}" stroke="#ffffff" stroke-width="2"/>
-        <rect x="13.8" y="9.4" width="12.4" height="4.8" rx="1.2" fill="rgba(255,255,255,0.92)"/>
+        <rect x="12.4" y="2.6" width="15.2" height="34.8" rx="3.2" fill="${color}" stroke="#ffffff" stroke-width="2"/>
+        <rect x="14.6" y="4.6" width="10.8" height="4.2" rx="1.1" fill="rgba(255,255,255,0.95)"/>
+        <rect x="14.6" y="31.2" width="10.8" height="3.6" rx="1" fill="rgba(255,255,255,0.55)"/>
+        <rect x="12.4" y="16.4" width="15.2" height="1.5" fill="rgba(255,255,255,0.85)"/>
+        <rect x="12.4" y="19" width="15.2" height="2" fill="rgba(0,0,0,0.55)"/>
+        <rect x="12.4" y="22.1" width="15.2" height="1.5" fill="rgba(255,255,255,0.85)"/>
         ${open
-          ? `<rect x="10.9" y="18.6" width="4.6" height="8" rx="1.1" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
-             <rect x="24.5" y="18.6" width="4.6" height="8" rx="1.1" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>`
-          : `<rect x="13.6" y="17.8" width="4.4" height="9.4" rx="1" fill="rgba(0,0,0,0.42)"/>
-             <rect x="22" y="17.8" width="4.4" height="9.4" rx="1" fill="rgba(0,0,0,0.42)"/>`}
-        <rect x="14" y="30.2" width="12" height="3" rx="1.2" fill="rgba(0,0,0,0.3)"/>
+          ? `<rect x="11.7" y="10.6" width="4.6" height="4.6" rx="1" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
+             <rect x="23.7" y="10.6" width="4.6" height="4.6" rx="1" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
+             <rect x="11.7" y="25" width="4.6" height="4.6" rx="1" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
+             <rect x="23.7" y="25" width="4.6" height="4.6" rx="1" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>`
+          : `<rect x="13.4" y="10.4" width="4.2" height="5" rx="0.9" fill="rgba(0,0,0,0.42)"/>
+             <rect x="22.4" y="10.4" width="4.2" height="5" rx="0.9" fill="rgba(0,0,0,0.42)"/>
+             <rect x="13.4" y="24.8" width="4.2" height="5" rx="0.9" fill="rgba(0,0,0,0.42)"/>
+             <rect x="22.4" y="24.8" width="4.2" height="5" rx="0.9" fill="rgba(0,0,0,0.42)"/>`}
       </svg>
     `;
 

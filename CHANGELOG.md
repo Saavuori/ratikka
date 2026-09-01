@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.52.2] - 2026-09-01
+
+### Fixed
+- **Metro trains run on the metro tracks now**: nearly all of both metro lines is in tunnel, where there is no GPS fix and HFP positions are dead-reckoned from odometry — so trains drifted off their alignment and were drawn in parks, in the sea, or a block from the platform they were standing at. There are exactly two lines and both are grade-separated, so every train that exists is somewhere on one of a handful of known polylines: reported positions are now projected onto the line's own route geometry (up to 400 m of drift; further off and the message is left alone rather than given an invented position), and a train keeps to the pattern it is already running along instead of flickering between the two near-coincident directions.
+- **A metro train slides along its tunnel between updates instead of across the map**: with the train pinned to a known track, the once-a-second position updates are interpolated as distance *along* the geometry, so it follows the curves rather than cutting the corner, and it points the way it is actually travelling — worked out from how it moved, not from the heading the feed reports, which underground is as dead-reckoned as the position. A correction that arrives mid-glide is now eased in from wherever the vehicle is on screen rather than snapping it back to the previous update's endpoint; this applies to every mode, not just the metro.
+
+### Changed
+- **The metro has an icon of its own**: it was a rounded carriage a shade wider than the tram's, which at map size read as "a tram in orange". It is now drawn as what it is — a coupled pair of units, one long flat-fronted train split across the middle by the coupling gap, with a cab windshield at each end (a metro train reverses at the terminus rather than turning around), the leading one brighter so the direction of travel still reads.
+
+---
+
 ## [v0.52.1] - 2026-09-01
 
 ### Fixed
