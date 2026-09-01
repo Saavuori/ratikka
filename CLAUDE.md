@@ -128,24 +128,30 @@ version number that no longer lives there. It is gone.
 `CHANGELOG.md` is documentation now, not machinery. It does not gate the build
 and it does not choose the version, so it can never conflict over one.
 
-- Maintained **by hand**. Add an entry under a new `## [vX.Y.Z] - YYYY-MM-DD`
-  heading with `### Added` / `### Fixed` / `### Changed` sections, separated
-  from the entry below it by `---`.
-- Write the heading to match the tag the commits will produce. If it drifts,
-  nothing breaks — but the published changelog is then wrong about which
-  release carried what, so fix it in a follow-up.
+- Maintained **by hand**, but **never write a version number in it.** Put the
+  entry under `## [Unreleased]` with `### Added` / `### Fixed` / `### Changed`
+  sections, separated from the entry below it by `---`. Add to the existing
+  `## [Unreleased]` heading if one is already there.
+- The release workflow stamps the heading. When `docker-build.yml` cuts a tag it
+  rewrites `## [Unreleased]` to `## [vX.Y.Z] - YYYY-MM-DD` and commits that back
+  to `main`, then `deploy-pages.yml` publishes it via `scripts/build-changelog.js`.
+  A release with no pending entry stamps nothing and ships unannotated.
+- CI rejects a `## [vX.Y.Z]` heading your branch adds unless that tag already
+  exists. A branch cannot know its version — `semantic-version` picks it at merge
+  time, and other releases land while yours is open — so any number written by
+  hand is a guess. **The guesses drifted:** the heading labelled `v0.51.1` was
+  carrying v0.51.4's and v0.51.9's work while six releases went unannotated, and
+  further back `v0.44.2` names a release that was never tagged at all.
 - Dependabot does not write entries. A dependency merge still releases (patch),
   it just arrives unannotated; fold it into the next entry, and expand it by
   hand when a bump actually matters.
-- Pushing a changed `CHANGELOG.md` to `main` triggers `deploy-pages.yml`, which
-  compiles it via `scripts/build-changelog.js` and publishes to GitHub Pages.
 
 ## CI
 
 `.github/workflows/ci.yml` runs on every PR and on `main`: `go vet` +
 `go test ./...` + a `go mod tidy` check for the backend, `npm run lint`/`build`
-/`test` for the frontend, an `[Unreleased]`-placeholder guard plus a render of
-`scripts/build-changelog.js`, and an amd64-only Docker build. A merge to `main`
+/`test` for the frontend, a changelog guard (no invented version headings, no
+stranded `[Unreleased]`) plus a render of `scripts/build-changelog.js`, and an amd64-only Docker build. A merge to `main`
 deploys itself, so this is the gate — keep it green.
 
 Dependency updates arrive as **Dependabot** PRs every Monday, configured in

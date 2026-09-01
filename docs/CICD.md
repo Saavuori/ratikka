@@ -32,7 +32,7 @@ graph TD
     GHCR -->|update.sh cron, every 5 min| Host["Oracle host — podman<br/>pull :latest, down/up"]
     Host --> Live["https://hsl-live.duckdns.org/"]
 
-    Merge -->|deploy-pages.yml<br/>only if CHANGELOG.md changed| Pages["GitHub Pages changelog"]
+    Merge -->|deploy-pages.yml<br/>on CHANGELOG.md change,<br/>and after each release stamp| Pages["GitHub Pages changelog"]
 ```
 
 Note that the dependency path is not a special case any more. A Dependabot PR
@@ -46,7 +46,7 @@ Three workflows, each with a distinct trigger:
 |---|---|---|---|
 | CI | [`ci.yml`](../.github/workflows/ci.yml) | every PR, every push to `main` | test/lint/build gate |
 | CI/CD Build and Release | [`docker-build.yml`](../.github/workflows/docker-build.yml) | push to `main` (with `paths-ignore`) | tag + multi-arch image to GHCR |
-| Deploy Changelog to Pages | [`deploy-pages.yml`](../.github/workflows/deploy-pages.yml) | push to `main` touching `CHANGELOG.md` or the generator | publishes the changelog site |
+| Deploy Changelog to Pages | [`deploy-pages.yml`](../.github/workflows/deploy-pages.yml) | push to `main` touching `CHANGELOG.md` or the generator, **and** after every release run | publishes the changelog site |
 
 Dependabot is not a workflow — GitHub runs it from
 [`.github/dependabot.yml`](../.github/dependabot.yml). See [§7](#7-dependency-updates).
@@ -66,7 +66,7 @@ Four jobs, all on `ubuntu-latest`, all in parallel:
 |---|---|
 | **Backend (go test)** | `go mod tidy` + `git diff --exit-code` on `go.mod`/`go.sum`, then `go vet ./...`, then `go test ./...` (working dir `backend/`) |
 | **Frontend (lint, build, test)** | `npm ci`, `npm run lint`, `npm run build`, `npm test` (working dir `frontend/`, Node 24) |
-| **Changelog (renders, no placeholder)** | rejects an `[Unreleased]` heading, then runs `scripts/build-changelog.js` |
+| **Changelog (renders, no invented versions)** | rejects a `## [vX.Y.Z]` heading the branch adds for a tag that does not exist, rejects an `[Unreleased]` heading that is not the topmost entry, then runs `scripts/build-changelog.js` |
 | **Docker image builds** | amd64-only `docker/build-push-action` with `push: false` |
 
 Notes on why each is shaped the way it is:
@@ -78,8 +78,11 @@ Notes on why each is shaped the way it is:
   `backend/internal/api/dist/index.html` is tracked — the `//go:embed all:dist`
   pattern needs at least one file to exist or the package will not compile.
 - **The changelog job no longer guards a release**, because the changelog no
-  longer decides one. It guards the *published site*: a heading left as
-  `[Unreleased]`, or a file the generator chokes on, would go live on Pages.
+  longer decides one. It guards the *published site* against being wrong about
+  which release carried what. A branch cannot know its own version — it is
+  chosen at merge time — so writing one by hand is a guess, and the job rejects
+  guesses. `[Unreleased]` is now the correct thing to write, and is only an
+  error when it is stranded below a released entry, meaning a stamp was missed.
 - **The Docker job does not push.** It builds amd64 only, purely to catch a
   broken `Dockerfile` before it reaches `main`; the real multi-arch build lives
   in the release workflow. Both use `type=gha` buildx cache.
@@ -157,10 +160,19 @@ messages removes the shared resource, and with it every one of those pieces —
 `renovate.json5` and the self-hosted Renovate workflow included, since the only
 reason Renovate had to be self-hosted was running that post-upgrade command.
 
-What is lost: the changelog heading and the tag can now drift, and nothing
-enforces that an entry exists at all. That is a documentation defect rather than
-a shipping defect — the release is correct either way — and it is the cheaper of
-the two failure modes by a wide margin.
+What was lost initially: the changelog heading and the tag could drift, and
+nothing enforced that an entry existed at all. That was judged a documentation
+defect rather than a shipping defect — the release is correct either way — and
+the cheaper of the two failure modes by a wide margin. That judgement held, but
+the drift was not hypothetical. By v0.51.9 the newest heading read `v0.51.1`,
+labelling v0.51.4's and v0.51.9's work, with six releases unrecorded.
+
+The fix keeps the decoupling and removes the guess. Contributors write
+`## [Unreleased]`; the `tag` job stamps the tag it just cut onto that heading
+and commits it back to `main`, because that job is the first place the version
+is known. CI rejects any version heading a branch invents. The changelog still
+does not gate or choose a release — a release with no pending entry simply
+ships unannotated, as before.
 
 ---
 
@@ -234,8 +246,15 @@ markdown into `dist-changelog/` and publishes to GitHub Pages at
 <https://saavuori.github.io/ratikka/>. Concurrency group `pages` with
 `cancel-in-progress: true`, so rapid merges don't queue up deploys.
 
-This is independent of the release workflow — a changelog edit that doesn't move
-the top heading still republishes the site without cutting a release.
+A changelog edit still republishes the site without cutting a release, since
+`CHANGELOG.md` is in the release workflow's `paths-ignore`.
+
+It also runs on `workflow_run` after **CI/CD Build and Release** completes. That
+is not redundant: the stamping commit is pushed with `GITHUB_TOKEN`, and GitHub
+deliberately does not raise `push` events for those, so a stamped entry would
+otherwise sit on `main` unpublished. Republishing after a release that changed
+nothing here is harmless — the render is deterministic and the `pages`
+concurrency group serialises it.
 
 ---
 

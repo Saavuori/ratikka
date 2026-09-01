@@ -53,6 +53,37 @@ jobs:
           git tag ${{ steps.version.outputs.version_tag }}
           git push origin ${{ steps.version.outputs.version_tag }}
 
+      # The version is only knowable here, so this is where the changelog heading
+      # gets written. Contributors put an entry under `## [Unreleased]`; the tag
+      # just cut is stamped onto it and committed back to main. A release with no
+      # pending entry (a Dependabot batch, say) is a no-op — it stays unannotated,
+      # as before. CHANGELOG.md is in this workflow's paths-ignore, so the commit
+      # cannot re-trigger a release; it does trigger deploy-pages.yml, which is
+      # what publishes the entry.
+      - name: Stamp the release tag onto the [Unreleased] entry
+        env:
+          TAG: ${{ steps.version.outputs.version_tag }}
+        run: |
+          if ! grep -qiE '^## \[Unreleased\]' CHANGELOG.md; then
+            echo "No [Unreleased] entry; $TAG ships unannotated."
+            exit 0
+          fi
+          sed -i -E "0,/^## \[[Uu]nreleased\].*$/s//## [$TAG] - $(date -u +%Y-%m-%d)/" CHANGELOG.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "docs(changelog): record $TAG"
+          # Another release may have landed while this job ran; rebase onto it
+          # rather than clobbering, and never fail the release over the changelog.
+          for attempt in 1 2 3; do
+            if git pull --rebase --quiet origin main && git push origin HEAD:main; then
+              echo "Stamped $TAG onto the changelog."
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::warning file=CHANGELOG.md::Could not push the changelog entry for $TAG; stamp it by hand."
+
   build-and-push:
     needs: tag
     runs-on: ubuntu-latest

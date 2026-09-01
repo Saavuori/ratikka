@@ -2,16 +2,82 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.51.1] - 2026-08-31
+## [Unreleased]
+
+### Fixed
+- **The changelog stopped drifting from the releases it describes**: entries named a version by hand, but since v0.51.0 the version is chosen at merge time from the commit messages, so a branch could only guess — and other releases land while a branch is open. The newest heading read `v0.51.1` while `v0.51.9` was deployed, labelling v0.51.4's and v0.51.9's work as one release and leaving six unrecorded. Entries are now written under `## [Unreleased]` and the release workflow stamps the tag it actually cut onto that heading, so the number is written where it is first known instead of predicted. CI rejects a version heading a branch invents. The nine v0.51.x releases have been backfilled from their tags.
+
+### Changed
+- **The changelog site republishes after a release, not only after a changelog edit**: the stamping commit is pushed with `GITHUB_TOKEN`, and GitHub raises no `push` event for those, so `deploy-pages.yml` also runs when the release workflow completes. A pending `## [Unreleased]` section renders as "Unreleased — pending release" rather than a bare heading.
+
+---
+
+## [v0.51.9] - 2026-09-01
 
 ### Fixed
 - **A line no longer draws itself twice**: a route ships several patterns — each direction, plus short turns and variants — and the overlap between them was judged one whole pattern at a time: keep it or drop it. A pattern that shares the trunk and then splits off to its own terminus (tram 3's two directions run a common loop and part at the south end) is mostly duplicate and partly new, so it was kept whole, and the duplicated half was redrawn right beside the trunk it copies — one line reading as two routes with a side track. The overlap is now cut out *within* a pattern: the longest one is drawn whole and the others contribute only the stretches that go somewhere it does not, joined to the trunk they leave. A reversed duplicate now contributes nothing at all rather than nearly nothing, a short turn still vanishes, and a genuine branch survives as just the branch. Stretches under 150 m are dropped as flecks rather than drawn, and a branch that briefly grazes the trunk stays one continuous ribbon.
+
+---
+
+## [v0.51.8] - 2026-08-31
+
+### Fixed
+- **Complete tram route coverage restored**: v0.51.7 collapsed each route to a single canonical pattern, which removed the duplicated trunk but took the genuine branches with it — stretches of street a route really serves stopped being drawn at all. This release reverts that change, putting the duplication back rather than leaving the map incomplete; v0.51.9 solves it properly by cutting the overlap *within* a pattern instead of discarding whole patterns.
+
+---
+
+## [v0.51.7] - 2026-08-31
+
+### Fixed
+- **One canonical path per tram route**: a first attempt at stopping a line from drawing its shared trunk twice, by picking a single pattern per route in `routeSlots.ts` and ignoring the rest. It removed the duplicate ribbon, but a route's branches live in the patterns it discarded, so parts of the network went missing — reverted in v0.51.8.
+
+---
+
+## [v0.51.6] - 2026-08-31
+
+### Changed
+- **Deploy stack images updated**: `grafana/alloy` v1.18.1 → v1.19.2.
+
+---
+
+## [v0.51.5] - 2026-08-31
+
+### Changed
+- **Frontend packages updated**: `lucide-react` 1.33.0 → 1.34.0, `maplibre-gl` 6.4.1 → 6.6.0, `@maplibre/maplibre-gl-style-spec` 26.2.1 → 26.4.1, `@types/node` 26.2.0 → 26.4.0, `@types/react-dom` 19.2.4 → 19.2.5, `eslint` 10.8.1 → 10.9.1, `eslint-plugin-react-refresh` 0.5.4 → 0.5.5, `typescript-eslint` 8.67.0 → 8.68.0.
+
+---
+
+## [v0.51.4] - 2026-08-31
+
+### Fixed
 - **Highlighted routes sit closer to the street they actually follow when zoomed out**: tapering the parallel-ribbon fan to zero below zoom 12 fixed the whole-city view, but between there and street level the spacing was still a *constant* pixel offset, and a pixel covers more ground the further out you are — at zoom 13 the outermost ribbon was about 140 m from its route, i.e. a couple of streets over. The offset's zoom stops now roughly halve per level on the way out (1.5 px per slot at z13, 3 at z14, 6.5 at z16), which is how a metre shrinks in pixels, holding the outermost ribbon inside about 45 m of ground everywhere the fan is drawn at all. A unit test asserts that bound in metres rather than pixels, which is the property that kept breaking.
 
 ### Changed
 - **Route ribbons are slightly slimmer and fan out more tightly**, at both the line and its casing. Zoomed in, the narrower spacing still clears the casing and leaves a sliver of map between neighbouring routes; further out the ribbons close up and eventually merge, on the basis that being on the right street matters more there than being told apart — the colours still distinguish them.
 
 ---
+
+## [v0.51.3] - 2026-08-25
+
+### Changed
+- **Dockerfile base images updated**: `golang` 1.26-alpine → 1.27-alpine.
+
+---
+
+## [v0.51.2] - 2026-08-25
+
+### Changed
+- **Frontend dev packages updated**: `@vitejs/plugin-react` 6.0.5 → 6.1.0, `vite` 8.2.1 → 8.2.2.
+
+---
+
+## [v0.51.1] - 2026-08-22
+
+### Changed
+- **Frontend packages updated**: `lucide-react` 1.18.0 → 1.33.0, `maplibre-gl` 6.0.0 → 6.4.1, `vitest` 4.1.10 → 4.1.11.
+
+---
+
 
 ## [v0.51.0] - 2026-08-22
 

@@ -9,6 +9,16 @@ on:
       - 'scripts/changelog-template.html'
       - '.github/workflows/deploy-pages.yml'
 
+  # The release workflow stamps the tag it just cut onto the `## [Unreleased]`
+  # heading and commits that back to main. That commit is pushed with
+  # GITHUB_TOKEN, and GitHub deliberately does not raise `push` events for those
+  # — so without this trigger the stamped entry would sit on main unpublished.
+  # Republishing after a release that changed nothing here is harmless: the
+  # render is deterministic and the `pages` concurrency group below serialises it.
+  workflow_run:
+    workflows: ["CI/CD Build and Release"]
+    types: [completed]
+
 # Allow only one concurrent deployment, skipping runs in-progress
 concurrency:
   group: "pages"

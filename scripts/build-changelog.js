@@ -47,6 +47,13 @@ function parseMarkdown(md) {
     if (line.startsWith('## ')) {
       if (inList) { result.push('</ul>'); inList = false; }
       const headingText = line.substring(3);
+      // An entry written before its release has no version yet: the release
+      // workflow stamps the real tag onto `## [Unreleased]` when it cuts one.
+      // Until then it publishes as a pending section rather than a bare title.
+      if (/^\[Unreleased\]\s*$/i.test(headingText)) {
+        result.push('<div class="version-header"><h2><span class="version-tag">Unreleased</span> <span class="version-date">pending release</span></h2></div>');
+        continue;
+      }
       // Match versions like [v1.0.0] - 2026-06-16 to wrap version in a styled tag
       const versionMatch = headingText.match(/\[(.*?)\]\s*-\s*(.*)/);
       if (versionMatch) {

@@ -73,24 +73,58 @@ jobs:
         run: npm test
 
   changelog:
-    name: Changelog (renders, no placeholder)
+    name: Changelog (renders, no invented versions)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24
 
-      # The changelog no longer carries the version — commit messages do — but
-      # it is still what the Pages site publishes, so a heading that reads
-      # `[Unreleased]` would go live as-is.
-      - name: Reject [Unreleased] placeholder
+      # A branch cannot know the version it will ship as: semantic-version picks
+      # it at merge time, from every commit since the last tag, and any number of
+      # other releases can land while this one is open. So a hand-written
+      # `## [vX.Y.Z]` heading is a guess, and guesses drifted — v0.51.1's heading
+      # was carrying v0.51.4's and v0.51.9's work while six releases went
+      # unannotated. New entries go under `## [Unreleased]`; the release workflow
+      # stamps the tag it actually cut onto that heading.
+      # Checked against headings this branch ADDS, not the whole file: one
+      # pre-v0.51 heading (v0.44.2) was never tagged at all, and that history
+      # stays as written.
+      - name: Reject invented version headings
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
-          if grep -qiE '^#+ \[Unreleased\]' CHANGELOG.md; then
-            echo "::error file=CHANGELOG.md::CHANGELOG.md must use a real versioned heading (## [vX.Y.Z] - date), not [Unreleased]."
+          git fetch --tags --force --quiet
+          base="$BASE_SHA"
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "No usable base commit; skipping."
+            exit 0
+          fi
+          added=$(git diff "$base" -- CHANGELOG.md \
+                  | grep -oE '^\+## \[v[0-9]+\.[0-9]+\.[0-9]+\]' \
+                  | sed 's/^+## //' | tr -d '[]' | sort -u)
+          bad=0
+          for version in $added; do
+            if ! git rev-parse -q --verify "refs/tags/$version" >/dev/null; then
+              echo "::error file=CHANGELOG.md::$version is not an existing tag. The version is chosen at merge time by semantic-version, not here — put this entry under '## [Unreleased]' and the release workflow will stamp the tag it actually cuts onto that heading."
+              bad=1
+            fi
+          done
+          [ "$bad" -eq 0 ]
+
+      # Only the topmost entry may be pending; an [Unreleased] heading buried
+      # under released ones means a stamp was missed.
+      - name: Reject a stranded [Unreleased] heading
+        run: |
+          if grep -qiE '^## \[Unreleased\]' CHANGELOG.md \
+             && [ "$(grep -nE '^## \[' CHANGELOG.md | head -1 | grep -ic unreleased)" -eq 0 ]; then
+            echo "::error file=CHANGELOG.md::An [Unreleased] heading exists but is not the topmost entry — it was never stamped with its release tag."
             exit 1
           fi
 
