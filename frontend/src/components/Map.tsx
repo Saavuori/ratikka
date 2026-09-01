@@ -16,7 +16,7 @@ import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint 
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
 import { getRouteColor, routeColorMatchExpression, ROUTE_COLORS, TRAM_GREEN } from '../lib/routeColors';
-import { assignCorridorSlots, canonicalizeDirection, distinctPathSegments } from '../lib/routeSlots';
+import { assignCorridorSlots, canonicalizeDirection, dedupeOverlappingPaths } from '../lib/routeSlots';
 import type { RoutePath } from '../lib/routeSlots';
 import {
   ROUTE_LINE_WIDTH,
@@ -512,7 +512,7 @@ export const Map: React.FC<MapProps> = ({
   const routePathsOf = (line: string, src: string[]): [number, number][][] => {
     const cached = routePathsCacheRef.current[line];
     if (cached && cached.src === src) return cached.paths;
-    const paths = distinctPathSegments(
+    const paths = dedupeOverlappingPaths(
       src.map((poly) => canonicalizeDirection(decodePolyline(poly)))
     );
     routePathsCacheRef.current[line] = { src, paths };
@@ -543,9 +543,8 @@ export const Map: React.FC<MapProps> = ({
       // The API returns one polyline per pattern — each direction, plus short
       // turns and branch variants — and the backend dedupes on the raw string,
       // which no two of them ever share. Every pattern of a line shares its
-      // slot, so the stretches they retrace have to be cut out rather than
-      // drawn on top of (or worse, beside) one another; what survives is one
-      // ribbon per piece of street the line actually runs on.
+      // slot, so any that retrace the same street have to be dropped rather
+      // than drawn on top of (or worse, beside) one another.
       routePathsOf(line, geometries[line].geometries).forEach((coords) =>
         paths.push({ line, coords })
       );
