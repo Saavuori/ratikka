@@ -482,21 +482,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
       {showSettings && (
         <>
-          {/* Legend */}
-          <div className="legend-section">
-            <div className="legend-title">Legend</div>
-            <div className="legend-list">
-              <div className="legend-item">
-                <span className="legend-color" style={{ backgroundColor: '#0984e3' }} />
-                <span>Moving</span>
-              </div>
-              <div className="legend-item">
-                <span className="legend-color" style={{ backgroundColor: '#ff2d2d' }} />
-                <span>Stopped</span>
-              </div>
-            </div>
-          </div>
-
           {/* Map Settings */}
           <div className="settings-section">
             <div className="legend-title">Settings</div>
