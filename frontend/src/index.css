@@ -1679,3 +1679,73 @@ body {
     max-height: calc(60dvh - 150px);
   }
 }
+
+/* Floating mode shortcut (top-right corner) — a partly see-through row of
+   tram / bus / metro / train chips mirroring the settings toggles. */
+.mode-toggles {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 104;
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 9999px;
+  background: var(--bg-panel);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-glow);
+  box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  opacity: 0.72;
+  pointer-events: auto;
+  transition: opacity 0.2s ease;
+}
+
+.mode-toggles:hover,
+.mode-toggles:focus-within {
+  opacity: 1;
+}
+
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--bg-button);
+  border: 1px solid var(--border-button);
+  color: var(--text-secondary);
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s ease,
+    border-color 0.2s ease, color 0.2s ease;
+}
+
+.mode-toggle:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-button-hover);
+  background: var(--bg-button-hover);
+  color: var(--text-primary);
+}
+
+.mode-toggle.active:hover {
+  color: inherit;
+}
+
+.mode-toggle:focus-visible {
+  border-color: var(--accent-green);
+}
+
+@media (max-width: 768px) {
+  /* Stack in the corner on phones: the journey launcher owns the top centre,
+     and a horizontal row would run into it on a narrow screen. */
+  .mode-toggles {
+    top: 12px;
+    right: 12px;
+    flex-direction: column;
+    border-radius: 9999px;
+  }
+}

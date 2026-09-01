@@ -10,6 +10,7 @@ import { TramCard } from './components/TramCard';
 import { StopPopup } from './components/StopPopup';
 import { BikePopup } from './components/BikePopup';
 import { VersionBadge } from './components/VersionBadge';
+import { ModeToggles } from './components/ModeToggles';
 import { BottomNav, type MobileTab } from './components/BottomNav';
 import { JourneySearch, type JourneySelection } from './components/JourneySearch';
 import { fetchRouteDetails, fetchAlerts, fetchTripDetails } from './lib/api';
@@ -667,6 +668,18 @@ function App() {
         onOpenChange={handleJourneyOpenChange}
         hidden={!!(liveTram && liveTram.veh !== '0')}
         isMobile={isMobile}
+      />
+
+      {/* Quick vehicle-mode shortcuts (top-right corner) */}
+      <ModeToggles
+        showTrams={showTrams}
+        setShowTrams={setShowTrams}
+        showBuses={showBuses}
+        setShowBuses={setShowBuses}
+        showMetro={showMetro}
+        setShowMetro={setShowMetro}
+        showTrains={showTrains}
+        setShowTrains={setShowTrains}
       />
 
       {/* Version Badge */}
