@@ -31,7 +31,7 @@ import {
 import { buildTracks, placeOnTracks, pointOnTrack } from '../lib/metroTracks';
 import { glideFraction, predictedAdvance } from '../lib/deadReckon';
 import type { MetroTrack, TrackPlacement } from '../lib/metroTracks';
-import { assignCorridorSlots, canonicalizeDirection, dedupeOverlappingPaths } from '../lib/routeSlots';
+import { assignCorridorSlots, directionalPaths } from '../lib/routeSlots';
 import type { RoutePath } from '../lib/routeSlots';
 import {
   ROUTE_LINE_WIDTH,
@@ -635,9 +635,7 @@ export const Map: React.FC<MapProps> = ({
   const routePathsOf = (line: string, src: string[]): [number, number][][] => {
     const cached = routePathsCacheRef.current[line];
     if (cached && cached.src === src) return cached.paths;
-    const paths = dedupeOverlappingPaths(
-      src.map((poly) => canonicalizeDirection(decodePolyline(poly)))
-    );
+    const paths = directionalPaths(src.map((poly) => decodePolyline(poly)));
     routePathsCacheRef.current[line] = { src, paths };
     return paths;
   };
@@ -665,9 +663,11 @@ export const Map: React.FC<MapProps> = ({
     lines.forEach((line) => {
       // The API returns one polyline per pattern — each direction, plus short
       // turns and branch variants — and the backend dedupes on the raw string,
-      // which no two of them ever share. Every pattern of a line shares its
-      // slot, so any that retrace the same street have to be dropped rather
-      // than drawn on top of (or worse, beside) one another.
+      // which no two of them ever share. What survives is one path per direction
+      // of travel plus any real branches: the repeats and short turns would only
+      // be drawn on top of what is already there, but the return leg is the
+      // other track and has to stay, or every vehicle running that way is drawn
+      // beside the line instead of on it.
       routePathsOf(line, geometries[line].geometries).forEach((coords) =>
         paths.push({ line, coords })
       );

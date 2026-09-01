@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { assignCorridorSlots, canonicalizeDirection, dedupeOverlappingPaths } from './routeSlots';
+import {
+  assignCorridorSlots,
+  canonicalizeDirection,
+  dedupeOverlappingPaths,
+  directionalPaths,
+  runsBackwards,
+} from './routeSlots';
 
 describe('assignCorridorSlots', () => {
   // One east/west corridor, sampled every ~55 m…
@@ -186,8 +192,8 @@ describe('dedupeOverlappingPaths', () => {
     expect(dedupeOverlappingPaths([corridor])).toEqual([corridor]);
   });
 
-  it('drops a reversed duplicate whichever way it runs', () => {
-    expect(dedupeOverlappingPaths([corridor, [...corridor].reverse()])).toEqual([corridor]);
+  it('drops a duplicate of a path already kept', () => {
+    expect(dedupeOverlappingPaths([corridor, [...corridor]])).toEqual([corridor]);
   });
 
   it('drops a short turn, which is a subset rather than a reverse', () => {
@@ -197,11 +203,11 @@ describe('dedupeOverlappingPaths', () => {
     expect(dedupeOverlappingPaths([shortTurn, corridor])).toEqual([corridor]);
   });
 
-  it('drops a return leg running down the other side of the same street', () => {
-    // What a bus route ships: the two directions are ~20 m apart, which a rigid
-    // grid would score as new ground for about half the points.
+  it('drops a second path running down the other side of the same street', () => {
+    // Two patterns of one direction ~20 m apart, which a rigid grid would score
+    // as new ground for about half the points.
     const otherSide: [number, number][] = corridor.map(([lng, lat]) => [lng, lat + 0.0002]);
-    expect(dedupeOverlappingPaths([corridor, [...otherSide].reverse()])).toEqual([corridor]);
+    expect(dedupeOverlappingPaths([corridor, otherSide])).toEqual([corridor]);
   });
 
   it('keeps a branch that goes somewhere new', () => {
@@ -215,15 +221,8 @@ describe('dedupeOverlappingPaths', () => {
     expect(kept).toContain(branch);
   });
 
-  it('collapses a full set of patterns to one ribbon per corridor', () => {
-    // What a route actually ships: both directions, plus a short turn in each.
-    const patterns = [
-      corridor,
-      [...corridor].reverse(),
-      corridor.slice(0, 12),
-      [...corridor.slice(0, 12)].reverse(),
-    ];
-    expect(dedupeOverlappingPaths(patterns)).toEqual([corridor]);
+  it('collapses one direction\'s patterns to a single ribbon', () => {
+    expect(dedupeOverlappingPaths([corridor, corridor.slice(0, 12)])).toEqual([corridor]);
   });
 
   it('ignores empty paths', () => {
@@ -235,4 +234,95 @@ describe('dedupeOverlappingPaths', () => {
     expect(canonicalizeDirection([[24.94, 60.17]])).toEqual([[24.94, 60.17]]);
   });
 
+});
+
+describe('runsBackwards', () => {
+  const eastbound: [number, number][] = [
+    [24.93, 60.16],
+    [24.97, 60.18],
+  ];
+
+  it('splits a path and its reverse', () => {
+    expect(runsBackwards(eastbound)).toBe(false);
+    expect(runsBackwards([...eastbound].reverse())).toBe(true);
+  });
+
+  it('puts a short turn with the direction it runs in', () => {
+    expect(runsBackwards(eastbound.slice(0, 1).concat([[24.95, 60.17]]))).toBe(false);
+  });
+
+  it('calls a path too short to have a direction forward', () => {
+    expect(runsBackwards([])).toBe(false);
+    expect(runsBackwards([[24.94, 60.17]])).toBe(false);
+  });
+});
+
+describe('directionalPaths', () => {
+  // A corridor sampled every ~55 m, and the return leg on its own track ~22 m
+  // to the north — about the separation of a two-track alignment.
+  const corridor: [number, number][] = Array.from({ length: 20 }, (_, i) => [
+    24.92 + i * 0.001,
+    60.166,
+  ]);
+  const otherTrack: [number, number][] = corridor.map(([lng, lat]) => [lng, lat + 0.0002]);
+
+  it('keeps both directions when each has its own track', () => {
+    // The bug this fixes: the return leg used to be dropped, so every vehicle
+    // travelling that way was drawn beside the route line instead of on it.
+    const kept = directionalPaths([corridor, [...otherTrack].reverse()]);
+    expect(kept).toHaveLength(2);
+    expect(kept).toContainEqual(corridor);
+    expect(kept).toContainEqual(otherTrack);
+  });
+
+  it('draws a shared alignment once', () => {
+    // A pattern that is the exact reverse of another is the same track, not a
+    // second one — drawing it again would just thicken the ribbon.
+    expect(directionalPaths([corridor, [...corridor].reverse()])).toEqual([corridor]);
+  });
+
+  it('drops the short turns of each direction', () => {
+    const kept = directionalPaths([
+      corridor,
+      corridor.slice(0, 12),
+      [...otherTrack].reverse(),
+      [...otherTrack.slice(0, 12)].reverse(),
+    ]);
+    expect(kept).toHaveLength(2);
+    expect(kept).toContainEqual(corridor);
+    expect(kept).toContainEqual(otherTrack);
+  });
+
+  it('returns every path running the same way round', () => {
+    // They share one offset slot, and `line-offset` is signed by the path's own
+    // direction — disagree here and the two tracks are thrown apart on screen.
+    for (const path of directionalPaths([corridor, [...otherTrack].reverse()])) {
+      expect(runsBackwards(path)).toBe(false);
+    }
+  });
+
+  it('keeps a branch as well as both directions', () => {
+    const branch: [number, number][] = [
+      ...corridor.slice(0, 10),
+      ...Array.from({ length: 10 }, (_, i) => [24.93, 60.17 + i * 0.001] as [number, number]),
+    ];
+    const kept = directionalPaths([corridor, [...otherTrack].reverse(), branch]);
+    expect(kept).toHaveLength(3);
+    expect(kept).toContainEqual(branch);
+  });
+
+  it('keeps a one-way loop that only exists in one direction', () => {
+    expect(directionalPaths([corridor])).toEqual([corridor]);
+  });
+
+  it('measures the return leg against the fuller direction, not a short turn', () => {
+    // Only a short turn runs the "forward" way; the full route runs back. The
+    // full path has to lead, or the short turn covers it and it is dropped.
+    const kept = directionalPaths([corridor.slice(0, 6), [...corridor].reverse()]);
+    expect(kept).toEqual([corridor]);
+  });
+
+  it('returns nothing for no paths', () => {
+    expect(directionalPaths([])).toEqual([]);
+  });
 });

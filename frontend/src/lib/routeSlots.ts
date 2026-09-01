@@ -19,15 +19,21 @@ import { MAX_SLOT } from './routeLineStyle';
 // but with the whole tram network shown it pushed routes tens of pixels off the
 // street they follow.) When a vehicle is selected its line is placed first, so
 // it claims slot 0 the whole way and everything else fans around it.
+//
+// Slots are per *line*, not per path: every path of one line shares its slot, so
+// the two directions of a route stay on the ground they actually run over
+// instead of being pushed to opposite sides of the fan.
 
 /**
  * Flip a polyline so every path along the same corridor runs the same way.
  *
  * MapLibre's `line-offset` is signed relative to the line's own direction of
  * travel, and the API returns one polyline per *pattern* — so a route's outbound
- * and inbound patterns arrive as near-reverses of each other. Offset as-is they
- * are pushed to opposite sides of the street and the single route reads as two
- * parallel ribbons.
+ * and inbound patterns arrive as near-reverses of each other. Offset as-is, the
+ * two directions of one line are pushed to opposite sides of the fan and end up
+ * further apart on screen than the tracks they represent are on the ground.
+ * Canonicalising first means an offset moves a line's whole bundle together, and
+ * whatever separation is left between the two ribbons is the real one.
  *
  * The orientation is decided on the path's *dominant* axis: an east/west route
  * is ordered west-to-east, a north/south one south-to-north. Deciding on
@@ -47,31 +53,45 @@ import { MAX_SLOT } from './routeLineStyle';
 export function canonicalizeDirection(
   coords: [number, number][]
 ): [number, number][] {
-  if (coords.length < 2) return coords;
+  return runsBackwards(coords) ? [...coords].reverse() : coords;
+}
+
+/**
+ * Which of the two directions of travel a path is one of.
+ *
+ * This is the same test `canonicalizeDirection` uses to decide whether to flip
+ * a path, exposed on its own: a path and its reverse always disagree on it, so
+ * it sorts a route's patterns into its two directions without having to match
+ * them up pairwise. A short turn lands with the direction it runs in, which is
+ * what we want — it is a duplicate of that direction's trunk, not of the other.
+ */
+export function runsBackwards(coords: [number, number][]): boolean {
+  if (coords.length < 2) return false;
   const [startLng, startLat] = coords[0];
   const [endLng, endLat] = coords[coords.length - 1];
   const dx = (endLng - startLng) * 0.5;
   const dy = endLat - startLat;
-  const flip = Math.abs(dx) >= Math.abs(dy) ? dx < 0 : dy < 0;
-  return flip ? [...coords].reverse() : coords;
+  return Math.abs(dx) >= Math.abs(dy) ? dx < 0 : dy < 0;
 }
 
 // Roughly 45 m of latitude — fine enough to tell two streets apart, coarse
 // enough that the same street sampled by two patterns lands in the same cells.
 const CELL = 0.0004;
 
-// Vertices are as far apart as the street is straight, so two lines down the
-// same boulevard can sample points several cells apart and never meet on the
-// grid — they would then read as "different ground" and take the same slot.
-// Walking each segment in half-cell steps closes those gaps: coverage follows
-// the street rather than wherever the polyline happened to be sampled.
-const STEP = CELL / 2;
+// Telling the two directions of one route apart needs a much finer grid: they
+// run on separate tracks a lane or two apart, which the 45 m grid above (whose
+// whole job is to call that "the same street") cannot see at all. Roughly 11 m
+// of latitude — under the width of a two-track alignment, so a direction that
+// really does have its own track scores most of its length as new ground, while
+// a pattern that retraces the other direction's exact geometry scores none.
+const TRACK_CELL = 0.0001;
 
-const cellsOf = (coords: [number, number][]): Set<string> => {
+const cellsOf = (coords: [number, number][], cell = CELL): Set<string> => {
   const cells = new Set<string>();
   if (coords.length === 0) return cells;
+  const step = cell / 2;
   const add = (lng: number, lat: number) =>
-    cells.add(`${Math.round(lng / CELL)}:${Math.round(lat / CELL)}`);
+    cells.add(`${Math.round(lng / cell)}:${Math.round(lat / cell)}`);
 
   add(coords[0][0], coords[0][1]);
   for (let i = 1; i < coords.length; i++) {
@@ -79,7 +99,7 @@ const cellsOf = (coords: [number, number][]): Set<string> => {
     const [lng1, lat1] = coords[i];
     const steps = Math.max(
       1,
-      Math.ceil(Math.max(Math.abs(lng1 - lng0), Math.abs(lat1 - lat0)) / STEP)
+      Math.ceil(Math.max(Math.abs(lng1 - lng0), Math.abs(lat1 - lat0)) / step)
     );
     for (let s = 1; s <= steps; s++) {
       add(lng0 + ((lng1 - lng0) * s) / steps, lat0 + ((lat1 - lat0) * s) / steps);
@@ -200,12 +220,13 @@ export function assignCorridorSlots(
 }
 
 // A cell counts as covered if anything already kept passes through it *or* one
-// of its neighbours. Two directions of a bus route run down opposite sides of
-// the street, twenty-odd metres apart, and on a rigid grid roughly half those
-// points would fall in the next cell along and score as new ground — enough to
-// keep the return leg and put it back on the far side of the fan. The
-// neighbourhood absorbs that; a branch has to leave the corridor entirely,
-// which is the distinction worth drawing at map scale anyway.
+// of its neighbours. Two patterns of the same direction can be sampled twenty-odd
+// metres apart down one street, and on a rigid grid roughly half those points
+// would fall in the next cell along and score as new ground — enough to keep a
+// pattern that goes nowhere new. The neighbourhood absorbs that; a branch has to
+// leave the corridor entirely, which is the distinction worth drawing at map
+// scale anyway. (Which side of the street a path runs down is *not* a question
+// for this grid — that is what the finer one in `directionalPaths` is for.)
 const isCovered = (cell: string, covered: Set<string>): boolean =>
   neighboursOf(cell).some((near) => covered.has(near));
 
@@ -213,18 +234,20 @@ const isCovered = (cell: string, covered: Set<string>): boolean =>
  * Drop the paths of one line that cover ground another of its paths already
  * covers, keeping the ones that actually go somewhere new.
  *
- * A route ships several patterns — each direction, plus short turns and branch
- * variants — and they nearly all retrace the same corridor. Every pattern of a
- * line takes the same offset slot, so any two that disagree about which way they
- * run end up on opposite sides of the street and the line reads as two or three
- * ribbons. Matching reversed *pairs* is not enough: a short turn is not the
- * reverse of anything, it is a subset.
+ * One direction of a route still ships several patterns — the full run plus its
+ * short turns and branch variants — and they nearly all retrace the same
+ * corridor. Drawn as they arrive they stack on top of one another, thickening
+ * the ribbon over the trunk for no information. Matching duplicate *pairs* is
+ * not enough: a short turn is not a copy of anything, it is a subset.
  *
- * Comparing coverage rather than direction sidesteps that entirely. Paths are
+ * Comparing coverage sidesteps that entirely. Paths are
  * reduced to the grid cells they occupy, longest first; a path earns its place
  * only if enough of its cells are ones nothing kept so far has visited. A
  * reversed duplicate contributes nothing new and is dropped whichever way it
  * runs, a short turn is a subset and is dropped, and a genuine branch survives.
+ *
+ * This is the *within one direction* pass — `directionalPaths` is what callers
+ * want, and it runs this once per direction of travel.
  */
 export function dedupeOverlappingPaths(
   paths: [number, number][][],
@@ -242,6 +265,73 @@ export function dedupeOverlappingPaths(
     // The longest path is always kept — it is the one everything else is
     // measured against.
     if (kept.length === 0 || fresh / cells.size >= minNewFraction) {
+      kept.push(path);
+      for (const cell of cells) covered.add(cell);
+    }
+  }
+  return kept;
+}
+
+// How much of a return leg has to be track the outbound leg never touches
+// before it is worth drawing in its own right. On the TRACK_CELL grid a
+// direction with its own alignment clears this along most of its length, while
+// a pattern that is the exact reverse of one already kept scores zero.
+const MIN_OWN_TRACK_FRACTION = 0.1;
+
+/**
+ * Reduce a route's patterns to the paths worth drawing — one per direction of
+ * travel, plus any genuine branches, minus the short turns and duplicates.
+ *
+ * A route ships a dozen-odd patterns and nearly all of them retrace each other,
+ * so they cannot all be drawn. Collapsing them to a single path is not right
+ * either, and that is what this fixes: outside the centre both directions of a
+ * tram line have their own track, and the two metro tunnels are separate bores,
+ * so dropping the return leg drew half of the infrastructure and left every
+ * vehicle travelling the other way sitting beside the line rather than on it —
+ * on the metro, where positions are projected onto the route geometry itself,
+ * those trains ran along a track that was not drawn at all.
+ *
+ * So the patterns are split into their two directions first (see
+ * `runsBackwards`) and deduped within each, which drops that direction's short
+ * turns and repeats while leaving the other direction alone. The return leg is
+ * then kept only if it covers track the outbound leg does not — measured on the
+ * fine TRACK_CELL grid, so "the same street" is not mistaken for "the same
+ * track". Where the two directions genuinely share one alignment (a single-track
+ * section, or a pattern that is simply the reverse of another) nothing extra is
+ * drawn.
+ *
+ * Every path returned runs the same way round, so the whole bundle takes its
+ * line's offset slot together.
+ */
+export function directionalPaths(
+  paths: [number, number][][],
+  minNewFraction = 0.15
+): [number, number][][] {
+  const forward: [number, number][][] = [];
+  const backward: [number, number][][] = [];
+  for (const path of paths) {
+    (runsBackwards(path) ? backward : forward).push(canonicalizeDirection(path));
+  }
+
+  // The direction with the longest pattern leads — that is the one
+  // `dedupeOverlappingPaths` keeps and measures its own group against — so "the
+  // other direction" is judged against the full route rather than against a
+  // short turn that happened to be the only pattern going one way.
+  const longest = (group: [number, number][][]) =>
+    group.reduce((most, path) => Math.max(most, path.length), 0);
+  const [primary, secondary] =
+    longest(forward) >= longest(backward) ? [forward, backward] : [backward, forward];
+
+  const kept = dedupeOverlappingPaths(primary, minNewFraction);
+  const covered = new Set<string>();
+  for (const path of kept) for (const cell of cellsOf(path, TRACK_CELL)) covered.add(cell);
+
+  for (const path of dedupeOverlappingPaths(secondary, minNewFraction)) {
+    const cells = cellsOf(path, TRACK_CELL);
+    if (cells.size === 0) continue;
+    let fresh = 0;
+    for (const cell of cells) if (!covered.has(cell)) fresh++;
+    if (kept.length === 0 || fresh / cells.size >= MIN_OWN_TRACK_FRACTION) {
       kept.push(path);
       for (const cell of cells) covered.add(cell);
     }

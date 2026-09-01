@@ -2,11 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.53.1] - 2026-09-01
+## [v0.53.2] - 2026-09-01
 
 ### Fixed
 - **Metro trains keep moving between position reports instead of freezing and lurching**: the metro feed is the sparsest on the map — the trains spend most of their run in tunnel, and while they do, HFP goes quiet for seconds at a time while the backend keeps rebroadcasting the last known point every second. The animation had nothing to say about that silence: it eased into the last reported point, arrived, and froze; the next report then landed several seconds of travel further down the line and was crammed into one second of glide. A metro train is the easiest vehicle here to predict, though — it is on rails, it cannot leave them, and every report carries the speed and acceleration measured on board. Those are now integrated forward along the train's own track, so a five-second gap draws five seconds of travel and the next report only corrects a small error rather than delivering a jump. The prediction is deliberately conservative: a reported acceleration is trusted for four seconds and then coasts, speed is clamped to the line's, and after twenty seconds of silence the train stops rather than being carried off on a twenty-second-old reading.
 - **A metro train covers each second at the rate it is actually travelling**: the within-update motion was shaped by a generic ease-in/ease-out curve picked from the sign of the acceleration. It now follows the same speed profile that placed the target, which also means a window opened four seconds into a gap in the feed is animated with the speed the train has by then, not the speed it had when it last spoke.
+
+---
+
+## [v0.53.1] - 2026-09-01
+
+### Fixed
+- **Both directions of a route are drawn again**: a line ships a dozen-odd pattern polylines — each direction, plus short turns and branch variants — and they were collapsed to a single path so the repeats would not stack on top of each other. That took the return leg with them, and outside the centre the two directions do not share a track: trams heading one way were drawn beside their route line rather than on it, and on the metro, where positions are projected onto the route geometry itself, half the trains ran along a tunnel that was not drawn at all. The patterns are now split into their two directions and thinned within each, so the short turns and duplicates still go but the other direction survives. It is kept only where it actually has its own alignment, measured on a grid fine enough (about 11 m) to tell one track from the other, so a single-track section is still drawn once rather than twice over. Both directions share their line's offset slot and run the same way round, so they stay the real distance apart on screen instead of being thrown to opposite sides of the fan.
 
 ---
 
