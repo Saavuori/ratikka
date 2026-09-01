@@ -29,6 +29,7 @@ import {
   TRAIN_PURPLE,
 } from '../lib/routeColors';
 import { buildTracks, placeOnTracks, pointOnTrack } from '../lib/metroTracks';
+import { glideFraction, predictedAdvance } from '../lib/deadReckon';
 import type { MetroTrack, TrackPlacement } from '../lib/metroTracks';
 import { assignCorridorSlots, directionalPaths } from '../lib/routeSlots';
 import type { RoutePath } from '../lib/routeSlots';
@@ -116,6 +117,42 @@ interface RenderPosition {
 // hundred metres; past that the message is more likely stale or bogus than a
 // train, and snapping it would invent a confident-looking position.
 const METRO_SNAP_MAX_OFFSET = 400;
+
+// The last metro position report we actually received for a train, kept so the
+// animation can carry the train forward through the silence that follows it.
+// The metro feed is not the tram feed's steady 1 Hz: in tunnel it goes quiet
+// for seconds at a time, and the backend rebroadcasts the last known point
+// meanwhile, so without this the train arrives at that point and freezes until
+// the feed speaks again — then jumps. See lib/deadReckon.
+interface MetroFix {
+  // HFP timestamp and coordinates of the report, used to tell a fresh report
+  // from a rebroadcast of the one we already have.
+  ts: number;
+  lat: number;
+  lng: number;
+  // Wall clock (performance.now()) when the report first reached us. Ages are
+  // measured against this rather than against `ts`, so a client whose clock
+  // disagrees with HSL's by a few seconds still predicts correctly.
+  seenAt: number;
+  // Speed and acceleration the train reported, which is what is integrated.
+  spd: number;
+  acc: number;
+  // Where the report put the train on the network.
+  line: string;
+  index: number;
+  distance: number;
+  forward: boolean;
+}
+
+// How the current one-second glide window should be shaped for a metro train:
+// by the speed profile it is actually predicted to follow, rather than by a
+// generic easing curve. `ageStart` is how old the underlying report already
+// was when the window opened.
+interface MetroGlide {
+  spd: number;
+  acc: number;
+  ageStart: number;
+}
 
 export const Map: React.FC<MapProps> = ({
   trams,
@@ -790,6 +827,41 @@ export const Map: React.FC<MapProps> = ({
     });
   };
 
+  // Dead-reckoning state, per metro train: the last real report, and the speed
+  // profile the current glide window follows.
+  const metroFixRef = useRef<Record<string, MetroFix>>({});
+  const metroGlideRef = useRef<Record<string, MetroGlide>>({});
+
+  /**
+   * Where a metro train should be drawn one second from now, given a report
+   * that is already `age` seconds old and has not been followed by another.
+   *
+   * The train is carried along the very track it was last seen on, at the
+   * speed its own on-board readings imply, so a five-second gap in the feed
+   * draws five seconds of travel instead of a freeze and a lurch. Returns null
+   * when there is nothing to carry it along — the pattern geometry went away,
+   * or the prediction horizon has passed and the last known point is the
+   * honest answer again.
+   */
+  const predictMetroPosition = (fix: MetroFix, age: number): RenderPosition | null => {
+    const track = metroTracksRef.current[fix.line]?.[fix.index];
+    if (!track) return null;
+
+    const advance = predictedAdvance(fix.spd, fix.acc, 0, age + 1);
+    if (advance <= 0) return null;
+
+    // `distance` is arc length along the pattern polyline; a train running
+    // against that polyline's own direction covers it backwards.
+    const distance = fix.distance + (fix.forward ? advance : -advance);
+    const point = pointOnTrack(track, distance);
+    return {
+      lat: point.lat,
+      lng: point.lng,
+      hdg: fix.forward ? point.bearing : (point.bearing + 180) % 360,
+      track: { line: fix.line, index: fix.index, distance, forward: fix.forward },
+    };
+  };
+
   // Animation references to run independent of React re-renders
   const prevPositionsRef = useRef<Record<string, RenderPosition>>({});
   const targetPositionsRef = useRef<Record<string, RenderPosition>>({});
@@ -864,7 +936,18 @@ export const Map: React.FC<MapProps> = ({
         // Shape position interpolation by acceleration so the on-screen motion
         // mirrors the physical vehicle: ease-in while accelerating away from a
         // stop, ease-out while braking into one. Heading eases smoothly.
-        const tPos = easeByAccel(t, acc);
+        //
+        // A metro train has something better than an easing curve to follow:
+        // the speed profile its own readings imply, which is also what placed
+        // this window's target. Using it here means the train covers the
+        // window at the rate it is actually predicted to travel — and that a
+        // window opened four seconds into a gap in the feed is animated with
+        // the speed the train has by then, not the speed it had when it last
+        // spoke.
+        const glide = metroGlideRef.current[id];
+        const tPos = glide
+          ? glideFraction(glide.spd, glide.acc, glide.ageStart, t)
+          : easeByAccel(t, acc);
         let lat = lerp(prev.lat, target.lat, tPos);
         let lng = lerp(prev.lng, target.lng, tPos);
         let hdg = lerpAngle(prev.hdg, target.hdg, smoothstep(t));
@@ -1101,6 +1184,9 @@ export const Map: React.FC<MapProps> = ({
       return lineFilters.includes(tram.desi);
     });
 
+    const newFixes: Record<string, MetroFix> = {};
+    const newGlides: Record<string, MetroGlide> = {};
+
     filteredTrams.forEach(([id, tram]) => {
       const previous = targetPositionsRef.current[id];
 
@@ -1108,9 +1194,47 @@ export const Map: React.FC<MapProps> = ({
       // underground, therefore dead-reckoned) feed claims they are.
       const snapped =
         tram.mode === 'metro' ? placeOnMetroTrack(tram, previous?.track) : null;
-      const target: RenderPosition = snapped
+      let target: RenderPosition = snapped
         ? { lat: snapped.lat, lng: snapped.lng, hdg: snapped.hdg, track: snapped.track }
         : { lat: tram.lat, lng: tram.lng, hdg: tram.hdg };
+
+      if (tram.mode === 'metro') {
+        const fix = metroFixRef.current[id];
+        // The backend rebroadcasts the whole cache every second, so an
+        // unchanged timestamp *and* position means this train said nothing
+        // since the last snapshot — not that it is standing still.
+        const reported =
+          !fix || fix.ts !== tram.ts || fix.lat !== tram.lat || fix.lng !== tram.lng;
+
+        if (snapped && reported) {
+          // A real report: it becomes the new anchor everything is predicted
+          // from, and this window animates the correction into it.
+          newFixes[id] = {
+            ts: tram.ts,
+            lat: tram.lat,
+            lng: tram.lng,
+            seenAt: now,
+            spd: tram.spd ?? 0,
+            acc: tram.acc ?? 0,
+            line: snapped.track.line,
+            index: snapped.track.index,
+            distance: snapped.track.distance,
+            forward: snapped.track.forward,
+          };
+          newGlides[id] = { spd: tram.spd ?? 0, acc: tram.acc ?? 0, ageStart: 0 };
+        } else if (fix) {
+          // Silence. Carry the train on down its track at the speed it last
+          // reported, and keep the anchor so the next report corrects a small
+          // error rather than landing as a jump.
+          newFixes[id] = fix;
+          const age = (now - fix.seenAt) / 1000;
+          const predicted = predictMetroPosition(fix, age);
+          if (predicted) {
+            target = predicted;
+          }
+          newGlides[id] = { spd: fix.spd, acc: fix.acc, ageStart: age };
+        }
+      }
 
       // Start the next glide from what is on screen right now — mid-glide when
       // an update lands early, the last target when it lands on time — so a
@@ -1121,6 +1245,10 @@ export const Map: React.FC<MapProps> = ({
 
     prevPositionsRef.current = newPrev;
     targetPositionsRef.current = newTarget;
+    // Rebuilt rather than mutated, so a train that left the feed does not keep
+    // being predicted forward forever.
+    metroFixRef.current = newFixes;
+    metroGlideRef.current = newGlides;
     lastUpdateRef.current = now;
   }, [trams, lineFilters]);
 
