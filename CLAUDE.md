@@ -40,6 +40,8 @@ HSL MQTT broker ──▶ backend (Go) ──▶ Redis (live coord cache)
 - `src/components/` — Map plus glassmorphic panels/popups (`Map.tsx`, `FilterPanel.tsx`, `TramPopup.tsx`, `StopPopup.tsx`, `BikePopup.tsx`, `JourneySearch.tsx`, `BottomNav.tsx`, `VersionBadge.tsx`).
 - `src/hooks/` — `useWebSocket`, `useTramData`, `useGeolocation`, `useIsMobile`, `useSwipeGestures`, `useCollapsiblePanel`.
 - `src/lib/` — `api.ts` (backend client), `lerp.ts` (60fps interpolation), `polyline.ts`, `trip.ts`,
+  `metroTracks.ts` (projects the metro's dead-reckoned tunnel positions onto the line's
+  own geometry, and reads positions back off it for along-track animation),
   `routeSlots.ts` (which offset slot each highlighted route takes) and `routeLineStyle.ts`
   (the paint expressions that turn a slot into pixels — see "Verifying the map").
 - Vanilla CSS with theme variables in `index.css` / `App.css`.
