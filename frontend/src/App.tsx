@@ -53,12 +53,25 @@ function App() {
     // ingests them once a user opts in. Respect a prior explicit choice.
     return readStorage('showBuses') === 'true';
   });
+  // Metro and commuter trains ride the same HFP feed as trams and buses and are
+  // opt-in for the same reason: the backend only subscribes to a mode while
+  // somebody is looking at it.
+  const [showMetro, setShowMetro] = useState<boolean>(() => {
+    return readStorage('showMetro') === 'true';
+  });
+  const [showTrains, setShowTrains] = useState<boolean>(() => {
+    return readStorage('showTrains') === 'true';
+  });
 
-  // Drive the WebSocket here (after showBuses is declared) so the backend knows
-  // whether to stream buses. Trams always stream.
+  // Drive the WebSocket here (after the mode toggles are declared) so the
+  // backend knows which optional feeds to ingest. Trams always stream.
+  const wantsModes = useMemo(
+    () => ({ bus: showBuses, metro: showMetro, train: showTrains }),
+    [showBuses, showMetro, showTrains]
+  );
   const { status: connectionStatus } = useWebSocket({
     onMessage: (data) => handleUpdate(data.vehicles),
-    wantsBuses: showBuses,
+    wantsModes,
   });
 
   useEffect(() => {
@@ -77,6 +90,14 @@ function App() {
   useEffect(() => {
     writeStorage('showBuses', String(showBuses));
   }, [showBuses]);
+
+  useEffect(() => {
+    writeStorage('showMetro', String(showMetro));
+  }, [showMetro]);
+
+  useEffect(() => {
+    writeStorage('showTrains', String(showTrains));
+  }, [showTrains]);
 
   // UI Selection States
   const [selectedTram, setSelectedTram] = useState<VehiclePosition | null>(null);
@@ -218,37 +239,47 @@ function App() {
   const [mapBearing, setMapBearing] = useState<number>(0);
   const [routeGeometries, setRouteGeometries] = useState<Record<string, { geometries: string[]; color?: string; stops?: string[] }>>({});
 
-  // Every tram line currently running — the same set the filter panel offers as
-  // chips. Joined into a string first so the effect below re-runs when a line
-  // enters or leaves service, not on every position update.
-  const activeTramLinesKey = useMemo(
+  // Every rail line currently running — trams plus, when their toggle is on,
+  // the metro and commuter-train lines. These are the lines the map draws as
+  // highlighted ribbons, so they are also the ones whose geometry is fetched.
+  // Joined into a string first so the effect below re-runs when a line enters or
+  // leaves service, not on every position update.
+  const ribbonModes = useMemo(() => {
+    const modes = new Set<string>();
+    if (showTrams) modes.add('tram');
+    if (showMetro) modes.add('metro');
+    if (showTrains) modes.add('train');
+    return modes;
+  }, [showTrams, showMetro, showTrains]);
+
+  const activeRibbonLinesKey = useMemo(
     () =>
       Array.from(
         new Set(
           Object.values(trams)
-            .filter((t) => t.mode === 'tram' && t.desi)
+            .filter((t) => ribbonModes.has(t.mode) && t.desi)
             .map((t) => t.desi)
         )
       )
         .sort()
         .join(','),
-    [trams]
+    [trams, ribbonModes]
   );
 
   // Fetch route geometries when selectedLines filter, selectedTram, or selectedStopRoutes changes.
   //
-  // With no filter — the panel's "Show All" — that is every running tram line,
-  // so the map draws the same fanned, per-line-coloured ribbons it would if the
-  // user had ticked every chip by hand, rather than dropping to the flat
-  // mode-coloured tile network underneath. Buses are left to that network: the
-  // route endpoint only serves trams, and there are far too many bus lines to
-  // fetch a pattern each.
+  // With no filter — the panel's "Show All" — that is every running tram, metro
+  // and train line whose mode is switched on, so the map draws the same fanned,
+  // per-line-coloured ribbons it would if the user had ticked every chip by
+  // hand, rather than dropping to the flat mode-coloured tile network
+  // underneath. Buses are left to that network: there are hundreds of bus lines,
+  // far too many to fetch a pattern each.
   useEffect(() => {
     const linesToHighlight =
       selectedLines.length > 0
         ? [...selectedLines]
-        : showTrams && activeTramLinesKey
-        ? activeTramLinesKey.split(',')
+        : activeRibbonLinesKey
+        ? activeRibbonLinesKey.split(',')
         : [];
     if (selectedTram && !linesToHighlight.includes(selectedTram.desi)) {
       linesToHighlight.push(selectedTram.desi);
@@ -301,7 +332,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedLines, selectedTram, selectedStopRoutes, activeTramLinesKey, showTrams]);
+  }, [selectedLines, selectedTram, selectedStopRoutes, activeRibbonLinesKey]);
 
   const handleSelectTram = (tram: VehiclePosition | null) => {
     setSelectedStop(null);
@@ -401,6 +432,8 @@ function App() {
       const tram = entry[1];
       if (tram.mode === 'tram' && !showTrams) return false;
       if (tram.mode === 'bus' && !showBuses) return false;
+      if (tram.mode === 'metro' && !showMetro) return false;
+      if (tram.mode === 'train' && !showTrains) return false;
       if (selectedLines.length > 0 && !selectedLines.includes(tram.desi)) {
         return false;
       }
@@ -536,6 +569,8 @@ function App() {
         onMapBearingChange={setMapBearing}
         showTrams={showTrams}
         showBuses={showBuses}
+        showMetro={showMetro}
+        showTrains={showTrains}
         selectedTripDetails={selectedTripDetails}
         journeyLegs={journey?.itinerary.legs ?? null}
         journeyEndpoints={journey ? { from: journey.from, to: journey.to } : null}
@@ -558,6 +593,10 @@ function App() {
         setShowTrams={setShowTrams}
         showBuses={showBuses}
         setShowBuses={setShowBuses}
+        showMetro={showMetro}
+        setShowMetro={setShowMetro}
+        showTrains={showTrains}
+        setShowTrains={setShowTrains}
         alerts={alerts}
         selectedTram={liveTram}
         selectedStop={selectedStop}

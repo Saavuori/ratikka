@@ -3,7 +3,7 @@
 [![Live Application](https://img.shields.io/badge/Live-hsl--live.duckdns.org-00b894?style=for-the-badge&logo=react)](https://hsl-live.duckdns.org/)
 [![Changelog](https://img.shields.io/badge/Changelog-GitHub%20Pages-0984e3?style=for-the-badge&logo=github)](https://saavuori.github.io/ratikka/)
 
-A premium, high-performance web application mapping **all active Helsinki trams, buses, and City Bike stations** in real-time. Built with stunning glassmorphism aesthetics, fluid 60fps telemetry interpolation, and immersive interactive modes.
+A premium, high-performance web application mapping **all active Helsinki trams, buses, metro, commuter trains, and City Bike stations** in real-time. Built with stunning glassmorphism aesthetics, fluid 60fps telemetry interpolation, and immersive interactive modes.
 
 👉 **Experience the live dashboard at [hsl-live.duckdns.org](https://hsl-live.duckdns.org/)**
 
@@ -22,7 +22,7 @@ A premium, high-performance web application mapping **all active Helsinki trams,
 ### Live Map
 
 * **Destination Journey Search**: A top-center "Where to?" search plans a trip from your current location (used by default) to any searched destination, ranks the routes that get you there, and highlights the exact stops to use — boarding stop in green, final stop in coral, transfers in gold — while drawing each transit and walking leg on the map and fitting the journey into view.
-* **Real-time 60fps Vehicle Interpolation**: Live MQTT vehicle coordinate updates for both **trams and buses** are mathematically interpolated (lerp) for buttery-smooth vehicle movement.
+* **Real-time 60fps Vehicle Interpolation**: Live MQTT vehicle coordinate updates for **trams, buses, metro and commuter trains** are mathematically interpolated (lerp) for buttery-smooth vehicle movement.
 * **State-Coded Vehicle Markers**: Every vehicle renders as a labelled circle carrying its line number, coloured by live state — `#0984e3` blue while moving, `#e17055` coral while stopped or with doors open. A separate heading arrow encodes the mode: a round green (`#00985f`) pointer for trams, a rounded-square blue (`#007ac9`) pointer for buses.
 * **Immersive Chase Mode (Follow Vehicle)**: Lock onto any tram or bus to automatically track it. The camera auto-centers and auto-rotates (bearing) matching the vehicle's live heading, and releases as soon as you drag the map.
 * **Traffic-Sign Stop Symbols**: From zoom 15.5 the map swaps flat stop dots for sign-on-a-pole symbols, colour-coded per mode (tram `#00985f`, bus `#007ac9`, trunk bus `#CA4300`), with gold-bordered variants for the selected and next stop.

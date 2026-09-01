@@ -718,6 +718,11 @@ type rawRouteResponse struct {
 	} `json:"routes"`
 }
 
+// RouteDetails serves the pattern geometry and stops of a line by its short
+// name. Trams, metro (M1/M2) and commuter trains (the letter lines) are all
+// looked up here — their short names never collide, so one lookup covers the
+// three modes the map draws route ribbons for. Buses are deliberately left out:
+// there are hundreds of them and the map draws them from the JORE tiles instead.
 func (h *Handlers) RouteDetails(w http.ResponseWriter, r *http.Request) {
 	shortName := r.PathValue("shortName")
 	if shortName == "" {
@@ -741,7 +746,7 @@ func (h *Handlers) RouteDetails(w http.ResponseWriter, r *http.Request) {
 
 		queryStr := `
 			query GetRouteDetails($shortName: String!) {
-				routes(name: $shortName, transportModes: [TRAM]) {
+				routes(name: $shortName, transportModes: [TRAM, SUBWAY, RAIL]) {
 					gtfsId
 					shortName
 					mode

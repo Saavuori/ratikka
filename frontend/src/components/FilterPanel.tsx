@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import type { VehiclePosition, Alert } from '../types';
-import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, Train, Bus, AlertTriangle, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, TramFront, Bus, TrainFrontTunnel, TrainFront, AlertTriangle, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
-import { getRouteColor } from '../lib/routeColors';
+import { getRouteColor, BUS_BLUE } from '../lib/routeColors';
 
 interface FilterPanelProps {
   trams: Record<string, VehiclePosition>;
@@ -20,6 +20,10 @@ interface FilterPanelProps {
   setShowTrams: (show: boolean) => void;
   showBuses: boolean;
   setShowBuses: (show: boolean) => void;
+  showMetro: boolean;
+  setShowMetro: (show: boolean) => void;
+  showTrains: boolean;
+  setShowTrains: (show: boolean) => void;
   alerts: Alert[];
   selectedTram: VehiclePosition | null;
   selectedStop: { id: string; name: string; code: string; } | null;
@@ -47,6 +51,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   setShowTrams,
   showBuses,
   setShowBuses,
+  showMetro,
+  setShowMetro,
+  showTrains,
+  setShowTrains,
   alerts = [],
   selectedTram = null,
   selectedStop = null,
@@ -160,6 +168,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         .filter((t) => {
           if (t.mode === 'tram' && !showTrams) return false;
           if (t.mode === 'bus' && !showBuses) return false;
+          if (t.mode === 'metro' && !showMetro) return false;
+          if (t.mode === 'train' && !showTrains) return false;
           return true;
         })
         .map((t) => t.desi)
@@ -348,7 +358,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                               key={eIdx}
                               style={{
                                 fontSize: '0.55rem',
-                                backgroundColor: e.mode === 'BUS' ? '#0984e3' : getRouteColor(e.shortName),
+                                backgroundColor: e.mode === 'BUS' ? BUS_BLUE : getRouteColor(e.shortName),
                                 color: '#fff',
                                 padding: '1px 4px',
                                 borderRadius: '3px',
@@ -522,7 +532,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 title="Toggle Trams"
               >
                 <span className="settings-btn-icon">
-                  <Train size={12} />
+                  <TramFront size={12} />
                 </span>
                 <span>Trams</span>
               </button>
@@ -537,6 +547,30 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                   <Bus size={12} />
                 </span>
                 <span>Buses</span>
+              </button>
+
+              {/* Metro Toggle */}
+              <button
+                className={`settings-btn ${showMetro ? 'active' : ''}`}
+                onClick={() => setShowMetro(!showMetro)}
+                title="Toggle Metro"
+              >
+                <span className="settings-btn-icon">
+                  <TrainFrontTunnel size={12} />
+                </span>
+                <span>Metro</span>
+              </button>
+
+              {/* Commuter Trains Toggle */}
+              <button
+                className={`settings-btn ${showTrains ? 'active' : ''}`}
+                onClick={() => setShowTrains(!showTrains)}
+                title="Toggle Commuter Trains"
+              >
+                <span className="settings-btn-icon">
+                  <TrainFront size={12} />
+                </span>
+                <span>Trains</span>
               </button>
             </div>
           </div>

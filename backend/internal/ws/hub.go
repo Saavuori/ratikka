@@ -25,18 +25,33 @@ func init() {
 }
 
 
-// BusController lets the hub turn on-demand bus ingestion on and off based on
-// whether any connected client currently wants to see buses.
-type BusController interface {
-	EnableBus()
-	DisableBus()
+// ModeController lets the hub turn on-demand ingestion of an optional vehicle
+// mode on and off based on whether any connected client currently wants to see
+// it. Trams always stream; buses, metro and commuter trains are opt-in.
+type ModeController interface {
+	EnableMode(mode string)
+	DisableMode(mode string)
+}
+
+// optionalModes are the modes a client can switch on and off. Anything else a
+// client asks for is ignored (the ingestion worker rejects unknown modes too).
+var optionalModes = []string{"bus", "metro", "train"}
+
+func isOptionalMode(mode string) bool {
+	for _, m := range optionalModes {
+		if m == mode {
+			return true
+		}
+	}
+	return false
 }
 
 type Client struct {
 	conn *websocket.Conn
 	send chan []byte
-	// wantsBuses is guarded by Hub.clientsMu.
-	wantsBuses bool
+	// wantsModes holds the optional modes this client has opted in to.
+	// Guarded by Hub.clientsMu.
+	wantsModes map[string]bool
 }
 
 type Hub struct {
@@ -44,11 +59,12 @@ type Hub struct {
 	clients   map[*Client]bool
 	clientsMu sync.RWMutex
 
-	// busCtl toggles on-demand bus ingestion. busDemand counts how many
-	// connected clients currently want buses; ingestion is enabled while it is
-	// > 0. Both are guarded by clientsMu.
-	busCtl    BusController
-	busDemand int
+	// modeCtl toggles on-demand ingestion of the optional modes. modeDemand
+	// counts, per mode, how many connected clients currently want it; ingestion
+	// is enabled for a mode while its count is > 0. Both are guarded by
+	// clientsMu.
+	modeCtl    ModeController
+	modeDemand map[string]int
 }
 
 type PositionsMessage struct {
@@ -60,47 +76,56 @@ type PositionsMessage struct {
 
 func NewHub(c cache.Cache) *Hub {
 	return &Hub{
-		cache:   c,
-		clients: make(map[*Client]bool),
+		cache:      c,
+		clients:    make(map[*Client]bool),
+		modeDemand: make(map[string]int),
 	}
 }
 
-// SetBusController wires the ingestion worker that the hub toggles based on
-// client demand for buses. Call once before Run.
-func (h *Hub) SetBusController(ctl BusController) {
-	h.busCtl = ctl
+// SetModeController wires the ingestion worker that the hub toggles based on
+// client demand for the optional modes. Call once before Run.
+func (h *Hub) SetModeController(ctl ModeController) {
+	h.modeCtl = ctl
 }
 
-// setClientBusPref records whether a client wants buses and toggles ingestion
-// on the 0->1 / 1->0 demand boundaries. The controller call happens outside
-// clientsMu because EnableBus/DisableBus may block on an MQTT round-trip.
-func (h *Hub) setClientBusPref(client *Client, want bool) {
+// setClientModePref records whether a client wants an optional mode and toggles
+// ingestion on that mode's 0->1 / 1->0 demand boundaries. The controller call
+// happens outside clientsMu because EnableMode/DisableMode may block on an MQTT
+// round-trip.
+func (h *Hub) setClientModePref(client *Client, mode string, want bool) {
+	if !isOptionalMode(mode) {
+		return
+	}
+
 	var enable, disable bool
 	h.clientsMu.Lock()
-	if _, ok := h.clients[client]; ok && want != client.wantsBuses {
-		client.wantsBuses = want
+	if _, ok := h.clients[client]; ok && want != client.wantsModes[mode] {
+		if client.wantsModes == nil {
+			client.wantsModes = make(map[string]bool)
+		}
+		client.wantsModes[mode] = want
 		if want {
-			if h.busDemand == 0 {
+			if h.modeDemand[mode] == 0 {
 				enable = true
 			}
-			h.busDemand++
+			h.modeDemand[mode]++
 		} else {
-			h.busDemand--
-			if h.busDemand <= 0 {
-				h.busDemand = 0
+			h.modeDemand[mode]--
+			if h.modeDemand[mode] <= 0 {
+				h.modeDemand[mode] = 0
 				disable = true
 			}
 		}
 	}
 	h.clientsMu.Unlock()
 
-	if h.busCtl == nil {
+	if h.modeCtl == nil {
 		return
 	}
 	if enable {
-		h.busCtl.EnableBus()
+		h.modeCtl.EnableMode(mode)
 	} else if disable {
-		h.busCtl.DisableBus()
+		h.modeCtl.DisableMode(mode)
 	}
 }
 
@@ -126,28 +151,35 @@ func (h *Hub) addClient(client *Client) {
 }
 
 // removeClient deletes the client and closes its send channel exactly once.
-// Safe to call from both the connection handler and the broadcast loop. If the
-// client wanted buses, its demand is released and ingestion may be disabled.
+// Safe to call from both the connection handler and the broadcast loop. Any
+// optional modes the client wanted release their demand, and ingestion may be
+// disabled for the ones nobody else wants.
 func (h *Hub) removeClient(client *Client) {
-	var disable bool
+	var disable []string
 	h.clientsMu.Lock()
 	if _, ok := h.clients[client]; ok {
 		delete(h.clients, client)
 		close(client.send)
-		if client.wantsBuses {
-			client.wantsBuses = false
-			h.busDemand--
-			if h.busDemand <= 0 {
-				h.busDemand = 0
-				disable = true
+		for mode, want := range client.wantsModes {
+			if !want {
+				continue
+			}
+			client.wantsModes[mode] = false
+			h.modeDemand[mode]--
+			if h.modeDemand[mode] <= 0 {
+				h.modeDemand[mode] = 0
+				disable = append(disable, mode)
 			}
 		}
 	}
 	ActiveClientsGauge.Set(float64(len(h.clients)))
 	h.clientsMu.Unlock()
 
-	if disable && h.busCtl != nil {
-		h.busCtl.DisableBus()
+	if h.modeCtl == nil {
+		return
+	}
+	for _, mode := range disable {
+		h.modeCtl.DisableMode(mode)
 	}
 }
 
@@ -219,8 +251,9 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := &Client{
-		conn: conn,
-		send: make(chan []byte, 16),
+		conn:       conn,
+		send:       make(chan []byte, 16),
+		wantsModes: make(map[string]bool),
 	}
 
 	h.addClient(client)
@@ -254,8 +287,9 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Read loop: detect disconnects and handle client control messages.
-	// Clients send {"buses": true|false} to opt in/out of bus positions, which
-	// drives on-demand bus ingestion in the hub.
+	// Clients send {"modes": {"bus": true, "metro": false, ...}} to opt in/out
+	// of the optional feeds, which drives on-demand ingestion in the hub.
+	// {"buses": true|false} is the older single-mode form, still accepted.
 	for {
 		_, data, err := conn.Read(r.Context())
 		if err != nil {
@@ -264,11 +298,17 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var ctrl struct {
-			Buses *bool `json:"buses"`
+			Buses *bool           `json:"buses"`
+			Modes map[string]bool `json:"modes"`
 		}
-		if err := json.Unmarshal(data, &ctrl); err != nil || ctrl.Buses == nil {
+		if err := json.Unmarshal(data, &ctrl); err != nil {
 			continue
 		}
-		h.setClientBusPref(client, *ctrl.Buses)
+		if ctrl.Buses != nil {
+			h.setClientModePref(client, "bus", *ctrl.Buses)
+		}
+		for mode, want := range ctrl.Modes {
+			h.setClientModePref(client, mode, want)
+		}
 	}
 }

@@ -14,10 +14,32 @@ import (
 	"ratikka/internal/cache"
 )
 
-const (
-	tramTopic = "/hfp/v2/journey/ongoing/vp/tram/#"
-	busTopic  = "/hfp/v2/journey/ongoing/vp/bus/#"
-)
+const tramTopic = "/hfp/v2/journey/ongoing/vp/tram/#"
+
+// optionalModeTopics are the HFP feeds that are only ingested while at least
+// one connected client asks for them. Trams are always on; the rest are opt-in
+// because they are either huge (buses are ~80% of the whole feed) or of
+// narrower interest (metro, commuter train). They all carry the same VP payload
+// on the same topic layout, so one handler serves every mode.
+var optionalModeTopics = map[string]string{
+	"bus":   "/hfp/v2/journey/ongoing/vp/bus/#",
+	"metro": "/hfp/v2/journey/ongoing/vp/metro/#",
+	"train": "/hfp/v2/journey/ongoing/vp/train/#",
+}
+
+// IsOptionalMode reports whether a mode is one clients can switch on and off.
+func IsOptionalMode(mode string) bool {
+	_, ok := optionalModeTopics[mode]
+	return ok
+}
+
+// A metro journey is driven as a pair of coupled units, and each unit publishes
+// its own VP stream under its own vehicle number. Both carry the same journey,
+// roughly a train-length apart, so ingesting both would put two identical "M1"
+// markers on the map that swap places every second. We therefore keep the first
+// unit seen for a journey and drop its twin, until the chosen one goes quiet for
+// metroUnitTTL (end of journey, or the unit stopped reporting).
+const metroUnitTTL = 60 * time.Second
 
 var (
 	MessagesReceivedCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -95,19 +117,31 @@ type IngestionWorker struct {
 	cache  cache.Cache
 	broker string
 
-	// busEnabled is toggled on demand: buses are only ingested while at least
-	// one connected client has opted in to seeing them. Guarded by mu because
-	// EnableBus/DisableBus are called from the WebSocket hub goroutine while
-	// OnConnect (reconnect) reads it from the MQTT client goroutine.
-	mu         sync.Mutex
-	busEnabled bool
+	// enabledModes tracks which optional feeds (bus, metro, train) are
+	// currently subscribed. Guarded by mu because EnableMode/DisableMode are
+	// called from the WebSocket hub goroutine while OnConnect (reconnect) reads
+	// it from the MQTT client goroutine.
+	mu           sync.Mutex
+	enabledModes map[string]bool
+
+	// metroUnits maps a metro journey to the unit whose positions we keep; see
+	// metroUnitTTL. Guarded by metroMu, held only by the MQTT receive goroutine.
+	metroMu    sync.Mutex
+	metroUnits map[string]metroUnit
+}
+
+type metroUnit struct {
+	veh  int
+	seen time.Time
 }
 
 func NewIngestionWorker(broker string, cache cache.Cache) *IngestionWorker {
 	return &IngestionWorker{
-		broker: broker,
-		cache:  cache,
-		}
+		broker:       broker,
+		cache:        cache,
+		enabledModes: make(map[string]bool),
+		metroUnits:   make(map[string]metroUnit),
+	}
 }
 
 func (w *IngestionWorker) Start(ctx context.Context) error {
@@ -123,8 +157,8 @@ func (w *IngestionWorker) Start(ctx context.Context) error {
 	opts.SetPingTimeout(10 * time.Second)
 
 	// Callback when connection is established (or re-established). Trams are
-	// always subscribed; buses are only (re)subscribed if a client currently
-	// wants them, so the subscription state survives MQTT reconnects.
+	// always subscribed; the optional modes are only (re)subscribed if a client
+	// currently wants them, so the subscription state survives MQTT reconnects.
 	opts.OnConnect = func(client mqtt.Client) {
 		log.Println("MQTT connected to broker:", w.broker)
 		if token := client.Subscribe(tramTopic, 0, w.handleMessage); token.Wait() && token.Error() != nil {
@@ -134,10 +168,15 @@ func (w *IngestionWorker) Start(ctx context.Context) error {
 		}
 
 		w.mu.Lock()
-		busWanted := w.busEnabled
+		wanted := make([]string, 0, len(w.enabledModes))
+		for mode, on := range w.enabledModes {
+			if on {
+				wanted = append(wanted, mode)
+			}
+		}
 		w.mu.Unlock()
-		if busWanted {
-			w.subscribeBus(client)
+		for _, mode := range wanted {
+			w.subscribeMode(client, mode)
 		}
 	}
 
@@ -158,48 +197,61 @@ func (w *IngestionWorker) IsConnected() bool {
 	return w.client != nil && w.client.IsConnected()
 }
 
-// EnableBus starts ingesting bus positions. Called when the first client opts
-// in to buses. Idempotent and safe to call from another goroutine.
-func (w *IngestionWorker) EnableBus() {
+// EnableMode starts ingesting positions for an optional mode ("bus", "metro"
+// or "train"). Called when the first client opts in to it. Idempotent, ignores
+// unknown modes, and safe to call from another goroutine.
+func (w *IngestionWorker) EnableMode(mode string) {
+	if !IsOptionalMode(mode) {
+		return
+	}
+
 	w.mu.Lock()
-	if w.busEnabled {
+	if w.enabledModes[mode] {
 		w.mu.Unlock()
 		return
 	}
-	w.busEnabled = true
+	w.enabledModes[mode] = true
 	w.mu.Unlock()
 
-	log.Println("Bus ingestion enabled (a client requested buses)")
+	log.Printf("%s ingestion enabled (a client requested it)\n", mode)
 	if w.client != nil && w.client.IsConnected() {
-		w.subscribeBus(w.client)
+		w.subscribeMode(w.client, mode)
 	}
 }
 
-// DisableBus stops ingesting bus positions. Called when the last client that
-// wanted buses disconnects or toggles them off. Stale bus entries already in
-// the cache expire via the normal 60s cleanup. Idempotent.
-func (w *IngestionWorker) DisableBus() {
+// DisableMode stops ingesting positions for an optional mode. Called when the
+// last client that wanted it disconnects or toggles it off. Stale entries
+// already in the cache expire via the normal 60s cleanup. Idempotent.
+func (w *IngestionWorker) DisableMode(mode string) {
+	if !IsOptionalMode(mode) {
+		return
+	}
+
 	w.mu.Lock()
-	if !w.busEnabled {
+	if !w.enabledModes[mode] {
 		w.mu.Unlock()
 		return
 	}
-	w.busEnabled = false
+	w.enabledModes[mode] = false
 	w.mu.Unlock()
 
-	log.Println("Bus ingestion disabled (no clients want buses)")
+	log.Printf("%s ingestion disabled (no clients want it)\n", mode)
 	if w.client != nil && w.client.IsConnected() {
-		if token := w.client.Unsubscribe(busTopic); token.Wait() && token.Error() != nil {
-			log.Printf("Failed to unsubscribe from bus topic: %v\n", token.Error())
+		if token := w.client.Unsubscribe(optionalModeTopics[mode]); token.Wait() && token.Error() != nil {
+			log.Printf("Failed to unsubscribe from %s topic: %v\n", mode, token.Error())
 		}
 	}
 }
 
-func (w *IngestionWorker) subscribeBus(client mqtt.Client) {
-	if token := client.Subscribe(busTopic, 0, w.handleMessage); token.Wait() && token.Error() != nil {
-		log.Printf("Failed to subscribe to bus topic: %v\n", token.Error())
+func (w *IngestionWorker) subscribeMode(client mqtt.Client, mode string) {
+	topic, ok := optionalModeTopics[mode]
+	if !ok {
+		return
+	}
+	if token := client.Subscribe(topic, 0, w.handleMessage); token.Wait() && token.Error() != nil {
+		log.Printf("Failed to subscribe to %s topic: %v\n", mode, token.Error())
 	} else {
-		log.Println("Subscribed to bus topic")
+		log.Printf("Subscribed to %s topic\n", mode)
 	}
 }
 
@@ -271,9 +323,10 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 	}
 	vehicleID := fmt.Sprintf("%s-%d", operator, vp.Veh)
 
-	// if mode != "tram" {
-	// 	log.Printf("MQTT ingestion: received message for mode=%s, topic=%s\n", mode, msg.Topic())
-	// }
+	// Coupled metro units publish the same journey twice; keep only one of them.
+	if mode == "metro" && !w.acceptMetroUnit(vp.Route, vp.Dir, vp.Oday, vp.Start, vp.Veh) {
+		return
+	}
 
 	thinned := VehiclePosition{
 		Veh:    vehicleID,
@@ -313,6 +366,41 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 	if err := w.cache.SetPosition(ctx, vehicleID, thinnedJSON); err != nil {
 		log.Printf("Error caching vehicle %s position: %v\n", vehicleID, err)
 	}
+}
+
+// acceptMetroUnit reports whether this metro message comes from the unit we
+// track for its journey. The first unit seen wins and keeps winning while it
+// keeps reporting; once it has been quiet for metroUnitTTL (the journey ended,
+// or that unit stopped publishing) the next message to arrive takes over.
+func (w *IngestionWorker) acceptMetroUnit(route, dir, oday, start string, veh int) bool {
+	// Without a journey identity there is nothing to pair the units by, so the
+	// message is passed through rather than dropped.
+	if route == "" || dir == "" || start == "" {
+		return true
+	}
+	key := route + "/" + dir + "/" + oday + "/" + start
+	now := time.Now()
+
+	w.metroMu.Lock()
+	defer w.metroMu.Unlock()
+
+	if cur, ok := w.metroUnits[key]; ok && now.Sub(cur.seen) <= metroUnitTTL {
+		if cur.veh != veh {
+			return false
+		}
+	}
+	w.metroUnits[key] = metroUnit{veh: veh, seen: now}
+
+	// Journeys retire constantly, so sweep expired entries rather than letting
+	// the map grow for the life of the process.
+	if len(w.metroUnits) > 512 {
+		for k, u := range w.metroUnits {
+			if now.Sub(u.seen) > metroUnitTTL {
+				delete(w.metroUnits, k)
+			}
+		}
+	}
+	return true
 }
 
 func constructGTFSTripID(route, oday, dir, start string) string {
