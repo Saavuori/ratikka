@@ -3,6 +3,7 @@ package mqtt
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"ratikka/internal/cache"
@@ -256,3 +257,152 @@ func TestIngestionWorker_HandleMessage_StopNormalization(t *testing.T) {
 	}
 }
 
+
+// Metro and commuter-train messages ride the same VP payload on the same topic
+// layout, so the mode comes straight from the topic and the rest parses as it
+// does for trams.
+func TestIngestionWorker_HandleMessage_RailModes(t *testing.T) {
+	cases := []struct {
+		name     string
+		topic    string
+		payload  string
+		wantVeh  string
+		wantMode string
+		wantDesi string
+	}{
+		{
+			name:     "metro",
+			topic:    "/hfp/v2/journey/ongoing/vp/metro/0050/00117/31M1/2/Kivenlahti/21:12/2441604/3/60;24/16/59/17",
+			payload:  `{"VP":{"desi":"M1","dir":"2","oper":50,"veh":117,"tsi":1788289014,"spd":17.2,"hdg":264,"lat":60.1517348,"long":24.69718703,"oday":"2026-06-15","start":"21:12","loc":"MAN","stop":null,"route":"31M1"}}`,
+			wantVeh:  "0050-117",
+			wantMode: "metro",
+			wantDesi: "M1",
+		},
+		{
+			name:     "train",
+			topic:    "/hfp/v2/journey/ongoing/vp/train/0090/06305/3001R/1/Riihimäki/21:40/9040501/4/60;25/30/26/52",
+			payload:  `{"VP":{"desi":"R","dir":"1","oper":90,"veh":6305,"tsi":1788289014,"spd":37.77,"hdg":25,"lat":60.325988,"long":25.062390,"dl":86,"oday":"2026-06-15","start":"21:40","loc":"GPS","stop":null,"route":"3001R"}}`,
+			wantVeh:  "0090-6305",
+			wantMode: "train",
+			wantDesi: "R",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			memCache := cache.NewMemoryCache()
+			worker := NewIngestionWorker("tls://mock:8883", memCache)
+			worker.handleMessage(nil, &mockMessage{payload: []byte(tc.payload), topic: tc.topic})
+
+			positions, err := memCache.GetAllPositions(context.Background())
+			if err != nil {
+				t.Fatalf("failed to read positions: %v", err)
+			}
+			data, ok := positions[tc.wantVeh]
+			if !ok {
+				t.Fatalf("expected position cached for %s, got %v", tc.wantVeh, positions)
+			}
+			var thinned VehiclePosition
+			if err := json.Unmarshal(data, &thinned); err != nil {
+				t.Fatalf("failed to unmarshal cached position: %v", err)
+			}
+			if thinned.Mode != tc.wantMode {
+				t.Errorf("expected Mode %q, got %q", tc.wantMode, thinned.Mode)
+			}
+			if thinned.Desi != tc.wantDesi {
+				t.Errorf("expected Desi %q, got %q", tc.wantDesi, thinned.Desi)
+			}
+			if thinned.Lat == 0 || thinned.Lng == 0 {
+				t.Errorf("expected coordinates, got %f/%f", thinned.Lat, thinned.Lng)
+			}
+		})
+	}
+}
+
+// Both units of a coupled metro train publish the same journey. Only the first
+// one seen is ingested, so the journey draws as a single vehicle.
+func TestIngestionWorker_MetroCoupledUnitsDeduped(t *testing.T) {
+	memCache := cache.NewMemoryCache()
+	worker := NewIngestionWorker("tls://mock:8883", memCache)
+
+	unit := func(veh int, lat float64) *mockMessage {
+		return &mockMessage{
+			payload: []byte(fmt.Sprintf(
+				`{"VP":{"desi":"M1","dir":"2","oper":50,"veh":%d,"tsi":1788289014,"spd":17.2,"hdg":264,"lat":%f,"long":24.697,"oday":"2026-06-15","start":"21:12","loc":"MAN","route":"31M1"}}`,
+				veh, lat)),
+			topic: fmt.Sprintf("/hfp/v2/journey/ongoing/vp/metro/0050/%05d/31M1/2/Kivenlahti/21:12/2441604/3/60;24/16/59/17", veh),
+		}
+	}
+
+	worker.handleMessage(nil, unit(117, 60.1517))
+	worker.handleMessage(nil, unit(119, 60.1516))
+	worker.handleMessage(nil, unit(117, 60.1518))
+
+	positions, err := memCache.GetAllPositions(context.Background())
+	if err != nil {
+		t.Fatalf("failed to read positions: %v", err)
+	}
+	if len(positions) != 1 {
+		t.Fatalf("expected 1 cached vehicle for the journey, got %d: %v", len(positions), positions)
+	}
+	if _, ok := positions["0050-117"]; !ok {
+		t.Errorf("expected the first unit seen (0050-117) to be kept, got %v", positions)
+	}
+}
+
+// A different journey on the same line is its own vehicle, never deduped away.
+func TestIngestionWorker_MetroSeparateJourneysKept(t *testing.T) {
+	memCache := cache.NewMemoryCache()
+	worker := NewIngestionWorker("tls://mock:8883", memCache)
+
+	journey := func(veh int, start string) *mockMessage {
+		return &mockMessage{
+			payload: []byte(fmt.Sprintf(
+				`{"VP":{"desi":"M1","dir":"2","oper":50,"veh":%d,"tsi":1788289014,"spd":17.2,"hdg":264,"lat":60.15,"long":24.69,"oday":"2026-06-15","start":"%s","loc":"MAN","route":"31M1"}}`,
+				veh, start)),
+			topic: "/hfp/v2/journey/ongoing/vp/metro/0050/00117/31M1/2/Kivenlahti/" + start + "/2441604/3/60;24/16/59/17",
+		}
+	}
+
+	worker.handleMessage(nil, journey(117, "21:12"))
+	worker.handleMessage(nil, journey(203, "21:24"))
+
+	positions, err := memCache.GetAllPositions(context.Background())
+	if err != nil {
+		t.Fatalf("failed to read positions: %v", err)
+	}
+	if len(positions) != 2 {
+		t.Fatalf("expected 2 cached vehicles, got %d: %v", len(positions), positions)
+	}
+}
+
+func TestIngestionWorker_OptionalModes(t *testing.T) {
+	for _, mode := range []string{"bus", "metro", "train"} {
+		if !IsOptionalMode(mode) {
+			t.Errorf("expected %q to be an optional mode", mode)
+		}
+	}
+	if IsOptionalMode("tram") {
+		t.Error("trams always stream; they must not be an optional mode")
+	}
+	if IsOptionalMode("ferry") {
+		t.Error("ferry is not ingested, so it must not be an optional mode")
+	}
+
+	// Enabling/disabling without a live MQTT client must not panic and must be
+	// idempotent — the state is what a reconnect replays.
+	worker := NewIngestionWorker("tls://mock:8883", cache.NewMemoryCache())
+	worker.EnableMode("metro")
+	worker.EnableMode("metro")
+	worker.EnableMode("nonsense")
+	if !worker.enabledModes["metro"] {
+		t.Error("expected metro ingestion to be enabled")
+	}
+	if worker.enabledModes["nonsense"] {
+		t.Error("expected unknown modes to be ignored")
+	}
+	worker.DisableMode("metro")
+	if worker.enabledModes["metro"] {
+		t.Error("expected metro ingestion to be disabled")
+	}
+}

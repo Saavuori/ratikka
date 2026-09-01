@@ -5,7 +5,7 @@ Guidance for Claude Code (and humans) working in this repository.
 ## What this is
 
 **HSL - LIVE** (repo name `ratikka`) is a real-time map of Helsinki's trams, buses,
-and City Bike stations. Live vehicle telemetry arrives over MQTT from HSL's public
+metro, commuter trains, and City Bike stations. Live vehicle telemetry arrives over MQTT from HSL's public
 broker, is cached in Redis, and is streamed to a React frontend over a WebSocket.
 The Go backend also proxies Digitransit's map, geocoding, and routing APIs so the
 Digitransit subscription key never reaches the browser.
@@ -27,7 +27,10 @@ HSL MQTT broker ──▶ backend (Go) ──▶ Redis (live coord cache)
 ### Backend — `backend/` (Go 1.26, module `ratikka`)
 - `cmd/ratikka/main.go` — entrypoint: loads config, wires cache + MQTT + WS hub, serves HTTP.
 - `internal/api/` — HTTP handlers, `router.go` (native `http.ServeMux`, Go 1.22+ method+pattern routing), `graphql_client.go` and `journey.go` (Digitransit GraphQL proxy), embedded frontend in `static.go` (`internal/api/dist/`).
-- `internal/mqtt/` — HFP v2 ingestion (`/hfp/v2/journey/ongoing/vp/tram/#` and `.../bus/#`).
+- `internal/mqtt/` — HFP v2 ingestion. Trams (`/hfp/v2/journey/ongoing/vp/tram/#`)
+  are always subscribed; `bus`, `metro` and `train` are subscribed on demand, while
+  a client asks for them over the WebSocket (`{"modes": {...}}`). Coupled metro units
+  publish the same journey twice, so one of the pair is dropped at ingestion.
 - `internal/cache/` — `Cache` interface with `redis.go` and `memory.go` (in-memory fallback when Redis is off).
 - `internal/ws/` — WebSocket hub broadcasting live positions.
 - `internal/config/` — env + `.env` + flag loading.

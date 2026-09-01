@@ -42,10 +42,14 @@ High-frequency vehicle position data streamed from HSL's public MQTT broker.
 
 #### Topic Patterns
 
-We subscribe to both tram and bus topics:
+Trams are subscribed permanently; buses, metro and commuter trains are
+subscribed on demand, while a connected client asks for them (see the WebSocket
+control message below):
 ```
-/hfp/v2/journey/ongoing/vp/tram/#
-/hfp/v2/journey/ongoing/vp/bus/#
+/hfp/v2/journey/ongoing/vp/tram/#     (always)
+/hfp/v2/journey/ongoing/vp/bus/#      (on demand)
+/hfp/v2/journey/ongoing/vp/metro/#    (on demand)
+/hfp/v2/journey/ongoing/vp/train/#    (on demand)
 ```
 
 Topic hierarchy (each segment is filterable with `+` wildcard):
@@ -54,7 +58,11 @@ Topic hierarchy (each segment is filterable with `+` wildcard):
 /hfp/v2/journey/ongoing/vp/{transport_mode}/{operator_id}/{vehicle_number}/{route_id}/{direction_id}/{headsign}/{start_time}/{next_stop}/{geohash_level}/{geohash}/#
 ```
 
-For this application, `{transport_mode}` = `tram` or `bus`.
+For this application, `{transport_mode}` = `tram`, `bus`, `metro` or `train`.
+Every mode carries the same `VP` payload, so one handler parses all four. The
+feeds differ in what they fill in, not in shape: metro positions are derived
+from the signalling system (`loc: "MAN"`, no `dl`/`odo`/`drst`/`acc`), while
+trains report GPS with delay and — on some units — odometer and door state.
 
 #### HFP Payload (JSON)
 
@@ -304,8 +312,23 @@ All endpoints are served by the Go backend at `http://localhost:8080` and proxie
 |---|---|
 | **Path** | `/api/v1/stream` |
 | **Protocol** | WebSocket (`ws://` / `wss://`) |
-| **Direction** | Server → Client (unidirectional broadcast) |
+| **Direction** | Server → Client broadcast, plus a small client → server control message |
 | **Frequency** | 1 snapshot per second |
+
+#### Control Message (Client → Server)
+
+Trams always stream. Buses, metro and commuter trains are opt-in: the backend
+only subscribes to those HFP feeds while at least one connected client wants
+them. A client announces what it wants on connect and whenever the user toggles
+a mode:
+
+```json
+{ "modes": { "bus": false, "metro": true, "train": true } }
+```
+
+Only `bus`, `metro` and `train` are accepted; any other key is ignored. Omitted
+modes keep their current value for that client. The older single-mode form
+`{ "buses": true }` is still accepted and means `{"modes": {"bus": true}}`.
 
 #### Message Format (Server → Client)
 
@@ -343,11 +366,50 @@ All endpoints are served by the Go backend at `http://localhost:8080` and proxie
       "ts": 1781461816,
       "tripId": "HSL:1500_20260616_Mo_2_0920",
       "mode": "bus"
+    },
+    "0050-117": {
+      "veh": "0050-117",
+      "desi": "M1",
+      "lat": 60.15173,
+      "lng": 24.69719,
+      "hdg": 264,
+      "spd": 17.2,
+      "dl": 0,
+      "drst": 0,
+      "route": "31M1",
+      "stop": null,
+      "ts": 1781461816,
+      "tripId": "HSL:31M1_20260616_Mo_2_2112",
+      "mode": "metro",
+      "loc": "MAN"
+    },
+    "0090-6305": {
+      "veh": "0090-6305",
+      "desi": "R",
+      "lat": 60.32599,
+      "lng": 25.06239,
+      "hdg": 25,
+      "spd": 37.8,
+      "dl": 86,
+      "drst": 0,
+      "route": "3001R",
+      "stop": null,
+      "ts": 1781461816,
+      "tripId": "HSL:3001R_20260616_Mo_1_2140",
+      "mode": "train",
+      "loc": "GPS"
     }
   },
-  "count": 2
+  "count": 4
 }
 ```
+
+`mode` is one of `tram`, `bus`, `metro` or `train`. Field quality varies by
+mode: metro positions come from the signalling system (`loc: "MAN"`), so `dl`,
+`odo`, `drst` and `acc` are absent for them, and only some train units report
+`odo`/`drst`. Both units of a coupled metro train publish the same journey
+under different vehicle numbers; the backend keeps one of them, so a metro
+journey appears once.
 
 The `vehicles` map is keyed by vehicle ID. The frontend replaces its entire state each tick and uses the previous + current positions to lerp.
 
@@ -442,7 +504,11 @@ Get upcoming tram arrivals at a specific stop.
 
 ### REST — Route Details
 
-Get route geometry polylines and stop list for a specific route line designation.
+Get route geometry polylines and stop list for a specific route line
+designation. Trams, metro (`M1`, `M2`) and commuter trains (the letter lines)
+are all served here — their short names never collide. Buses are not: there are
+hundreds of them, and the map draws the bus network from the JORE vector tiles
+instead.
 
 | Property | Value |
 |---|---|

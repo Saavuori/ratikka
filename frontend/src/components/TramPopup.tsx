@@ -4,7 +4,7 @@ import type { VehiclePosition, TripDetailsResponse, Alert } from '../types';
 import { AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Activity, Gauge, Compass, Cpu, Database, Users, ShieldCheck, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useTrafficLights } from '../hooks/useTrafficLights';
-import { getRouteColor } from '../lib/routeColors';
+import { getRouteColor, getModeAccent } from '../lib/routeColors';
 import { classifyStopReason } from '../lib/trafficLights';
 
 interface TramPopupProps {
@@ -196,6 +196,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
       47: 'Åbergin Linja Oy',
       50: 'Pääkaupunkiseudun Kaupunkiliikenne Oy',
       9: 'Pääkaupunkiseudun Kaupunkiliikenne Oy',
+      90: 'VR-Yhtymä Oyj',
     };
     return ops[id] || `Operator #${id}`;
   };
@@ -371,7 +372,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
           onClick={() => setActiveTab('telemetry')} 
           style={{
             flex: 1, padding: '8px 4px', background: 'none', border: 'none',
-            borderBottom: activeTab === 'telemetry' ? `2px solid ${tram.mode === 'bus' ? '#0984e3' : '#00b894'}` : '2px solid transparent',
+            borderBottom: activeTab === 'telemetry' ? `2px solid ${getModeAccent(tram.mode)}` : '2px solid transparent',
             color: activeTab === 'telemetry' ? '#f8fafc' : '#64748b',
             fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
@@ -384,7 +385,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
           onClick={() => setActiveTab('schedule')} 
           style={{
             flex: 1, padding: '8px 4px', background: 'none', border: 'none',
-            borderBottom: activeTab === 'schedule' ? `2px solid ${tram.mode === 'bus' ? '#0984e3' : '#00b894'}` : '2px solid transparent',
+            borderBottom: activeTab === 'schedule' ? `2px solid ${getModeAccent(tram.mode)}` : '2px solid transparent',
             color: activeTab === 'schedule' ? '#f8fafc' : '#64748b',
             fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
@@ -397,7 +398,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
           onClick={() => setActiveTab('diagnostics')} 
           style={{
             flex: 1, padding: '8px 4px', background: 'none', border: 'none',
-            borderBottom: activeTab === 'diagnostics' ? `2px solid ${tram.mode === 'bus' ? '#0984e3' : '#00b894'}` : '2px solid transparent',
+            borderBottom: activeTab === 'diagnostics' ? `2px solid ${getModeAccent(tram.mode)}` : '2px solid transparent',
             color: activeTab === 'diagnostics' ? '#f8fafc' : '#64748b',
             fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
@@ -458,10 +459,12 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                     </g>
                   </svg>
                 ) : (
-                  /* TRAM SCHEMATIC */
+                  /* RAIL SCHEMATIC — trams, metro and commuter trains all run
+                     on rails with the same door layout, so they share one
+                     schematic, tinted by the mode's accent colour. */
                   <svg width="220" height="70" viewBox="0 0 220 70" fill="none">
                     <line x1="10" y1="58" x2="210" y2="58" stroke="rgba(255,255,255,0.08)" strokeWidth="2" strokeDasharray="4 4"/>
-                    <rect x="20" y="15" width="180" height="36" rx="6" fill="rgba(30, 41, 59, 0.4)" stroke="#00b894" strokeWidth="2"/>
+                    <rect x="20" y="15" width="180" height="36" rx="6" fill="rgba(30, 41, 59, 0.4)" stroke={getModeAccent(tram.mode)} strokeWidth="2"/>
                     <path d="M20,20 L30,20 L30,35 L20,35 Z" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8" strokeWidth="1"/>
                     <path d="M200,20 L190,20 L190,35 L200,35 Z" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8" strokeWidth="1"/>
 
@@ -560,7 +563,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                 <div style={{ position: 'relative', width: '64px', height: '64px' }}>
                   <svg width="64" height="64" viewBox="0 0 64 64" style={{ transform: 'rotate(-90deg)' }}>
                     <circle cx="32" cy="32" r="26" stroke="rgba(255,255,255,0.04)" strokeWidth="4.5" fill="none"/>
-                    <circle cx="32" cy="32" r="26" stroke={tram.mode === 'bus' ? '#0984e3' : '#00b894'} strokeWidth="4.5" fill="none"
+                    <circle cx="32" cy="32" r="26" stroke={getModeAccent(tram.mode)} strokeWidth="4.5" fill="none"
                             strokeDasharray={speedometerCircumference}
                             strokeDashoffset={speedometerOffset}
                             strokeLinecap="round"

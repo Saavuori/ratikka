@@ -15,7 +15,19 @@ import type { Feature, FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
-import { getRouteColor, routeColorMatchExpression, ROUTE_COLORS, TRAM_GREEN } from '../lib/routeColors';
+import {
+  getRouteColor,
+  routeColorMatchExpression,
+  colorMatchExpression,
+  METRO_TILE_COLORS,
+  TRAIN_TILE_COLORS,
+  ROUTE_COLORS,
+  METRO_COLORS,
+  TRAIN_COLORS,
+  TRAM_GREEN,
+  METRO_ORANGE,
+  TRAIN_PURPLE,
+} from '../lib/routeColors';
 import { assignCorridorSlots, canonicalizeDirection, dedupeOverlappingPaths } from '../lib/routeSlots';
 import type { RoutePath } from '../lib/routeSlots';
 import {
@@ -36,6 +48,15 @@ maplibregl.setWorkerUrl(maplibreWorkerUrl);
 // (jumping/back-tracking) paths. Disabled until the matching is made robust. The
 // next-stop signpost highlight itself is unaffected and remains enabled.
 const HIGHLIGHT_NEXT_STOP_ROUTE = false;
+
+// A stop's mode, whichever of the two stop tilesets it came from: the JORE tiles
+// the light basemap ships (`mode`) or the Digitransit v3 stops the dark theme
+// falls back to (`type`). Both spell the modes the same — TRAM, BUS, SUBWAY,
+// RAIL — they just disagree about the property name.
+const STOP_MODE: maplibregl.ExpressionSpecification = [
+  'to-string',
+  ['coalesce', ['get', 'mode'], ['get', 'type'], ''],
+];
 
 // Paint expressions for the highlighted route paths live in lib/routeLineStyle,
 // where the zoom stops of the offset fan are unit-tested against the style spec.
@@ -71,6 +92,8 @@ interface MapProps {
   onMapBearingChange?: (bearing: number) => void;
   showTrams: boolean;
   showBuses: boolean;
+  showMetro: boolean;
+  showTrains: boolean;
   selectedTripDetails: TripDetailsResponse | null;
   journeyLegs?: JourneyLeg[] | null;
   journeyEndpoints?: { from: JourneyEndpoint; to: JourneyEndpoint } | null;
@@ -103,6 +126,8 @@ export const Map: React.FC<MapProps> = ({
   onMapBearingChange,
   showTrams,
   showBuses,
+  showMetro,
+  showTrains,
   selectedTripDetails,
   journeyLegs = null,
   journeyEndpoints = null,
@@ -144,6 +169,8 @@ export const Map: React.FC<MapProps> = ({
   const lineFiltersRef = useRef<string[]>(lineFilters);
   const showTramsRef = useRef<boolean>(showTrams);
   const showBusesRef = useRef<boolean>(showBuses);
+  const showMetroRef = useRef<boolean>(showMetro);
+  const showTrainsRef = useRef<boolean>(showTrains);
   const is3DRef = useRef<boolean>(is3D);
   const mapThemeRef = useRef<'light' | 'dark'>(mapTheme);
   const isFollowingRef = useRef<boolean>(isFollowing);
@@ -210,6 +237,14 @@ export const Map: React.FC<MapProps> = ({
   }, [showBuses]);
 
   useEffect(() => {
+    showMetroRef.current = showMetro;
+  }, [showMetro]);
+
+  useEffect(() => {
+    showTrainsRef.current = showTrains;
+  }, [showTrains]);
+
+  useEffect(() => {
     is3DRef.current = is3D;
   }, [is3D]);
 
@@ -222,10 +257,9 @@ export const Map: React.FC<MapProps> = ({
   }, [isFollowing]);
 
   // Helper to toggle visibility of the HSL background route network. The network
-  // uses HSL's mode colours (green trams, blue buses) rather than our per-line
-  // palette, and is scoped to just the tram and bus modes: tram routes follow the
-  // Trams toggle, bus/trunk routes follow the Buses toggle, and other modes
-  // (rail, subway, ferry) are never drawn here. The whole network is the
+  // uses HSL's mode colours (green trams, blue buses, orange metro, purple
+  // trains) rather than our per-line palette, and each mode's layers follow that
+  // mode's Settings toggle. Ferries are never drawn here. The whole network is the
   // "show all" state: it is drawn whenever no line filter is active (`show`),
   // and hidden as soon as the user selects specific lines — at which point only
   // those lines' highlighted per-line route paths remain. When `show` is off
@@ -246,13 +280,17 @@ export const Map: React.FC<MapProps> = ({
     'route_trunk',
     'route_trunk_inner',
   ];
-  const otherRouteLayers = [
-    'route_ferry',
+  const metroRouteLayers = [
     'route_subway_case',
     'route_subway',
     'route_subway_underground',
+  ];
+  const trainRouteLayers = [
     'route_rail_case',
     'route_rail',
+  ];
+  const otherRouteLayers = [
+    'route_ferry',
   ];
 
   // Each background route layer's own (mode/trunk) filter, mirrored from the
@@ -274,6 +312,11 @@ export const Map: React.FC<MapProps> = ({
     route_trunk_case: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
     route_trunk: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
     route_trunk_inner: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
+    route_subway_case: ['==', ['get', 'mode'], 'SUBWAY'],
+    route_subway: ['==', ['get', 'mode'], 'SUBWAY'],
+    route_subway_underground: ['==', ['get', 'mode'], 'SUBWAY'],
+    route_rail_case: ['==', ['get', 'mode'], 'RAIL'],
+    route_rail: ['==', ['get', 'mode'], 'RAIL'],
   };
 
   // The HSL background route network (the `routes` vector source + its per-mode
@@ -330,6 +373,21 @@ export const Map: React.FC<MapProps> = ({
     { id: 'route_trunk_inner', type: 'line', source: 'routes', 'source-layer': 'routes',
       filter: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
       paint: { 'line-color': '#FF6319', 'line-width': { stops: [[10, 1], [22, 4]] } } },
+    // Metro (orange). Drawn wider than the street modes: two lines carry the
+    // whole east-west spine, so the network reads as the trunk it is.
+    { id: 'route_subway_case', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'SUBWAY'], layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 5], [22, 10]] } } },
+    { id: 'route_subway', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'SUBWAY'], layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
+      paint: { 'line-color': '#FF6319', 'line-width': { stops: [[10, 3], [22, 7]] } } },
+    // Commuter rail (purple)
+    { id: 'route_rail_case', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'RAIL'], layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 5], [22, 10]] } } },
+    { id: 'route_rail', type: 'line', source: 'routes', 'source-layer': 'routes',
+      filter: ['==', ['get', 'mode'], 'RAIL'], layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
+      paint: { 'line-color': '#8C4799', 'line-width': { stops: [[10, 3], [22, 7]] } } },
   ] as unknown as maplibregl.LayerSpecification[];
 
   const ensureBackgroundRouteNetwork = (map: maplibregl.Map) => {
@@ -374,10 +432,14 @@ export const Map: React.FC<MapProps> = ({
         map.setPaintProperty(layerId, 'line-color', color);
       }
     };
+    const metroColor = colorMatchExpression('routeIdParsed', METRO_TILE_COLORS, METRO_ORANGE) as unknown as maplibregl.DataDrivenPropertyValueSpecification<string>;
+    const trainColor = colorMatchExpression('routeIdParsed', TRAIN_TILE_COLORS, TRAIN_PURPLE) as unknown as maplibregl.DataDrivenPropertyValueSpecification<string>;
     setColor('route_tram', tramColor);
     setColor('route_tram_inner', tramColor);
     setColor('route_lrail', lrailColor);
     setColor('route_lrail_inner', lrailColor);
+    setColor('route_subway', metroColor);
+    setColor('route_rail', trainColor);
   };
 
   // The background network and the highlighted route paths must never draw the
@@ -403,6 +465,8 @@ export const Map: React.FC<MapProps> = ({
     map: maplibregl.Map,
     trams: boolean,
     buses: boolean,
+    metro: boolean,
+    trains: boolean,
     lines: string[],
     selectedLine: string | null,
     ribbonLines: string[] = [],
@@ -440,6 +504,16 @@ export const Map: React.FC<MapProps> = ({
     });
     busRouteLayers.forEach((layerId) => {
       setVisible(layerId, buses && !highlighted);
+      applyLineFilter(layerId);
+    });
+    // Metro and train lines are ribboned like trams (few enough lines to fetch a
+    // pattern each), so their tiles give way to the ribbons the same way.
+    metroRouteLayers.forEach((layerId) => {
+      setVisible(layerId, metro && !highlighted && !ribboned);
+      applyLineFilter(layerId);
+    });
+    trainRouteLayers.forEach((layerId) => {
+      setVisible(layerId, trains && !highlighted && !ribboned);
       applyLineFilter(layerId);
     });
     otherRouteLayers.forEach((layerId) => setVisible(layerId, false));
@@ -1005,6 +1079,39 @@ export const Map: React.FC<MapProps> = ({
       </svg>
     `;
 
+    // Metro: a long, square-shouldered rail car in HSL's metro orange. Wider
+    // than a tram (the trains are two coupled units) and with a full-width
+    // windshield band, so the mode reads even at overview zooms.
+    const metroBody = (open: boolean, color: string = METRO_ORANGE) => `
+      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
+        <path d="M20 2.6 L25 8.2 L15 8.2 Z" fill="${color}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+        <rect x="11.5" y="7" width="17" height="28" rx="3.5" fill="${color}" stroke="#ffffff" stroke-width="2"/>
+        <rect x="13.8" y="9.4" width="12.4" height="4.8" rx="1.2" fill="rgba(255,255,255,0.92)"/>
+        ${open
+          ? `<rect x="10.9" y="18.6" width="4.6" height="8" rx="1.1" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
+             <rect x="24.5" y="18.6" width="4.6" height="8" rx="1.1" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>`
+          : `<rect x="13.6" y="17.8" width="4.4" height="9.4" rx="1" fill="rgba(0,0,0,0.42)"/>
+             <rect x="22" y="17.8" width="4.4" height="9.4" rx="1" fill="rgba(0,0,0,0.42)"/>`}
+        <rect x="14" y="30.2" width="12" height="3" rx="1.2" fill="rgba(0,0,0,0.3)"/>
+      </svg>
+    `;
+
+    // Commuter train: the longest body of the set, in HSL's commuter purple,
+    // with a slanted nose — a Sm-series unit seen from above.
+    const trainBody = (open: boolean, color: string = TRAIN_PURPLE) => `
+      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
+        <path d="M20 1.8 L25.2 7.8 L14.8 7.8 Z" fill="${color}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M13 11 C13 8.4 15.9 6.6 20 6.6 C24.1 6.6 27 8.4 27 11 L27 33 C27 34.7 25.7 36 24 36 L16 36 C14.3 36 13 34.7 13 33 Z" fill="${color}" stroke="#ffffff" stroke-width="2"/>
+        <rect x="15" y="9.6" width="10" height="4.4" rx="1.4" fill="rgba(255,255,255,0.92)"/>
+        ${open
+          ? `<rect x="12.4" y="19.2" width="4.4" height="8" rx="1.1" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
+             <rect x="23.2" y="19.2" width="4.4" height="8" rx="1.1" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>`
+          : `<rect x="14.8" y="18.4" width="4.2" height="9.6" rx="1" fill="rgba(0,0,0,0.42)"/>
+             <rect x="21" y="18.4" width="4.2" height="9.6" rx="1" fill="rgba(0,0,0,0.42)"/>`}
+        <rect x="15" y="31" width="10" height="3" rx="1.2" fill="rgba(0,0,0,0.3)"/>
+      </svg>
+    `;
+
     // Generic (unknown-line) tram bodies fall back to HSL green.
     registerVehicleImage('tram-body', tramBody(false));
     registerVehicleImage('tram-body-open', tramBody(true));
@@ -1015,6 +1122,20 @@ export const Map: React.FC<MapProps> = ({
     });
     registerVehicleImage('bus-body', busBody(false));
     registerVehicleImage('bus-body-open', busBody(true));
+    // Metro and commuter trains get the same per-line tinting as trams: few
+    // lines, so every one of them has a curated colour.
+    registerVehicleImage('metro-body', metroBody(false));
+    registerVehicleImage('metro-body-open', metroBody(true));
+    Object.entries(METRO_COLORS).forEach(([line, color]) => {
+      registerVehicleImage(`metro-body-${line}`, metroBody(false, color));
+      registerVehicleImage(`metro-body-${line}-open`, metroBody(true, color));
+    });
+    registerVehicleImage('train-body', trainBody(false));
+    registerVehicleImage('train-body-open', trainBody(true));
+    Object.entries(TRAIN_COLORS).forEach(([line, color]) => {
+      registerVehicleImage(`train-body-${line}`, trainBody(false, color));
+      registerVehicleImage(`train-body-${line}-open`, trainBody(true, color));
+    });
 
     // Rear brake lights: two red lamps on a transparent 40x40 canvas, positioned
     // at the tail of the carriage (bottom of the art). Drawn on top of the body
@@ -1105,6 +1226,80 @@ export const Map: React.FC<MapProps> = ({
       busTrunkImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(busTrunkSvg);
       busTrunkImg.onload = () => {
         if (!map.hasImage('sign-bus-trunk')) map.addImage('sign-bus-trunk', busTrunkImg);
+      };
+    }
+
+    // Create Sign Metro Image if missing
+    if (!map.hasImage('sign-metro')) {
+      const metroSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
+          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="16" cy="14" r="11" fill="#FF6319" stroke="#ffffff" stroke-width="2"/>
+          <path d="M11 19 L11 9 L16 15.5 L21 9 L21 19" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      `;
+      const metroImg = new Image(32, 42);
+      metroImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(metroSvg);
+      metroImg.onload = () => {
+        if (mapRef.current !== map) return;
+        if (!map.hasImage('sign-metro')) map.addImage('sign-metro', metroImg);
+      };
+    }
+
+    // Create Sign Train Image if missing
+    if (!map.hasImage('sign-train')) {
+      const trainSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
+          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="16" cy="14" r="11" fill="#8C4799" stroke="#ffffff" stroke-width="2"/>
+          <path d="M11.5 11.5 C11.5 9.3 13.5 8 16 8 C18.5 8 20.5 9.3 20.5 11.5 L20.5 17.5 C20.5 18.6 19.6 19.5 18.5 19.5 L13.5 19.5 C12.4 19.5 11.5 18.6 11.5 17.5 Z" fill="white"/>
+          <rect x="12.8" y="10.4" width="6.4" height="3.2" rx="0.8" fill="#8C4799"/>
+          <circle cx="13.8" cy="16.6" r="0.85" fill="#8C4799"/>
+          <circle cx="18.2" cy="16.6" r="0.85" fill="#8C4799"/>
+          <path d="M13 20.5 L11.5 22.5 M19 20.5 L20.5 22.5" stroke="white" stroke-width="1.1" stroke-linecap="round"/>
+        </svg>
+      `;
+      const trainImg = new Image(32, 42);
+      trainImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(trainSvg);
+      trainImg.onload = () => {
+        if (mapRef.current !== map) return;
+        if (!map.hasImage('sign-train')) map.addImage('sign-train', trainImg);
+      };
+    }
+
+    // Create Sign Metro Selected Image if missing (gold border)
+    if (!map.hasImage('sign-metro-selected')) {
+      const metroSelectedSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
+          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="16" cy="14" r="11" fill="#FF6319" stroke="#fdcb6e" stroke-width="2.8"/>
+          <path d="M11 19 L11 9 L16 15.5 L21 9 L21 19" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      `;
+      const metroImg = new Image(32, 42);
+      metroImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(metroSelectedSvg);
+      metroImg.onload = () => {
+        if (!map.hasImage('sign-metro-selected')) map.addImage('sign-metro-selected', metroImg);
+      };
+    }
+
+    // Create Sign Train Selected Image if missing (gold border)
+    if (!map.hasImage('sign-train-selected')) {
+      const trainSelectedSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
+          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="16" cy="14" r="11" fill="#8C4799" stroke="#fdcb6e" stroke-width="2.8"/>
+          <path d="M11.5 11.5 C11.5 9.3 13.5 8 16 8 C18.5 8 20.5 9.3 20.5 11.5 L20.5 17.5 C20.5 18.6 19.6 19.5 18.5 19.5 L13.5 19.5 C12.4 19.5 11.5 18.6 11.5 17.5 Z" fill="white"/>
+          <rect x="12.8" y="10.4" width="6.4" height="3.2" rx="0.8" fill="#8C4799"/>
+          <circle cx="13.8" cy="16.6" r="0.85" fill="#8C4799"/>
+          <circle cx="18.2" cy="16.6" r="0.85" fill="#8C4799"/>
+          <path d="M13 20.5 L11.5 22.5 M19 20.5 L20.5 22.5" stroke="white" stroke-width="1.1" stroke-linecap="round"/>
+        </svg>
+      `;
+      const trainImg = new Image(32, 42);
+      trainImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(trainSelectedSvg);
+      trainImg.onload = () => {
+        if (!map.hasImage('sign-train-selected')) map.addImage('sign-train-selected', trainImg);
       };
     }
 
@@ -1221,12 +1416,29 @@ export const Map: React.FC<MapProps> = ({
         type: 'symbol',
         source: 'trams',
         layout: {
-          // Trams: pick the line-tinted body (open/closed variants), falling
-          // back to the generic green body for lines outside the palette.
+          // Body art per mode, then per line: each of trams, metro and trains
+          // picks the line-tinted body (open/closed variants), falling back to
+          // its generic mode-coloured body for lines outside the palette.
           'icon-image': [
             'case',
             ['==', ['get', 'mode'], 'bus'],
             ['case', ['get', 'doorsOpen'], 'bus-body-open', 'bus-body'],
+            ['==', ['get', 'mode'], 'metro'],
+            ['case', ['get', 'doorsOpen'],
+              ['match', ['get', 'desi'],
+                ...Object.keys(METRO_COLORS).flatMap((l) => [l, `metro-body-${l}-open`]),
+                'metro-body-open'],
+              ['match', ['get', 'desi'],
+                ...Object.keys(METRO_COLORS).flatMap((l) => [l, `metro-body-${l}`]),
+                'metro-body']],
+            ['==', ['get', 'mode'], 'train'],
+            ['case', ['get', 'doorsOpen'],
+              ['match', ['get', 'desi'],
+                ...Object.keys(TRAIN_COLORS).flatMap((l) => [l, `train-body-${l}-open`]),
+                'train-body-open'],
+              ['match', ['get', 'desi'],
+                ...Object.keys(TRAIN_COLORS).flatMap((l) => [l, `train-body-${l}`]),
+                'train-body']],
             ['get', 'doorsOpen'],
             ['match', ['get', 'desi'],
               ...Object.keys(ROUTE_COLORS).flatMap((l) => [l, `tram-body-${l}-open`]),
@@ -1464,6 +1676,55 @@ export const Map: React.FC<MapProps> = ({
       }, 'trams-circles');
     }
 
+    // Metro and commuter-train stations, drawn a touch larger than street stops
+    // because a station serves a whole neighbourhood, not one kerbside. The two
+    // stop tilesets in play name the mode differently — JORE (light theme) calls
+    // it `mode`, Digitransit's v3 stops (the dark-theme fallback source) call it
+    // `type` — so every station filter reads whichever of the two is present.
+    if (!map.getLayer('stops_metro')) {
+      map.addLayer({
+        id: 'stops_metro',
+        type: 'circle',
+        source: 'stops',
+        'source-layer': 'stops',
+        minzoom: 12,
+        maxzoom: 15.5,
+        filter: ['==', STOP_MODE, 'SUBWAY'] as maplibregl.FilterSpecification,
+        paint: {
+          'circle-color': '#FF6319',
+          'circle-radius': [
+            'interpolate',
+            ['exponential', 1.15],
+            ['zoom'],
+            12, 2,
+            22, 26
+          ]
+        }
+      }, 'trams-circles');
+    }
+
+    if (!map.getLayer('stops_train')) {
+      map.addLayer({
+        id: 'stops_train',
+        type: 'circle',
+        source: 'stops',
+        'source-layer': 'stops',
+        minzoom: 12,
+        maxzoom: 15.5,
+        filter: ['==', STOP_MODE, 'RAIL'] as maplibregl.FilterSpecification,
+        paint: {
+          'circle-color': '#8C4799',
+          'circle-radius': [
+            'interpolate',
+            ['exponential', 1.15],
+            ['zoom'],
+            12, 2,
+            22, 26
+          ]
+        }
+      }, 'trams-circles');
+    }
+
     // Stops Signs (Pole + Sign symbol layer, visible from zoom 15.5 onwards)
     if (!map.getLayer('stops_signs')) {
       map.addLayer({
@@ -1475,9 +1736,11 @@ export const Map: React.FC<MapProps> = ({
         layout: {
           'icon-image': [
             'match',
-            ['get', 'mode'],
+            STOP_MODE,
             'TRAM', 'sign-tram',
             'BUS', 'sign-bus',
+            'SUBWAY', 'sign-metro',
+            'RAIL', 'sign-train',
             'sign-bus'
           ],
 
@@ -1739,6 +2002,12 @@ export const Map: React.FC<MapProps> = ({
             ['get', 'mode'],
             'TRAM', 'sign-tram-selected',
             'BUS', 'sign-bus-selected',
+            // The stop tiles say SUBWAY/RAIL; a selected vehicle's own mode
+            // arrives as METRO/TRAIN. Both name the same sign.
+            'SUBWAY', 'sign-metro-selected',
+            'METRO', 'sign-metro-selected',
+            'RAIL', 'sign-train-selected',
+            'TRAIN', 'sign-train-selected',
             'sign-bus-selected'
           ],
 
@@ -1794,6 +2063,12 @@ export const Map: React.FC<MapProps> = ({
             ['get', 'mode'],
             'TRAM', 'sign-tram-selected',
             'BUS', 'sign-bus-selected',
+            // The stop tiles say SUBWAY/RAIL; a selected vehicle's own mode
+            // arrives as METRO/TRAIN. Both name the same sign.
+            'SUBWAY', 'sign-metro-selected',
+            'METRO', 'sign-metro-selected',
+            'RAIL', 'sign-train-selected',
+            'TRAIN', 'sign-train-selected',
             'sign-bus-selected'
           ],
           'icon-anchor': 'bottom',
@@ -1944,9 +2219,16 @@ export const Map: React.FC<MapProps> = ({
     // Restore any active journey after a style/theme change
     updateJourney(map, journeyLegsRef.current, journeyEndpointsRef.current, false);
 
-    // Hide default bus stops from the vector style
+    // Hide default bus stops from the vector style, and the style's own metro /
+    // commuter-rail station layers — those are drawn by our stops_metro and
+    // stops_train layers instead, which follow the Metro and Trains toggles.
     const busStopLayers = ['stops_bus', 'stops_trunk'];
     busStopLayers.forEach((layerId) => {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, 'visibility', 'none');
+      }
+    });
+    ['stops_subway', 'stops_rail'].forEach((layerId) => {
       if (map.getLayer(layerId)) {
         map.setLayoutProperty(layerId, 'visibility', 'none');
       }
@@ -1990,6 +2272,8 @@ export const Map: React.FC<MapProps> = ({
       map,
       showTramsRef.current,
       showBusesRef.current,
+      showMetroRef.current,
+      showTrainsRef.current,
       lineFiltersRef.current,
       selectedLineRef.current,
       Object.keys(routeGeometriesRef.current),
@@ -2018,7 +2302,9 @@ export const Map: React.FC<MapProps> = ({
       'stops_lrail',
       'stops_subway',
       'stops_ferry',
-      'stops_rail'
+      'stops_rail',
+      'stops_metro',
+      'stops_train'
     ];
     circleLayers.forEach((layerId) => {
       if (map.getLayer(layerId)) {
@@ -2065,7 +2351,8 @@ export const Map: React.FC<MapProps> = ({
       const coordinates = feat.geometry.type === 'Point' ? feat.geometry.coordinates : undefined;
       const lng = coordinates ? coordinates[0] : undefined;
       const lat = coordinates ? coordinates[1] : undefined;
-      const mode = feat.properties?.mode || 'TRAM';
+      // JORE tiles call it `mode`, Digitransit v3 stops call it `type`.
+      const mode = feat.properties?.mode || feat.properties?.type || 'TRAM';
       const isTrunkStop = feat.properties?.isTrunkStop === true || feat.properties?.isTrunkStop === 'true';
 
       if (rawId) {
@@ -2078,6 +2365,8 @@ export const Map: React.FC<MapProps> = ({
     };
 
     map.on('click', 'stops_tram', handleStopClick);
+    map.on('click', 'stops_metro', handleStopClick);
+    map.on('click', 'stops_train', handleStopClick);
     map.on('click', 'stops_bus', handleStopClick);
     map.on('click', 'stops_trunk', handleStopClick);
     map.on('click', 'stops_signs', handleStopClick);
@@ -2104,6 +2393,10 @@ export const Map: React.FC<MapProps> = ({
     map.on('mouseleave', 'trams-circles', resetCursor);
     map.on('mouseenter', 'stops_tram', setCursorPointer);
     map.on('mouseleave', 'stops_tram', resetCursor);
+    map.on('mouseenter', 'stops_metro', setCursorPointer);
+    map.on('mouseleave', 'stops_metro', resetCursor);
+    map.on('mouseenter', 'stops_train', setCursorPointer);
+    map.on('mouseleave', 'stops_train', resetCursor);
     map.on('mouseenter', 'stops_bus', setCursorPointer);
     map.on('mouseleave', 'stops_bus', resetCursor);
     map.on('mouseenter', 'stops_trunk', setCursorPointer);
@@ -2431,12 +2724,14 @@ export const Map: React.FC<MapProps> = ({
         map,
         showTrams,
         showBuses,
+        showMetro,
+        showTrains,
         lineFilters,
         selectedLine,
         Object.keys(routeGeometries),
       );
     }
-  }, [lineFilters, showTrams, showBuses, selectedLine, routeGeometries]);
+  }, [lineFilters, showTrams, showBuses, showMetro, showTrains, selectedLine, routeGeometries]);
 
   // Dynamic Stop Route Filtering
   useEffect(() => {
@@ -2498,6 +2793,35 @@ export const Map: React.FC<MapProps> = ({
       }
     }
 
+    // 2. Metro and commuter-train stations. Same shape as the tram-stop filter
+    //    above: hidden with their mode toggle off, narrowed to the highlighted
+    //    lines' stations while a line filter or vehicle selection is active.
+    const stationLayers: Array<{ id: string; mode: string; show: boolean }> = [
+      { id: 'stops_metro', mode: 'SUBWAY', show: showMetro },
+      { id: 'stops_train', mode: 'RAIL', show: showTrains },
+    ];
+    stationLayers.forEach(({ id, mode, show }) => {
+      if (!map.getLayer(id)) return;
+      if (!show) {
+        map.setFilter(id, ['==', '1', '2']);
+      } else if (activeRoutes.length === 0) {
+        map.setFilter(id, [
+          'all',
+          ['==', STOP_MODE, mode],
+          excludeSelectedStopFilter
+        ]);
+      } else if (allowedStopIds.length === 0) {
+        map.setFilter(id, ['==', '1', '2']);
+      } else {
+        map.setFilter(id, [
+          'all',
+          ['==', STOP_MODE, mode],
+          ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]],
+          excludeSelectedStopFilter
+        ]);
+      }
+    });
+
     // 3. Bus and Trunk Stop POIs
     const busStopLayers = ['stops_bus', 'stops_trunk'];
     busStopLayers.forEach((layerId) => {
@@ -2529,6 +2853,8 @@ export const Map: React.FC<MapProps> = ({
     const signModes: string[] = [];
     if (showTrams) signModes.push('TRAM');
     if (showBuses) signModes.push('BUS');
+    if (showMetro) signModes.push('SUBWAY');
+    if (showTrains) signModes.push('RAIL');
 
     if (map.getLayer('stops_signs')) {
       if (signModes.length === 0) {
@@ -2536,7 +2862,7 @@ export const Map: React.FC<MapProps> = ({
       } else if (activeRoutes.length === 0) {
         map.setFilter('stops_signs', [
           'all',
-          ['in', ['get', 'mode'], ['literal', signModes]],
+          ['in', STOP_MODE, ['literal', signModes]],
           excludeSelectedStopFilter
         ]);
       } else if (allowedStopIds.length === 0) {
@@ -2544,13 +2870,13 @@ export const Map: React.FC<MapProps> = ({
       } else {
         map.setFilter('stops_signs', [
           'all',
-          ['in', ['get', 'mode'], ['literal', signModes]],
+          ['in', STOP_MODE, ['literal', signModes]],
           ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]],
           excludeSelectedStopFilter
         ]);
       }
     }
-  }, [lineFilters, selectedTramId, trams, routeGeometries, showTrams, showBuses, selectedStopId]);
+  }, [lineFilters, selectedTramId, trams, routeGeometries, showTrams, showBuses, showMetro, showTrains, selectedStopId]);
 
   return (
     <div className="map-wrapper">

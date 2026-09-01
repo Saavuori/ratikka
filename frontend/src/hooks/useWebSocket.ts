@@ -3,24 +3,29 @@ import type { PositionsMessage } from '../types';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
+// The optional feeds a client can ask for. Trams always stream; these are
+// ingested by the backend only while at least one client has opted in, because
+// they are either huge (buses) or of narrower interest (metro, train).
+export type OptionalMode = 'bus' | 'metro' | 'train';
+
 interface UseWebSocketOptions {
   onMessage: (data: PositionsMessage) => void;
-  // Whether this client wants bus positions. Sent to the backend so it only
-  // ingests the (large) bus feed while at least one client has opted in.
-  wantsBuses: boolean;
+  // Which optional modes this client wants. Sent to the backend on connect and
+  // whenever the user toggles one.
+  wantsModes: Record<OptionalMode, boolean>;
 }
 
-export function useWebSocket({ onMessage, wantsBuses }: UseWebSocketOptions) {
+export function useWebSocket({ onMessage, wantsModes }: UseWebSocketOptions) {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectDelayRef = useRef<number>(1000); // Start reconnect delay at 1s
-  const wantsBusesRef = useRef<boolean>(wantsBuses);
+  const wantsModesRef = useRef<Record<OptionalMode, boolean>>(wantsModes);
 
-  const sendBusPref = (want: boolean) => {
+  const sendModePrefs = (modes: Record<OptionalMode, boolean>) => {
     const socket = socketRef.current;
     if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ buses: want }));
+      socket.send(JSON.stringify({ modes }));
     }
   };
 
@@ -38,7 +43,7 @@ export function useWebSocket({ onMessage, wantsBuses }: UseWebSocketOptions) {
     socket.onopen = () => {
       setStatus('connected');
       reconnectDelayRef.current = 1000; // Reset backoff delay
-      sendBusPref(wantsBusesRef.current); // Announce current bus preference
+      sendModePrefs(wantsModesRef.current); // Announce current mode preferences
     };
 
     socket.onmessage = (event) => {
@@ -77,12 +82,14 @@ export function useWebSocket({ onMessage, wantsBuses }: UseWebSocketOptions) {
     }, delay);
   };
 
-  // Push preference changes to the backend live (e.g. user toggles buses on/off
-  // while connected). onopen handles the initial announcement after (re)connect.
+  // Push preference changes to the backend live (e.g. user toggles buses or the
+  // metro on/off while connected). onopen handles the initial announcement
+  // after (re)connect. The caller memoizes `wantsModes`, so this only fires when
+  // a toggle actually changes.
   useEffect(() => {
-    wantsBusesRef.current = wantsBuses;
-    sendBusPref(wantsBuses);
-  }, [wantsBuses]);
+    wantsModesRef.current = wantsModes;
+    sendModePrefs(wantsModes);
+  }, [wantsModes]);
 
   useEffect(() => {
     connect();

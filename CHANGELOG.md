@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.52.0] - 2026-09-01
+
+### Added
+- **Metro and commuter trains on the map, alongside trams and buses**: HSL publishes both on the same HFP feed, in the same `VP` payload, on the same topic layout — `/hfp/v2/journey/ongoing/vp/metro/#` and `.../train/#` — so they are ingested by the same handler and get the same treatment as the modes already there. Two new Settings toggles ("Metro", "Trains") switch them on; like buses they default off and are ingested on demand, so the backend only subscribes to a feed while somebody is looking at it. Each mode brings its own directional carriage icon (orange metro, purple train, doors-open variants and brake lights included), its own per-line colours (M1/M2, and the letter lines A…Z) shared by vehicle, line chip, route ribbon and popup accents, its stations drawn and clickable with their own signs, and its route network drawn underneath — metro and train lines are few enough to fetch a pattern each, so they get the same fanned per-line ribbons trams do rather than the flat tile network buses fall back to.
+
+### Changed
+- **The WebSocket control message now carries a set of modes** — `{"modes": {"bus": true, "metro": false, "train": true}}` — instead of just `{"buses": true}`, which is still accepted. The hub counts demand per mode, so a feed is subscribed at the first client that wants it and unsubscribed when the last one goes away, independently per mode.
+- **`GET /api/v1/route/{shortName}` also resolves metro and commuter-train lines** (`transportModes: [TRAM, SUBWAY, RAIL]`). The three modes' short names never collide, so one lookup serves all of them; buses stay out of it, being far too many to fetch a pattern each.
+
+### Fixed
+- **Only one marker per metro journey**: the two coupled units of a metro train each publish their own position under their own vehicle number, roughly a train-length apart, which would have drawn two "M1" markers swapping places every second. Ingestion keeps the first unit seen for a journey until it goes quiet.
+- **Stop layers read the mode from either stop tileset**: the light basemap's JORE tiles call it `mode`, the Digitransit v3 tiles the dark theme falls back to call it `type`. The station layers, the stop signs and the click handler now accept both, so stop signs work in the dark theme too.
+
+---
+
 ## [v0.51.1] - 2026-08-31
 
 ### Fixed
