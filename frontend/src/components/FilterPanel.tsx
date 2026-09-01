@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { VehiclePosition, Alert } from '../types';
-import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, Sun, Moon, Box, TramFront, Bus, TrainFrontTunnel, TrainFront, AlertTriangle, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, AlertTriangle, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { getRouteColor, BUS_BLUE } from '../lib/routeColors';
 
@@ -12,27 +12,16 @@ interface FilterPanelProps {
   connectionStatus: string;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
-  mapTheme: 'light' | 'dark';
-  setMapTheme: (theme: 'light' | 'dark') => void;
-  is3D: boolean;
-  setIs3D: (is3D: boolean) => void;
+  /** Mode visibility, used to keep the line list in step with the map. The
+      switches themselves live in the map's corner chip groups. */
   showTrams: boolean;
-  setShowTrams: (show: boolean) => void;
   showBuses: boolean;
-  setShowBuses: (show: boolean) => void;
   showMetro: boolean;
-  setShowMetro: (show: boolean) => void;
   showTrains: boolean;
-  setShowTrains: (show: boolean) => void;
   alerts: Alert[];
   selectedTram: VehiclePosition | null;
   selectedStop: { id: string; name: string; code: string; } | null;
   selectedStopRoutes: string[];
-  /**
-   * Which half of the panel the mobile bottom sheet is showing. Desktop keeps the
-   * full drawer (lines *and* settings); on mobile the bottom bar splits it in two.
-   */
-  mobileSection?: 'lines' | 'settings';
 }
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
@@ -43,31 +32,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   connectionStatus,
   isCollapsed,
   onToggleCollapse,
-  mapTheme,
-  setMapTheme,
-  is3D,
-  setIs3D,
   showTrams,
-  setShowTrams,
   showBuses,
-  setShowBuses,
   showMetro,
-  setShowMetro,
   showTrains,
-  setShowTrains,
   alerts = [],
   selectedTram = null,
   selectedStop = null,
   selectedStopRoutes = [],
-  mobileSection = 'lines',
 }) => {
   const [isAlertsExpanded, setIsAlertsExpanded] = useState(false);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const isMobile = useIsMobile();
-
-  // Desktop shows everything in one drawer; mobile shows one section at a time.
-  const showLines = !isMobile || mobileSection === 'lines';
-  const showSettings = !isMobile || mobileSection === 'settings';
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.touches[0].clientX);
@@ -253,7 +229,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       </div>
 
       {/* Service Alerts Widget */}
-      {showLines && filteredCount > 0 && (
+      {filteredCount > 0 && (
         <div className="settings-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px', marginTop: '4px' }}>
           <button
             onClick={() => filteredCount > 0 && setIsAlertsExpanded(!isAlertsExpanded)}
@@ -433,134 +409,50 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       )}
 
       {/* Filter Section */}
-      {showLines && (
-        <div className="filter-scroll-area" style={{ marginTop: '8px' }}>
-          {selectedLines.length > 0 && (
-            <div className="panel-header-row">
-              <div style={{ flexGrow: 1 }} />
-              <button onClick={onClearFilters} className="clear-filters-btn">
-                Show All
-              </button>
-            </div>
-          )}
-
-          {activeLines.length === 0 ? (
-            <div style={{ fontSize: '0.75rem', color: '#64748b', padding: '16px 0', textAlign: 'center' }}>
-              Waiting for live vehicle stream...
-            </div>
-          ) : (
-            <div className="line-grid" style={{ marginTop: '8px' }}>
-              {activeLines.map((line) => {
-                const isSelected = selectedLines.includes(line);
-                const routeColor = getRouteColor(line);
-                return (
-                  <button
-                    key={line}
-                    onClick={() => onToggleLine(line)}
-                    className={`line-btn ${isSelected ? 'active' : ''}`}
-                    style={{
-                      // Tint each chip by its route colour: filled when active,
-                      // a colour accent (left bar + border) when idle.
-                      backgroundColor: isSelected ? routeColor : undefined,
-                      borderColor: routeColor,
-                      boxShadow: isSelected ? 'none' : `inset 3px 0 0 ${routeColor}`,
-                    }}
-                  >
-                    <span
-                      className="line-btn-label"
-                      style={{ color: isSelected ? '#ffffff' : undefined }}
-                    >
-                      {line}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {showSettings && (
-        <>
-          {/* Map Settings */}
-          <div className="settings-section">
-            <div className="legend-title">Settings</div>
-            <div className="settings-grid">
-              {/* Theme Toggle */}
-              <button
-                className={`settings-btn ${mapTheme === 'dark' ? 'active' : ''}`}
-                onClick={() => setMapTheme(mapTheme === 'light' ? 'dark' : 'light')}
-                title="Toggle light/dark theme"
-              >
-                <span className="settings-btn-icon">
-                  {mapTheme === 'light' ? <Sun size={12} /> : <Moon size={12} />}
-                </span>
-                <span>{mapTheme === 'light' ? 'Light' : 'Dark'}</span>
-              </button>
-
-              {/* 3D Map Toggle */}
-              <button
-                className={`settings-btn ${is3D ? 'active' : ''}`}
-                onClick={() => setIs3D(!is3D)}
-                title="Toggle 3D map mode"
-              >
-                <span className="settings-btn-icon">
-                  <Box size={12} />
-                </span>
-                <span>3D Map</span>
-              </button>
-
-              {/* Trams Toggle */}
-              <button
-                className={`settings-btn ${showTrams ? 'active' : ''}`}
-                onClick={() => setShowTrams(!showTrams)}
-                title="Toggle Trams"
-              >
-                <span className="settings-btn-icon">
-                  <TramFront size={12} />
-                </span>
-                <span>Trams</span>
-              </button>
-
-              {/* Buses Toggle */}
-              <button
-                className={`settings-btn ${showBuses ? 'active' : ''}`}
-                onClick={() => setShowBuses(!showBuses)}
-                title="Toggle Buses"
-              >
-                <span className="settings-btn-icon">
-                  <Bus size={12} />
-                </span>
-                <span>Buses</span>
-              </button>
-
-              {/* Metro Toggle */}
-              <button
-                className={`settings-btn ${showMetro ? 'active' : ''}`}
-                onClick={() => setShowMetro(!showMetro)}
-                title="Toggle Metro"
-              >
-                <span className="settings-btn-icon">
-                  <TrainFrontTunnel size={12} />
-                </span>
-                <span>Metro</span>
-              </button>
-
-              {/* Commuter Trains Toggle */}
-              <button
-                className={`settings-btn ${showTrains ? 'active' : ''}`}
-                onClick={() => setShowTrains(!showTrains)}
-                title="Toggle Commuter Trains"
-              >
-                <span className="settings-btn-icon">
-                  <TrainFront size={12} />
-                </span>
-                <span>Trains</span>
-              </button>
-            </div>
+      <div className="filter-scroll-area" style={{ marginTop: '8px' }}>
+        {selectedLines.length > 0 && (
+          <div className="panel-header-row">
+            <div style={{ flexGrow: 1 }} />
+            <button onClick={onClearFilters} className="clear-filters-btn">
+              Show All
+            </button>
           </div>
-        </>
-      )}
+        )}
+
+        {activeLines.length === 0 ? (
+          <div style={{ fontSize: '0.75rem', color: '#64748b', padding: '16px 0', textAlign: 'center' }}>
+            Waiting for live vehicle stream...
+          </div>
+        ) : (
+          <div className="line-grid" style={{ marginTop: '8px' }}>
+            {activeLines.map((line) => {
+              const isSelected = selectedLines.includes(line);
+              const routeColor = getRouteColor(line);
+              return (
+                <button
+                  key={line}
+                  onClick={() => onToggleLine(line)}
+                  className={`line-btn ${isSelected ? 'active' : ''}`}
+                  style={{
+                    // Tint each chip by its route colour: filled when active,
+                    // a colour accent (left bar + border) when idle.
+                    backgroundColor: isSelected ? routeColor : undefined,
+                    borderColor: routeColor,
+                    boxShadow: isSelected ? 'none' : `inset 3px 0 0 ${routeColor}`,
+                  }}
+                >
+                  <span
+                    className="line-btn-label"
+                    style={{ color: isSelected ? '#ffffff' : undefined }}
+                  >
+                    {line}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

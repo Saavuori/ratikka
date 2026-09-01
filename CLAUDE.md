@@ -37,7 +37,7 @@ HSL MQTT broker ──▶ backend (Go) ──▶ Redis (live coord cache)
 - Version strings (`Version`, `BuildDate`, `GitCommit`) live in `internal/api/handlers.go` and are injected at build time via `-ldflags` (default `"dev"`/`"unknown"` for local builds).
 
 ### Frontend — `frontend/` (React 19, TypeScript, Vite 8, MapLibre GL 5)
-- `src/components/` — Map plus glassmorphic panels/popups (`Map.tsx`, `FilterPanel.tsx`, `TramPopup.tsx`, `StopPopup.tsx`, `BikePopup.tsx`, `JourneySearch.tsx`, `BottomNav.tsx`, `VersionBadge.tsx`).
+- `src/components/` — Map plus glassmorphic panels/popups (`Map.tsx`, `FilterPanel.tsx`, `TramPopup.tsx`, `StopPopup.tsx`, `BikePopup.tsx`, `JourneySearch.tsx`, `ModeToggles.tsx` + `ViewToggles.tsx` (the map's two corner chip rows), `BottomNav.tsx`, `VersionBadge.tsx`).
 - `src/hooks/` — `useWebSocket`, `useTramData`, `useGeolocation`, `useIsMobile`, `useSwipeGestures`, `useCollapsiblePanel`.
 - `src/lib/` — `api.ts` (backend client), `lerp.ts` (60fps interpolation), `polyline.ts`, `trip.ts`,
   `metroTracks.ts` (projects the metro's dead-reckoned tunnel positions onto the line's

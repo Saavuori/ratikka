@@ -540,57 +540,11 @@ body {
   margin-bottom: 6px;
 }
 
-/* Map Settings Section */
+/* Section divider — now only the filter panel's service-alerts widget. */
 .settings-section {
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   margin-top: 8px;
-}
-
-.settings-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.settings-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 6px 8px;
-  background: var(--bg-button);
-  border: 1px solid var(--border-button);
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-size: 0.65rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  font-family: inherit;
-  box-sizing: border-box;
-  justify-content: flex-start;
-}
-
-.settings-btn:hover {
-  border-color: var(--border-button-hover);
-  background: var(--bg-button-hover);
-  transform: translateY(-1px);
-  color: #fff;
-}
-
-.settings-btn.active {
-  background: rgba(16, 185, 129, 0.12);
-  border-color: var(--accent-green);
-  color: #34d399;
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.1);
-}
-
-.settings-btn-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: inherit;
 }
 
 /* Close & Action Buttons */
@@ -1680,12 +1634,12 @@ body {
   }
 }
 
-/* Floating mode shortcut (top-right corner) — a partly see-through row of
-   tram / bus / metro / train chips mirroring the settings toggles. */
-.mode-toggles {
+/* Floating corner shortcuts — partly see-through chip groups pinned to the two
+   top corners of the map: vehicle modes on the right, map view (theme, 3D) on
+   the left. Together they replace the filter panel's old settings section. */
+.corner-toggles {
   position: absolute;
   top: 16px;
-  right: 16px;
   z-index: 104;
   display: flex;
   flex-direction: row;
@@ -1702,12 +1656,20 @@ body {
   transition: opacity 0.2s ease;
 }
 
-.mode-toggles:hover,
-.mode-toggles:focus-within {
+.mode-toggles {
+  right: 16px;
+}
+
+.view-toggles {
+  left: 16px;
+}
+
+.corner-toggles:hover,
+.corner-toggles:focus-within {
   opacity: 1;
 }
 
-.mode-toggle {
+.corner-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1724,28 +1686,32 @@ body {
     border-color 0.2s ease, color 0.2s ease;
 }
 
-.mode-toggle:hover {
+.corner-toggle:hover {
   transform: translateY(-1px);
   border-color: var(--border-button-hover);
   background: var(--bg-button-hover);
   color: var(--text-primary);
 }
 
-.mode-toggle.active:hover {
+.corner-toggle.active:hover {
   color: inherit;
 }
 
-.mode-toggle:focus-visible {
+.corner-toggle:focus-visible {
   border-color: var(--accent-green);
 }
 
 @media (max-width: 768px) {
-  /* Stack in the corner on phones: the journey launcher owns the top centre,
-     and a horizontal row would run into it on a narrow screen. */
-  .mode-toggles {
+  /* Stack in the corners on phones: the journey launcher owns the top centre,
+     and two horizontal rows would run into it on a narrow screen. */
+  .corner-toggles {
     top: 12px;
-    right: 12px;
     flex-direction: column;
-    border-radius: 9999px;
+  }
+  .mode-toggles {
+    right: 12px;
+  }
+  .view-toggles {
+    left: 12px;
   }
 }

@@ -11,6 +11,7 @@ import { StopPopup } from './components/StopPopup';
 import { BikePopup } from './components/BikePopup';
 import { VersionBadge } from './components/VersionBadge';
 import { ModeToggles } from './components/ModeToggles';
+import { ViewToggles } from './components/ViewToggles';
 import { BottomNav, type MobileTab } from './components/BottomNav';
 import { JourneySearch, type JourneySelection } from './components/JourneySearch';
 import { fetchRouteDetails, fetchAlerts, fetchTripDetails } from './lib/api';
@@ -135,9 +136,6 @@ function App() {
   const [isFilterCollapsed, setIsFilterCollapsed] = useState<boolean>(
     typeof window !== 'undefined' ? window.innerWidth <= 768 : false
   );
-
-  // Which half of the filter panel the mobile sheet shows (desktop shows both).
-  const [mobileFilterSection, setMobileFilterSection] = useState<'lines' | 'settings'>('lines');
 
   // Auto-collapse sidebar when a tram, stop, or bike station is selected on mobile
   useEffect(() => {
@@ -525,7 +523,7 @@ function App() {
   // null when none is — the map is then fully visible.
   const hasDetailSelection = !!(selectedTram || selectedStop || selectedBikeStation);
   const activeMobileTab: MobileTab | null = !isFilterCollapsed
-    ? mobileFilterSection
+    ? 'lines'
     : hasDetailSelection && !isDetailCollapsed
     ? 'details'
     : null;
@@ -536,14 +534,7 @@ function App() {
       setIsDetailCollapsed(!isDetailCollapsed);
       return;
     }
-    // 'settings' and 'lines' share one sheet, so tapping the other section swaps
-    // the contents while the sheet stays open.
-    if (!isFilterCollapsed && mobileFilterSection === tab) {
-      setIsFilterCollapsed(true);
-      return;
-    }
-    setMobileFilterSection(tab);
-    setIsFilterCollapsed(false);
+    setIsFilterCollapsed(!isFilterCollapsed);
   };
 
   return (
@@ -586,23 +577,14 @@ function App() {
         connectionStatus={connectionStatus}
         isCollapsed={isFilterCollapsed}
         onToggleCollapse={() => setIsFilterCollapsed(!isFilterCollapsed)}
-        mapTheme={mapTheme}
-        setMapTheme={setMapTheme}
-        is3D={is3D}
-        setIs3D={setIs3D}
         showTrams={showTrams}
-        setShowTrams={setShowTrams}
         showBuses={showBuses}
-        setShowBuses={setShowBuses}
         showMetro={showMetro}
-        setShowMetro={setShowMetro}
         showTrains={showTrains}
-        setShowTrains={setShowTrains}
         alerts={alerts}
         selectedTram={liveTram}
         selectedStop={selectedStop}
         selectedStopRoutes={selectedStopRoutes}
-        mobileSection={mobileFilterSection}
       />
 
       {/* Floating top-center tram telemetry card */}
@@ -680,6 +662,14 @@ function App() {
         setShowMetro={setShowMetro}
         showTrains={showTrains}
         setShowTrains={setShowTrains}
+      />
+
+      {/* Map view shortcuts: light/dark and 3D (top-left corner) */}
+      <ViewToggles
+        mapTheme={mapTheme}
+        setMapTheme={setMapTheme}
+        is3D={is3D}
+        setIs3D={setIs3D}
       />
 
       {/* Version Badge */}

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Settings, Route, Info } from 'lucide-react';
+import { Route, Info } from 'lucide-react';
 
-export type MobileTab = 'settings' | 'lines' | 'details';
+export type MobileTab = 'lines' | 'details';
 
 interface BottomNavProps {
   /** Currently expanded sheet, or null when the map is unobstructed. */
@@ -14,14 +14,6 @@ interface BottomNavProps {
 export const BottomNav: React.FC<BottomNavProps> = ({ active, hasDetails, onSelect }) => {
   return (
     <nav className="bottom-nav" aria-label="Main navigation">
-      <button
-        aria-expanded={active === 'settings'}
-        className={`bottom-nav-btn ${active === 'settings' ? 'active' : ''}`}
-        onClick={() => onSelect('settings')}
-      >
-        <Settings size={19} />
-        <span>Settings</span>
-      </button>
       <button
         aria-expanded={active === 'lines'}
         className={`bottom-nav-btn ${active === 'lines' ? 'active' : ''}`}
