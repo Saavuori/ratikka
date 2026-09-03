@@ -1,9 +1,14 @@
 // Dead reckoning between position reports.
 //
-// The metro feed is the sparsest on the map. The trains spend most of their
-// run in tunnel, and while they do, HFP goes quiet for seconds at a time — the
-// backend keeps rebroadcasting the last known point every second, so from the
-// frontend's side the train simply stops reporting without saying so.
+// The metro feed is the sparsest on the map — but not in the way it first
+// appears. Measured off the live HFP feed, the messages arrive at a steady 1 Hz
+// like every other mode's; what stands still is their *contents*. A train
+// repeats its previous coordinate and speed for about three seconds at a time
+// between stations, and far longer at them (median five and a half seconds,
+// nine in ten under forty-seven, up to a minute observed), while only the
+// timestamp ticks. The backend faithfully caches and rebroadcasts what it is
+// given, so from the frontend's side the train simply stops moving without
+// saying so.
 //
 // The animation used to have nothing to say about that silence. It eased into
 // the last reported point, arrived, and froze; then the next report landed
@@ -35,11 +40,27 @@ export const ACC_HORIZON = 4;
 // speed so a spurious acceleration reading cannot outrun the train.
 export const MAX_SPEED = 22;
 
-// Give up predicting after this many seconds of silence. Beyond it the train
-// has most likely stopped reporting for a reason we cannot model — end of
-// journey, a long dwell, a dead radio — and a confident-looking position
-// invented from a twenty-second-old speed is worse than a stale one.
-export const MAX_AGE = 20;
+// Give up predicting after this many seconds without a new position. Beyond it
+// the train has most likely stopped moving for a reason its last speed cannot
+// describe — berthing at a platform, a long dwell, end of journey — and a
+// confident-looking position invented from a reading that old is worse than a
+// stale one.
+//
+// Eight seconds is where the live feed puts the knee. A held coordinate between
+// stations lasts 2.6 s at the median and 4.2 s at the ninetieth percentile, so
+// eight covers essentially all of them, and over those windows the held speed
+// predicts the eventual jump to within about a tenth (median ratio 0.99). The
+// long holds are the ones at platforms, where the frozen message keeps
+// reporting the speed the train came in at while it is in fact slowing, dwelling
+// and leaving — the same ratio there ranges from 0.2 to 5.7, so the reading
+// says nothing useful. Replaying a captured feed, extending the horizon buys
+// steadily less and costs sharply more: at 8 s a correction pulls a train back
+// by at most 43 m and by 18 m at the ninetieth percentile, at 12 s that is 66
+// and 44, and at 20 s it is 199 and 145 — a train visibly running past its
+// platform and being yanked back. Stopping at eight keeps the train still for
+// the part of a station dwell we cannot model, which is also what it is
+// actually doing.
+export const MAX_AGE = 8;
 
 // Integration step, in seconds. The speed curve is piecewise linear, so the
 // trapezoid rule is exact except at the two breakpoints; this only bounds the
@@ -111,4 +132,23 @@ export function glideFraction(
   const span = predictedAdvance(spd, acc, ageStart, ageStart + 1);
   if (span <= 0.01) return smoothstep(x);
   return clamp(predictedAdvance(spd, acc, ageStart, ageStart + x) / span, 0, 1);
+}
+
+/**
+ * Whether a snapshot carries a position the animation has not already seen.
+ *
+ * This is the whole distinction the metro's motion turns on, so it is stated
+ * once, here. HFP repeats a metro's coordinate for seconds at a time while the
+ * timestamp on it keeps ticking, and the backend rebroadcasts its cache every
+ * second on top of that — so neither the timestamp nor the fact that a message
+ * arrived says anything about whether the train has been somewhere new. Only
+ * the coordinate does. Treating a ticking timestamp as a fresh report re-anchors
+ * the train on its own stale position every second, which leaves nothing for the
+ * dead reckoning to carry forward.
+ */
+export function hasMoved(
+  previous: { lat: number; lng: number } | undefined,
+  next: { lat: number; lng: number }
+): boolean {
+  return !previous || previous.lat !== next.lat || previous.lng !== next.lng;
 }
