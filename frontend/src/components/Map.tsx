@@ -40,6 +40,13 @@ import {
   ROUTE_LINE_OPACITY,
   ROUTE_LINE_SORT_KEY,
 } from '../lib/routeLineStyle';
+import {
+  vehicleExtrusionCollection,
+  VEHICLE_3D_MIN_ZOOM,
+  VEHICLE_3D_FADE_IN,
+  VEHICLE_ICON_FADE_OUT,
+} from '../lib/vehicleModels';
+import type { VehicleState } from '../lib/vehicleModels';
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection, TrafficLightFeature } from '../types';
 import { useTrafficLights } from '../hooks/useTrafficLights';
@@ -222,6 +229,9 @@ export const Map: React.FC<MapProps> = ({
   const showMetroRef = useRef<boolean>(showMetro);
   const showTrainsRef = useRef<boolean>(showTrains);
   const is3DRef = useRef<boolean>(is3D);
+  // Whether the 3D source currently holds bodies, so it is emptied exactly once
+  // when 3D is switched off or the view zooms back out.
+  const vehicles3dDrawnRef = useRef<boolean>(false);
   const mapThemeRef = useRef<'light' | 'dark'>(mapTheme);
   const isFollowingRef = useRef<boolean>(isFollowing);
   const isInteractingRef = useRef<boolean>(false);
@@ -624,6 +634,24 @@ export const Map: React.FC<MapProps> = ({
       if (map.getLayer(custom3DId)) {
         map.setLayoutProperty(custom3DId, 'visibility', 'none');
       }
+    }
+
+    // 4. Swap the flat carriage icons for the extruded vehicle bodies. Both are
+    //    drawn while the view crosses the fade band, one going out as the other
+    //    comes in; in 2D the icons are simply opaque and the bodies hidden.
+    if (map.getLayer('vehicles-3d')) {
+      map.setLayoutProperty('vehicles-3d', 'visibility', active ? 'visible' : 'none');
+    }
+    if (map.getLayer('trams-body')) {
+      map.setPaintProperty('trams-body', 'icon-opacity', (active ? VEHICLE_ICON_FADE_OUT : 1) as maplibregl.DataDrivenPropertyValueSpecification<number>);
+    }
+    if (map.getLayer('trams-brake')) {
+      map.setPaintProperty('trams-brake', 'icon-opacity', [
+        'case',
+        ['any', ['get', 'stopped'], ['<', ['get', 'acc'], -0.35]],
+        active ? VEHICLE_ICON_FADE_OUT : 1,
+        0,
+      ] as unknown as maplibregl.DataDrivenPropertyValueSpecification<number>);
     }
   };
 
@@ -1029,6 +1057,31 @@ export const Map: React.FC<MapProps> = ({
           type: 'FeatureCollection',
           features,
         });
+      }
+
+      // 3D bodies for the tilted view, from the same interpolated positions the
+      // flat icons use. Built only while 3D is on and the view is close enough
+      // for the layer to draw: extruding every vehicle is several polygons each,
+      // and there is no point paying for it to render nothing.
+      const source3d = map.getSource('vehicles-3d') as maplibregl.GeoJSONSource | undefined;
+      if (source3d) {
+        const draw3d = is3DRef.current && map.getZoom() >= VEHICLE_3D_MIN_ZOOM;
+        if (draw3d || vehicles3dDrawnRef.current) {
+          const states: VehicleState[] = draw3d
+            ? features.map((f) => ({
+                veh: f.properties.veh,
+                lng: f.geometry.coordinates[0],
+                lat: f.geometry.coordinates[1],
+                hdg: f.properties.hdg,
+                mode: f.properties.mode,
+                desi: f.properties.desi,
+                doorsOpen: f.properties.doorsOpen,
+                selected: f.properties.veh === selectedTramIdRef.current,
+              }))
+            : [];
+          source3d.setData(vehicleExtrusionCollection(states));
+          vehicles3dDrawnRef.current = draw3d;
+        }
       }
 
       // Update next stop highlight and route line segment
@@ -1742,6 +1795,37 @@ export const Map: React.FC<MapProps> = ({
             ['any', ['get', 'stopped'], ['<', ['get', 'acc'], -0.35]], 1,
             0,
           ],
+        },
+      });
+    }
+
+    // 7c. 3D vehicle bodies. In the tilted view the flat carriage icons give way
+    //     to extruded boxes at real vehicle scale (lib/vehicleModels), built from
+    //     the same anatomy the popup schematics draw: a 27 m tram, a boxy bus, the
+    //     metro's coupled pair with the gap between its units, and a 75 m commuter
+    //     train with its pantograph. Colour, height and base all come from the
+    //     feature, so one layer draws bodies, window bands and roof details.
+    //     Populated only while 3D is on (see the animation loop), and faded in
+    //     across the same zooms the flat icons fade out over, so the swap between
+    //     the two is a crossfade rather than a pop.
+    if (!map.getSource('vehicles-3d')) {
+      map.addSource('vehicles-3d', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    if (!map.getLayer('vehicles-3d')) {
+      map.addLayer({
+        id: 'vehicles-3d',
+        type: 'fill-extrusion',
+        source: 'vehicles-3d',
+        minzoom: VEHICLE_3D_MIN_ZOOM,
+        layout: { visibility: is3DRef.current ? 'visible' : 'none' },
+        paint: {
+          'fill-extrusion-color': ['get', 'color'],
+          'fill-extrusion-height': ['get', 'top'],
+          'fill-extrusion-base': ['get', 'base'],
+          'fill-extrusion-opacity': VEHICLE_3D_FADE_IN as maplibregl.PropertyValueSpecification<number>,
         },
       });
     }

@@ -169,8 +169,8 @@ out of the `feat:` pattern so a batch of them cuts a patch, not a minor.
 
 ### Verifying the map
 
-Nothing about the map is checked by `tsc` or the unit tests. There are three
-separate failure modes and a script for each — **run all three**; passing one
+Nothing about the map is checked by `tsc` or the unit tests. There are four
+separate failure modes and a script for each — **run all four**; passing one
 proves nothing about the others.
 
 ```bash
@@ -181,6 +181,7 @@ npm i --no-save playwright                # from the repo root, once per checkou
 node scripts/verify-map-layers.mjs        # 1. are the layer specs valid?
 DIGITRANSIT_API_KEY=... node scripts/verify-map-renders.mjs   # 2. does it draw?
 node scripts/verify-route-offsets.mjs     # 3. does it draw in the right place?
+node scripts/verify-vehicle-3d.mjs        # 4. do the 3D vehicles have the right shape?
 ```
 
 Playwright is intentionally not a devDependency, to keep `npm install` lean.
@@ -222,6 +223,21 @@ about a street of its route. The offset expression's zoom stops are also unit
 tested in CI (`routeLineStyle.test.ts`, evaluated through MapLibre's own style
 spec), so the arithmetic is guarded on every PR; the script is what proves the
 renderer agrees.
+
+**4. 3D vehicle bodies** (`verify-vehicle-3d.mjs`) — draws each mode's extruded
+body on a blank basemap and measures it: the painted length against the modelled
+one, the size order across modes, that the body turns with its heading, that a
+tilted body has walls standing above its footprint, that nothing is extruded
+below the fade-in zoom, and that the doors-open band is visible on the flank.
+Needs no key.
+
+In 3D view the flat carriage icons give way to `fill-extrusion` boxes at real
+vehicle scale (`frontend/src/lib/vehicleModels.ts`), and extrusion geometry is
+in **metres on the ground**, not icon pixels — so both ways it goes wrong still
+render something plausible: a body at the wrong size or heading is still a box,
+and a body with no height at all is still a filled footprint seen from above.
+The dimensions are unit tested in CI (`vehicleModels.test.ts`); this script is
+what proves the renderer agrees.
 
 ## Conventions
 
