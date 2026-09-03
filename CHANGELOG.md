@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.55.2] - 2026-09-03
+
+### Fixed
+- **The 3D doors actually open instead of just changing colour**: a doorway that recolours in place is not a door opening — shut and open drew the same panel in two colours, which said less than the popup schematic's parted leaves it was meant to echo. Each doorway is now a pair of leaves that meet in the middle when shut and slide their own width clear when the real doors open, uncovering an amber doorway in the gap between them; the leaves keep their own colour, so it is the movement that reads. The window band, the doorway and the leaves each stand a little further proud of the flank, so none of the three z-fights with the others, and the doorway is only drawn while it can be seen.
+
+---
+
 ## [v0.55.1] - 2026-09-03
 
 ### Fixed

@@ -88,15 +88,15 @@ describe('vehicleExtrusions', () => {
     expect(parts.filter((p) => p.properties.part === 'body')).toHaveLength(2);
     expect(parts.filter((p) => p.properties.part === 'glass')).toHaveLength(2);
     expect(parts.filter((p) => p.properties.part === 'roof')).toHaveLength(2);
-    // Two door sets per unit, a leaf on each flank.
-    expect(parts.filter((p) => p.properties.part === 'door')).toHaveLength(8);
+    // Two door sets per unit, two leaves on each flank of each.
+    expect(parts.filter((p) => p.properties.part === 'door')).toHaveLength(16);
   });
 
-  it('puts a door on both flanks at every door position', () => {
+  it('puts a pair of leaves on both flanks at every door position', () => {
     for (const mode of ['tram', 'bus', 'train', 'metro']) {
       const parts = vehicleExtrusions({ ...base, mode });
       expect(parts.filter((p) => p.properties.part === 'door')).toHaveLength(
-        vehicleModel(mode).doors.length * 2
+        vehicleModel(mode).doors.length * 4
       );
     }
   });
@@ -139,12 +139,36 @@ describe('vehicleExtrusions', () => {
     expect(vehicleBodyColor('train', 'Q')).toBe(TRAIN_PURPLE);
   });
 
-  it('turns the doors amber while they are open, leaving the glass alone', () => {
+  it('slides the leaves apart and uncovers the doorway when the doors open', () => {
     const shut = vehicleExtrusions({ ...base, mode: 'tram' });
     const open = vehicleExtrusions({ ...base, mode: 'tram', doorsOpen: true });
-    expect(shut.find((p) => p.properties.part === 'door')!.properties.color).toBe(DOOR_COLOR);
-    expect(open.find((p) => p.properties.part === 'door')!.properties.color).toBe(DOORS_OPEN_COLOR);
+
+    // The leaves keep their own colour either way — it is the movement, and the
+    // doorway it uncovers, that says the doors are open.
+    expect(shut.every((p) => p.properties.part !== 'door' || p.properties.color === DOOR_COLOR)).toBe(true);
+    expect(open.every((p) => p.properties.part !== 'door' || p.properties.color === DOOR_COLOR)).toBe(true);
+
+    // A doorway exists only while the doors are open, and it is the amber one.
+    expect(shut.some((p) => p.properties.part === 'doorway')).toBe(false);
+    const doorways = open.filter((p) => p.properties.part === 'doorway');
+    expect(doorways).toHaveLength(vehicleModel('tram').doors.length * 2);
+    expect(doorways[0].properties.color).toBe(DOORS_OPEN_COLOR);
+
+    // And the leaves really move: no leaf is where it was when shut.
+    const ring = (parts: typeof shut) =>
+      parts.filter((p) => p.properties.part === 'door').map((p) => JSON.stringify(p.geometry.coordinates));
+    expect(ring(open).some((r) => ring(shut).includes(r))).toBe(false);
+
     expect(open.find((p) => p.properties.part === 'glass')!.properties.color).toBe(GLASS_COLOR);
+  });
+
+  it('keeps the parted leaves inside the body', () => {
+    for (const mode of ['tram', 'bus', 'train', 'metro']) {
+      const model = vehicleModel(mode);
+      const reach = Math.max(...model.doors.map((d) => Math.abs(d))) + model.doorWidth;
+      const front = Math.max(...model.sections.map((s) => s.front));
+      expect(reach).toBeLessThan(front);
+    }
   });
 
   it('turns a selected vehicle gold', () => {
