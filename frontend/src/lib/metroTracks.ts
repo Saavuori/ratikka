@@ -329,3 +329,32 @@ export function placeOnTracks(
     track: { line, index: fix.trackIndex, distance: fix.distance, forward },
   };
 }
+
+/**
+ * Whether a line number names a metro line. HSL spells the metro's `desi` as
+ * "M" plus a digit ("M1", "M2", and their short-turn variants); trams are bare
+ * numbers and commuter trains single letters, so that shape is the whole test.
+ */
+export function isMetroLine(desi: string | undefined | null): boolean {
+  return !!desi && /^M\d/i.test(desi);
+}
+
+/**
+ * The distinct metro lines present in a feed snapshot, sorted.
+ *
+ * Sorting is what makes this usable as a fetch dependency: the snapshot is a
+ * fresh object every second and its key order is not stable, so the lines have
+ * to reduce to the same value each time or the geometry would be re-fetched
+ * once a second.
+ */
+export function metroLinesInFeed(
+  vehicles: Record<string, { mode?: string; desi?: string }>
+): string[] {
+  const lines = new Set<string>();
+  for (const vehicle of Object.values(vehicles)) {
+    if (vehicle.mode === 'metro' && isMetroLine(vehicle.desi)) {
+      lines.add(vehicle.desi as string);
+    }
+  }
+  return [...lines].sort();
+}

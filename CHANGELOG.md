@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.54.1] - 2026-09-03
+
+### Fixed
+- **Metro dead reckoning actually runs now, so trains stop looking frozen**: the prediction that carries a metro train down its tunnel through the seconds the feed is silent needs the line's track geometry, and it was reading that from the same state the map uses to *draw* highlighted route ribbons — which only holds a line while it is selected, or a stop or a vehicle on it is. In the ordinary view (metro switched on, nothing selected) there were no tracks, so no train was ever snapped to one, no position fix was ever recorded and nothing was ever predicted forward: every metro train sat still between reports and then jumped, exactly the motion v0.53.2 was written to remove. The metro's polylines are now fetched on their own, once per page load, for whichever metro lines are actually in the feed, and they never reach the map style — so the snapping, the along-track glide and the dead reckoning work whether or not a line is highlighted, and switching the metro off costs no request at all.
+
+---
+
 ## [v0.54.0] - 2026-09-01
 
 ### Changed
