@@ -155,6 +155,7 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false }) =>
       // The amber the window band turns while the doors are open (#ffb020),
       // shaded by MapLibre's lighting, so the match is a band not a value.
       let amber = 0;
+      let cab = 0;
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (let y = 0; y < scan.height; y++) {
         for (let x = 0; x < scan.width; x++) {
@@ -163,6 +164,8 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false }) =>
           if (px[i] > 245 && px[i + 1] > 245 && px[i + 2] > 245) continue;
           painted++;
           if (px[i] > 150 && px[i + 1] > 90 && px[i + 1] < 200 && px[i + 2] < 80) amber++;
+          // The pale blue cab patch (#9fd8f2), likewise shaded.
+          if (px[i] > 110 && px[i] < 200 && px[i + 1] > 150 && px[i + 2] > 190) cab++;
           minX = Math.min(minX, x / dpr); maxX = Math.max(maxX, x / dpr);
           minY = Math.min(minY, y / dpr); maxY = Math.max(maxY, y / dpr);
         }
@@ -184,7 +187,7 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false }) =>
       })();
 
       map.remove();
-      return { painted, amber, minX, maxX, minY, maxY, groundTop, metersPerPixel };
+      return { painted, amber, cab, minX, maxX, minY, maxY, groundTop, metersPerPixel };
     },
     { mode, hdg, zoom, pitch, doorsOpen, center: CENTER, minZoom: VEHICLE_3D_MIN_ZOOM }
   );
@@ -262,16 +265,28 @@ check(
   );
 }
 
-// 6. The window band has to stand proud of the flanks, or the doors-open cue is
-//    swallowed by the body it is drawn inside. Only a tilted view can see it —
-//    from straight above the roof hides the band entirely.
+// 6. The doors have to stand proud of the flanks, or the doors-open cue is
+//    swallowed by the body they are drawn inside. Only a tilted view can see
+//    them — from straight above the roof hides the whole flank.
 {
   const shut = await render({ mode: 'bus', zoom: 18, pitch: 60 });
   const open = await render({ mode: 'bus', zoom: 18, pitch: 60, doorsOpen: true });
   check(
-    'the doors-open band is visible on the flank of a tilted body',
+    'open doors are visible on the flank of a tilted body',
     open.amber > 20 && shut.amber === 0,
     `${open.amber} amber px with the doors open, ${shut.amber} with them shut`
+  );
+}
+
+// 7. The cab patch marks the driving end on the roof, which is where a map
+//    camera can see it — it is what says which way the vehicle faces once the
+//    flat icon's nose nub has faded out.
+{
+  const seen = await render({ mode: 'tram', zoom: 18, pitch: 45 });
+  check(
+    'the cab patch is visible on the roof',
+    seen.cab > 20,
+    `${seen.cab} px of cab patch`
   );
 }
 

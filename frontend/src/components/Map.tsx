@@ -1067,17 +1067,29 @@ export const Map: React.FC<MapProps> = ({
       if (source3d) {
         const draw3d = is3DRef.current && map.getZoom() >= VEHICLE_3D_MIN_ZOOM;
         if (draw3d || vehicles3dDrawnRef.current) {
+          // A body is a dozen polygons, against one point for the flat icon, so
+          // only what is actually on screen is built — at these zooms that is a
+          // handful of vehicles out of the whole feed. Padded by a body length
+          // so a train is not clipped as it enters the view.
+          const bounds = draw3d ? map.getBounds().toArray() : null;
+          const pad = 0.0012;
+          const onScreen = (lng: number, lat: number) =>
+            !bounds ||
+            (lng >= bounds[0][0] - pad && lng <= bounds[1][0] + pad &&
+             lat >= bounds[0][1] - pad && lat <= bounds[1][1] + pad);
           const states: VehicleState[] = draw3d
-            ? features.map((f) => ({
-                veh: f.properties.veh,
-                lng: f.geometry.coordinates[0],
-                lat: f.geometry.coordinates[1],
-                hdg: f.properties.hdg,
-                mode: f.properties.mode,
-                desi: f.properties.desi,
-                doorsOpen: f.properties.doorsOpen,
-                selected: f.properties.veh === selectedTramIdRef.current,
-              }))
+            ? features
+                .filter((f) => onScreen(f.geometry.coordinates[0], f.geometry.coordinates[1]))
+                .map((f) => ({
+                  veh: f.properties.veh,
+                  lng: f.geometry.coordinates[0],
+                  lat: f.geometry.coordinates[1],
+                  hdg: f.properties.hdg,
+                  mode: f.properties.mode,
+                  desi: f.properties.desi,
+                  doorsOpen: f.properties.doorsOpen,
+                  selected: f.properties.veh === selectedTramIdRef.current,
+                }))
             : [];
           source3d.setData(vehicleExtrusionCollection(states));
           vehicles3dDrawnRef.current = draw3d;

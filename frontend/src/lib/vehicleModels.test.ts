@@ -8,7 +8,9 @@ import {
   vehicleModel,
   VEHICLE_MODELS,
   GLASS_COLOR,
+  DOOR_COLOR,
   DOORS_OPEN_COLOR,
+  CAB_COLOR,
   SELECTED_COLOR,
 } from './vehicleModels';
 import { METRO_ORANGE, TRAIN_PURPLE, BUS_BLUE, TRAM_GREEN, ROUTE_COLORS } from './routeColors';
@@ -82,10 +84,32 @@ describe('vehicleExtrusions', () => {
 
   it('gives the metro its two coupled units', () => {
     const parts = vehicleExtrusions({ ...base, mode: 'metro', desi: 'M1' });
-    // Two bodies and a window band around each.
+    // Two bodies, a window band around each, and the white band down each roof.
     expect(parts.filter((p) => p.properties.part === 'body')).toHaveLength(2);
     expect(parts.filter((p) => p.properties.part === 'glass')).toHaveLength(2);
-    expect(parts.some((p) => p.properties.part === 'roof')).toBe(false);
+    expect(parts.filter((p) => p.properties.part === 'roof')).toHaveLength(2);
+    // Two door sets per unit, a leaf on each flank.
+    expect(parts.filter((p) => p.properties.part === 'door')).toHaveLength(8);
+  });
+
+  it('puts a door on both flanks at every door position', () => {
+    for (const mode of ['tram', 'bus', 'train', 'metro']) {
+      const parts = vehicleExtrusions({ ...base, mode });
+      expect(parts.filter((p) => p.properties.part === 'door')).toHaveLength(
+        vehicleModel(mode).doors.length * 2
+      );
+    }
+  });
+
+  it('lays a cab patch on the roof at each driving end', () => {
+    const tram = vehicleExtrusions({ ...base, mode: 'tram' }).filter((p) => p.properties.part === 'cab');
+    const bus = vehicleExtrusions({ ...base, mode: 'bus' }).filter((p) => p.properties.part === 'cab');
+    // A tram reverses at the terminus and has a cab at both ends; a bus turns.
+    expect(tram).toHaveLength(2);
+    expect(bus).toHaveLength(1);
+    expect(tram[0].properties.color).toBe(CAB_COLOR);
+    // On the roof, not inside the body.
+    expect(tram[0].properties.base).toBeGreaterThanOrEqual(VEHICLE_MODELS.tram.height);
   });
 
   it('gives the commuter train a pantograph above its roof', () => {
@@ -115,11 +139,12 @@ describe('vehicleExtrusions', () => {
     expect(vehicleBodyColor('train', 'Q')).toBe(TRAIN_PURPLE);
   });
 
-  it('turns the window band amber while the doors are open', () => {
+  it('turns the doors amber while they are open, leaving the glass alone', () => {
     const shut = vehicleExtrusions({ ...base, mode: 'tram' });
     const open = vehicleExtrusions({ ...base, mode: 'tram', doorsOpen: true });
-    expect(shut.find((p) => p.properties.part === 'glass')!.properties.color).toBe(GLASS_COLOR);
-    expect(open.find((p) => p.properties.part === 'glass')!.properties.color).toBe(DOORS_OPEN_COLOR);
+    expect(shut.find((p) => p.properties.part === 'door')!.properties.color).toBe(DOOR_COLOR);
+    expect(open.find((p) => p.properties.part === 'door')!.properties.color).toBe(DOORS_OPEN_COLOR);
+    expect(open.find((p) => p.properties.part === 'glass')!.properties.color).toBe(GLASS_COLOR);
   });
 
   it('turns a selected vehicle gold', () => {
@@ -141,7 +166,10 @@ describe('vehicleExtrusions', () => {
       { ...base, veh: 'v2', mode: 'metro', desi: 'M2' },
     ]);
     expect(fc.type).toBe('FeatureCollection');
-    expect(fc.features).toHaveLength(2 + 4);
+    expect(fc.features).toHaveLength(
+      vehicleExtrusions({ ...base, mode: 'tram' }).length +
+        vehicleExtrusions({ ...base, veh: 'v2', mode: 'metro', desi: 'M2' }).length
+    );
     expect(new Set(fc.features.map((f) => f.properties.veh))).toEqual(new Set(['v1', 'v2']));
   });
 });
