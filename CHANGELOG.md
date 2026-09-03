@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.56.0] - 2026-09-03
+
+### Added
+- **A switch that takes the route lines off the map**: the map's densest ink is the route network — the tiled JORE lines under everything and, once a line or a vehicle is picked, the fanned per-line ribbons on top. Useful for seeing where a line runs, in the way when what you want is the vehicles and the streets beneath them. The view chips in the corner now carry a third switch that hides both at once, leaving the vehicles, stops and any planned journey on a clean basemap. It is on by default, remembers the choice across visits, and is independent of the per-mode toggles: switching route lines back on restores exactly the network those toggles and the current selection call for.
+
+---
+
 ## [v0.55.2] - 2026-09-03
 
 ### Fixed

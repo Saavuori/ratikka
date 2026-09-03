@@ -1,21 +1,24 @@
 import React from 'react';
-import { Sun, Moon, Box } from 'lucide-react';
+import { Sun, Moon, Box, Route } from 'lucide-react';
 
 interface ViewTogglesProps {
   mapTheme: 'light' | 'dark';
   setMapTheme: (theme: 'light' | 'dark') => void;
   is3D: boolean;
   setIs3D: (is3D: boolean) => void;
+  showRoutes: boolean;
+  setShowRoutes: (show: boolean) => void;
 }
 
 const ICON_SIZE = 16;
 
-/** The accent both view chips light up with when they are on. */
+/** The accent the view chips light up with when they are on. */
 const VIEW_ACCENT = '#34d399';
 
 /**
- * Floating corner shortcut for the two map-view switches — light/dark basemap
- * and 2D/3D pitch. It mirrors ModeToggles on the opposite corner, and together
+ * Floating corner shortcut for the three map-view switches — light/dark
+ * basemap, route lines on/off, and 2D/3D pitch. It mirrors ModeToggles on the
+ * opposite corner, and together
  * the two rows carry everything the old settings section held, which is why
  * that section (and the mobile "Settings" sheet behind it) is gone.
  */
@@ -24,6 +27,8 @@ export const ViewToggles: React.FC<ViewTogglesProps> = ({
   setMapTheme,
   is3D,
   setIs3D,
+  showRoutes,
+  setShowRoutes,
 }) => {
   const isDark = mapTheme === 'dark';
 
@@ -35,6 +40,13 @@ export const ViewToggles: React.FC<ViewTogglesProps> = ({
       label: `Switch to ${isDark ? 'light' : 'dark'} map`,
       active: isDark,
       toggle: () => setMapTheme(isDark ? 'light' : 'dark'),
+    },
+    {
+      key: 'routes',
+      icon: <Route size={ICON_SIZE} />,
+      label: `${showRoutes ? 'Hide' : 'Show'} route lines`,
+      active: showRoutes,
+      toggle: () => setShowRoutes(!showRoutes),
     },
     {
       key: '3d',

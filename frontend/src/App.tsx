@@ -64,6 +64,13 @@ function App() {
   const [showTrains, setShowTrains] = useState<boolean>(() => {
     return readStorage('showTrains') === 'true';
   });
+  // Route lines (the JORE background network and the highlighted per-line
+  // ribbons) are the map's densest ink: handy for seeing where a line goes,
+  // in the way when you only want the vehicles and the streets under them.
+  // On by default — hiding them is the deliberate choice.
+  const [showRoutes, setShowRoutes] = useState<boolean>(() => {
+    return readStorage('showRoutes') !== 'false';
+  });
 
   // Drive the WebSocket here (after the mode toggles are declared) so the
   // backend knows which optional feeds to ingest. Trams always stream.
@@ -100,6 +107,10 @@ function App() {
   useEffect(() => {
     writeStorage('showTrains', String(showTrains));
   }, [showTrains]);
+
+  useEffect(() => {
+    writeStorage('showRoutes', String(showRoutes));
+  }, [showRoutes]);
 
   // UI Selection States
   const [selectedTram, setSelectedTram] = useState<VehiclePosition | null>(null);
@@ -563,6 +574,7 @@ function App() {
         showBuses={showBuses}
         showMetro={showMetro}
         showTrains={showTrains}
+        showRoutes={showRoutes}
         selectedTripDetails={selectedTripDetails}
         journeyLegs={journey?.itinerary.legs ?? null}
         journeyEndpoints={journey ? { from: journey.from, to: journey.to } : null}
@@ -670,6 +682,8 @@ function App() {
         setMapTheme={setMapTheme}
         is3D={is3D}
         setIs3D={setIs3D}
+        showRoutes={showRoutes}
+        setShowRoutes={setShowRoutes}
       />
 
       {/* Version Badge */}

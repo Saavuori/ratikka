@@ -105,6 +105,7 @@ interface MapProps {
   showBuses: boolean;
   showMetro: boolean;
   showTrains: boolean;
+  showRoutes: boolean;
   selectedTripDetails: TripDetailsResponse | null;
   journeyLegs?: JourneyLeg[] | null;
   journeyEndpoints?: { from: JourneyEndpoint; to: JourneyEndpoint } | null;
@@ -191,6 +192,7 @@ export const Map: React.FC<MapProps> = ({
   showBuses,
   showMetro,
   showTrains,
+  showRoutes,
   selectedTripDetails,
   journeyLegs = null,
   journeyEndpoints = null,
@@ -234,6 +236,7 @@ export const Map: React.FC<MapProps> = ({
   const showBusesRef = useRef<boolean>(showBuses);
   const showMetroRef = useRef<boolean>(showMetro);
   const showTrainsRef = useRef<boolean>(showTrains);
+  const showRoutesRef = useRef<boolean>(showRoutes);
   const is3DRef = useRef<boolean>(is3D);
   // Whether the 3D source currently holds bodies, so it is emptied exactly once
   // when 3D is switched off or the view zooms back out.
@@ -311,6 +314,10 @@ export const Map: React.FC<MapProps> = ({
   }, [showTrains]);
 
   useEffect(() => {
+    showRoutesRef.current = showRoutes;
+  }, [showRoutes]);
+
+  useEffect(() => {
     is3DRef.current = is3D;
   }, [is3D]);
 
@@ -357,6 +364,14 @@ export const Map: React.FC<MapProps> = ({
   ];
   const otherRouteLayers = [
     'route_ferry',
+  ];
+  // The highlighted per-line ribbons drawn from the fetched pattern geometry.
+  // They are route lines too, so the "route lines" switch has to take them with
+  // it — hiding only the tiled network would leave the selection's ribbons
+  // painted on an otherwise bare map.
+  const routeRibbonLayers = [
+    'route-lines-casing',
+    'route-lines-layer',
   ];
 
   // Each background route layer's own (mode/trunk) filter, mirrored from the
@@ -527,6 +542,11 @@ export const Map: React.FC<MapProps> = ({
   //   only a vehicle selected → buses drawn as context, minus that vehicle's
   //     line, faded so the selected route reads first.
   //   nothing selected → trams as ribbons, the bus network at full strength.
+  //
+  // `routes` is the ViewToggles "route lines" switch and sits above all of that:
+  // when it is off nothing route-shaped is drawn — neither the tiled network nor
+  // the highlighted ribbons — leaving the vehicles, stops and any planned
+  // journey on a clean basemap.
   const updateRouteVisibility = (
     map: maplibregl.Map,
     trams: boolean,
@@ -536,6 +556,7 @@ export const Map: React.FC<MapProps> = ({
     lines: string[],
     selectedLine: string | null,
     ribbonLines: string[] = [],
+    routes = true,
   ) => {
     const highlighted = lines.length > 0;
     const context = !highlighted && !!selectedLine;
@@ -565,24 +586,25 @@ export const Map: React.FC<MapProps> = ({
       map.setPaintProperty(layerId, 'line-opacity', context ? 0.3 : 1);
     };
     tramRouteLayers.forEach((layerId) => {
-      setVisible(layerId, trams && !highlighted && !ribboned);
+      setVisible(layerId, routes && trams && !highlighted && !ribboned);
       applyLineFilter(layerId);
     });
     busRouteLayers.forEach((layerId) => {
-      setVisible(layerId, buses && !highlighted);
+      setVisible(layerId, routes && buses && !highlighted);
       applyLineFilter(layerId);
     });
     // Metro and train lines are ribboned like trams (few enough lines to fetch a
     // pattern each), so their tiles give way to the ribbons the same way.
     metroRouteLayers.forEach((layerId) => {
-      setVisible(layerId, metro && !highlighted && !ribboned);
+      setVisible(layerId, routes && metro && !highlighted && !ribboned);
       applyLineFilter(layerId);
     });
     trainRouteLayers.forEach((layerId) => {
-      setVisible(layerId, trains && !highlighted && !ribboned);
+      setVisible(layerId, routes && trains && !highlighted && !ribboned);
       applyLineFilter(layerId);
     });
     otherRouteLayers.forEach((layerId) => setVisible(layerId, false));
+    routeRibbonLayers.forEach((layerId) => setVisible(layerId, routes));
   };
 
   // Helper to toggle 3D tilt and buildings extrusion
@@ -2635,6 +2657,7 @@ export const Map: React.FC<MapProps> = ({
       lineFiltersRef.current,
       selectedLineRef.current,
       Object.keys(routeGeometriesRef.current),
+      showRoutesRef.current,
     );
     update3DMode(map, is3DRef.current, mapThemeRef.current);
 
@@ -3074,7 +3097,8 @@ export const Map: React.FC<MapProps> = ({
   // Dynamic Route visibility changes: the background network respects the
   // per-mode Trams/Buses toggles, gives way to the highlighted ribbons wherever
   // those cover the same mode, and is hidden altogether once the user narrows to
-  // specific lines.
+  // specific lines — or whenever the route-lines switch is off, which hides the
+  // ribbons with it.
   useEffect(() => {
     const map = mapRef.current;
     if (map && map.getStyle()) {
@@ -3087,9 +3111,10 @@ export const Map: React.FC<MapProps> = ({
         lineFilters,
         selectedLine,
         Object.keys(routeGeometries),
+        showRoutes,
       );
     }
-  }, [lineFilters, showTrams, showBuses, showMetro, showTrains, selectedLine, routeGeometries]);
+  }, [lineFilters, showTrams, showBuses, showMetro, showTrains, showRoutes, selectedLine, routeGeometries]);
 
   // Dynamic Stop Route Filtering
   useEffect(() => {
