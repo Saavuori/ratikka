@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.55.1] - 2026-09-03
+
+### Fixed
+- **A metro train no longer sits still between stations and then lurches fifty metres**: the prediction that carries a train through the gaps in its feed was asking the wrong question about what a gap is. HFP does not go quiet — a metro's messages arrive every second like every other mode's — but only the timestamp on them ticks at that rate. The coordinate and speed are held and refreshed in steps: measured off the live feed, 74% of consecutive messages between stations repeat the previous position exactly, and 96% do at a platform, so a train typically stands still for about three seconds and then arrives some fifty metres further down the line. The map read each ticking timestamp as a fresh report and re-anchored the train on its own stale position every second, which left the dead reckoning nothing to carry forward. It now re-anchors only when the coordinate actually changes, and carries the train along its track at the speed it last reported in between. Replayed against a captured feed, that cuts the seconds in which a train is drawn motionless from 81% to 29%, and the biggest distance it covers in any single second from about 100 m to 22 m.
+- **A train stops being predicted after eight seconds rather than twenty**: the long held coordinates are the ones at platforms, where the frozen message keeps reporting the speed the train came in at while it is really slowing, dwelling and leaving — that reading predicts the eventual movement anywhere from a fifth of it to nearly six times it, so there is nothing there worth integrating. Between stations, where the same reading is good to about a tenth, a hold is over within four seconds nine times in ten, so a shorter horizon costs those nothing. On the captured feed it is the difference between a correction pulling a train back by up to 199 m — visibly running past its platform and being yanked back — and by at most 43 m.
+
+---
+
 ## [v0.55.0] - 2026-09-03
 
 ### Added

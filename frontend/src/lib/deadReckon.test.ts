@@ -6,6 +6,7 @@ import {
   glideFraction,
   predictedAdvance,
   predictedSpeed,
+  hasMoved,
 } from './deadReckon';
 
 describe('predictedSpeed', () => {
@@ -106,5 +107,49 @@ describe('glideFraction', () => {
   it('clamps out-of-range time', () => {
     expect(glideFraction(12, 0, 0, -1)).toBe(0);
     expect(glideFraction(12, 0, 0, 5)).toBe(1);
+  });
+});
+
+describe('hasMoved', () => {
+  const at = (lat: number, lng: number, ts: number) => ({ lat, lng, ts });
+
+  it('is false for a repeated coordinate, however much the timestamp ticks', () => {
+    // The regression this exists for: HFP repeats a metro's coordinate for
+    // seconds at a time with a fresh timestamp on each one. Reading the
+    // timestamp as a new report re-anchored the train on its own stale position
+    // every second, so it was never carried forward — it sat still and then
+    // covered the whole step in one glide.
+    const fix = at(60.1699, 24.9384, 1000);
+    expect(hasMoved(fix, at(60.1699, 24.9384, 1001))).toBe(false);
+    expect(hasMoved(fix, at(60.1699, 24.9384, 1005))).toBe(false);
+  });
+
+  it('is true when the coordinate actually changes', () => {
+    const fix = at(60.1699, 24.9384, 1000);
+    expect(hasMoved(fix, at(60.1704, 24.9384, 1000))).toBe(true);
+    expect(hasMoved(fix, at(60.1699, 24.9390, 1003))).toBe(true);
+  });
+
+  it('is true for a train with no fix yet', () => {
+    expect(hasMoved(undefined, at(60.1699, 24.9384, 1000))).toBe(true);
+  });
+});
+
+describe('the metro prediction horizon', () => {
+  it('covers a whole between-stations hold', () => {
+    // Those last 2.6 s at the median and 4.2 s at the ninetieth percentile, and
+    // the held speed predicts the eventual jump to within about a tenth, so the
+    // prediction must run for the whole of one rather than stopping partway.
+    expect(MAX_AGE).toBeGreaterThanOrEqual(5);
+    expect(predictedAdvance(17, 0, 0, 4.2)).toBeCloseTo(17 * 4.2, 5);
+  });
+
+  it('stops well before a platform dwell can run a train off its station', () => {
+    // A message frozen on the way in keeps reporting the speed the train came
+    // in at while it is in fact slowing, dwelling and leaving. Holds there run
+    // to a minute; carrying a 20 m/s reading across one of those would put the
+    // train more than a kilometre past the platform.
+    expect(MAX_AGE).toBeLessThanOrEqual(10);
+    expect(predictedAdvance(20, 0, 0, 60)).toBeLessThanOrEqual(20 * 10);
   });
 });

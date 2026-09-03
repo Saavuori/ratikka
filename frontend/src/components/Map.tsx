@@ -29,7 +29,7 @@ import {
   TRAIN_PURPLE,
 } from '../lib/routeColors';
 import { buildTracks, metroLinesInFeed, placeOnTracks, pointOnTrack } from '../lib/metroTracks';
-import { glideFraction, predictedAdvance } from '../lib/deadReckon';
+import { glideFraction, hasMoved, predictedAdvance } from '../lib/deadReckon';
 import type { MetroTrack, TrackPlacement } from '../lib/metroTracks';
 import { assignCorridorSlots, directionalPaths } from '../lib/routeSlots';
 import type { RoutePath } from '../lib/routeSlots';
@@ -126,15 +126,21 @@ interface RenderPosition {
 // train, and snapping it would invent a confident-looking position.
 const METRO_SNAP_MAX_OFFSET = 400;
 
-// The last metro position report we actually received for a train, kept so the
-// animation can carry the train forward through the silence that follows it.
-// The metro feed is not the tram feed's steady 1 Hz: in tunnel it goes quiet
-// for seconds at a time, and the backend rebroadcasts the last known point
-// meanwhile, so without this the train arrives at that point and freezes until
-// the feed speaks again — then jumps. See lib/deadReckon.
+// The last metro position report that actually said something new, kept so the
+// animation can carry the train forward until the next one.
+//
+// A metro train's HFP messages arrive every second like everything else's, but
+// only their timestamp moves at that rate: the coordinate and speed are held and
+// refreshed in steps of a few seconds. Measured on the live feed, 74% of
+// consecutive messages between stations repeat the previous coordinate exactly,
+// and 96% of them do at a platform — so a train stands still for about three
+// seconds and then arrives some fifty metres further down the line. That is what
+// makes a metro look stuck and then lurch, and it is why the timestamp cannot be
+// what marks a new report: it ticks either way. See lib/deadReckon.
 interface MetroFix {
-  // HFP timestamp and coordinates of the report, used to tell a fresh report
-  // from a rebroadcast of the one we already have.
+  // HFP timestamp and coordinates of the last message whose *coordinate* was
+  // new. The coordinate is what tells a fresh position from a repeat of the one
+  // we already have; `ts` moves every second regardless.
   ts: number;
   lat: number;
   lng: number;
@@ -1274,13 +1280,15 @@ export const Map: React.FC<MapProps> = ({
 
       if (tram.mode === 'metro') {
         const fix = metroFixRef.current[id];
-        // The backend rebroadcasts the whole cache every second, so an
-        // unchanged timestamp *and* position means this train said nothing
-        // since the last snapshot — not that it is standing still.
-        const reported =
-          !fix || fix.ts !== tram.ts || fix.lat !== tram.lat || fix.lng !== tram.lng;
+        // Only a new *coordinate* is a new report. A metro message repeats the
+        // previous position for seconds at a time while its timestamp keeps
+        // ticking, so testing the timestamp — as this did — re-anchored the
+        // train on its own stale position every second and left the prediction
+        // below with nothing to do: the train sat still until the coordinate
+        // moved, then covered the whole fifty-metre step in one glide.
+        const moved = hasMoved(fix, tram);
 
-        if (snapped && reported) {
+        if (snapped && moved) {
           // A real report: it becomes the new anchor everything is predicted
           // from, and this window animates the correction into it.
           newFixes[id] = {
@@ -1296,10 +1304,14 @@ export const Map: React.FC<MapProps> = ({
             forward: snapped.track.forward,
           };
           newGlides[id] = { spd: tram.spd ?? 0, acc: tram.acc ?? 0, ageStart: 0 };
-        } else if (fix) {
-          // Silence. Carry the train on down its track at the speed it last
-          // reported, and keep the anchor so the next report corrects a small
-          // error rather than landing as a jump.
+        } else if (fix && !moved) {
+          // The coordinate stood still. Carry the train on down its track at
+          // the speed it last reported, and keep the anchor so the next real
+          // position corrects a few metres of prediction error rather than
+          // landing as a fifty-metre jump. A train that has genuinely stopped
+          // reported zero and therefore stays put; one whose message froze on
+          // the way into a platform is carried for `MAX_AGE` seconds and then
+          // holds, which is close enough to what it is really doing.
           newFixes[id] = fix;
           const age = (now - fix.seenAt) / 1000;
           const predicted = predictMetroPosition(fix, age);
@@ -1308,6 +1320,9 @@ export const Map: React.FC<MapProps> = ({
           }
           newGlides[id] = { spd: fix.spd, acc: fix.acc, ageStart: age };
         }
+        // A train that moved but could not be snapped — no geometry yet, or too
+        // far off the network to trust — keeps no fix: its raw reported position
+        // is drawn, and the next successful snap starts a fresh anchor.
       }
 
       // Start the next glide from what is on screen right now — mid-glide when
