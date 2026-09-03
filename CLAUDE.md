@@ -36,24 +36,26 @@ HSL MQTT broker ──▶ backend (Go) ──▶ Redis (live coord cache)
 - `internal/config/` — env + `.env` + flag loading.
 - Version strings (`Version`, `BuildDate`, `GitCommit`) live in `internal/api/handlers.go` and are injected at build time via `-ldflags` (default `"dev"`/`"unknown"` for local builds).
 
-### Frontend — `frontend/` (React 19, TypeScript, Vite 8, MapLibre GL 5)
-- `src/components/` — Map plus glassmorphic panels/popups (`Map.tsx`, `FilterPanel.tsx`, `TramPopup.tsx`, `StopPopup.tsx`, `BikePopup.tsx`, `JourneySearch.tsx`, `ModeToggles.tsx` + `ViewToggles.tsx` (the map's two corner chip rows), `BottomNav.tsx`, `VersionBadge.tsx`).
-- `src/hooks/` — `useWebSocket`, `useTramData`, `useGeolocation`, `useIsMobile`, `useSwipeGestures`, `useCollapsiblePanel`.
+### Frontend — `frontend/` (React 19, TypeScript 6, Vite 8, MapLibre GL 6)
+- `src/components/` — Map plus glassmorphic panels/popups (`Map.tsx`, `FilterPanel.tsx`, `TramPopup.tsx`, `StopPopup.tsx`, `BikePopup.tsx`, `JourneySearch.tsx`, `ModeToggles.tsx` + `ViewToggles.tsx` (the map's two corner chip rows), `BottomNav.tsx`, `VehicleSchematic.tsx`, `TramCard.tsx`, `ErrorBoundary.tsx`, `VersionBadge.tsx`).
+- `src/hooks/` — `useWebSocket`, `useTramData`, `useGeolocation`, `useIsMobile`, `useMetroGeometry`, `useTrafficLights`.
 - `src/lib/` — `api.ts` (backend client), `lerp.ts` (60fps interpolation), `polyline.ts`, `trip.ts`,
   `metroTracks.ts` (projects the metro's dead-reckoned tunnel positions onto the line's
   own geometry, and reads positions back off it for along-track animation),
   `deadReckon.ts` (integrates a vehicle's reported speed and acceleration forward,
   so a metro train carries on down its track through the seconds the tunnel feed
   is silent instead of freezing and then lurching),
-  `routeSlots.ts` (which offset slot each highlighted route takes) and `routeLineStyle.ts`
-  (the paint expressions that turn a slot into pixels — see "Verifying the map").
+  `routeSlots.ts` (which offset slot each highlighted route takes), `routeLineStyle.ts`
+  (the paint expressions that turn a slot into pixels — see "Verifying the map"),
+  `vehicleModels.ts` (the 3D bodies' real-world dimensions), `routeColors.ts`,
+  `stopAlerts.ts`, `trafficLights.ts` and `storage.ts`.
 - Vanilla CSS with theme variables in `index.css` / `App.css`.
 
 ## HTTP API
 
 All under `/api/v1` (see `docs/API_REFERENCE.md` for schemas): `health`, `version`,
 `config`, `alerts`, `trip/{id}`, `stop/{id}`, `route/{shortName}`, `bike-station/{id}`,
-`geocode`, `plan`, and the `stream` WebSocket.
+`bike-stations`, `traffic-lights`, `geocode`, `plan`, and the `stream` WebSocket.
 
 ## Development
 
