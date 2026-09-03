@@ -13,7 +13,9 @@ A premium, high-performance web application mapping **all active Helsinki trams,
 
 ## 📸 Screenshots & UI
 
-![HSL - LIVE Dashboard](docs/screenshots/hsl_live_dashboard.png)
+![HSL - LIVE on mobile: live map, lines sheet and vehicle telemetry](docs/screenshots/hsl_live_mobile.png)
+
+*The mobile UI on an iPhone-sized viewport: the live map with its "Where to?" search, mode and view toggles; the **Lines** bottom sheet for filtering the network; and the **Details** sheet with live telemetry for a selected vehicle.*
 
 ---
 
