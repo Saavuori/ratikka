@@ -6,6 +6,8 @@ import {
   pointOnTrack,
   distanceBetween,
   placeOnTracks,
+  isMetroLine,
+  metroLinesInFeed,
 } from './metroTracks';
 
 // A straight ~1 km east-west leg through central Helsinki, and a second track
@@ -211,5 +213,46 @@ describe('placeOnTracks', () => {
     expect(
       placeOnTracks('M1', tracks, { lat: 60.2000, lng: 24.9390, hdg: 90 }, undefined)
     ).toBeNull();
+  });
+});
+
+describe('isMetroLine', () => {
+  it('accepts the metro line numbers and rejects every other mode', () => {
+    expect(isMetroLine('M1')).toBe(true);
+    expect(isMetroLine('M2')).toBe(true);
+    expect(isMetroLine('M1V')).toBe(true); // short-turn variant
+    expect(isMetroLine('9')).toBe(false); // tram
+    expect(isMetroLine('A')).toBe(false); // commuter train
+    expect(isMetroLine('')).toBe(false);
+    expect(isMetroLine(undefined)).toBe(false);
+  });
+});
+
+describe('metroLinesInFeed', () => {
+  const feed = {
+    a: { mode: 'metro', desi: 'M2' },
+    b: { mode: 'metro', desi: 'M1' },
+    c: { mode: 'metro', desi: 'M1' },
+    d: { mode: 'tram', desi: '9' },
+    e: { mode: 'train', desi: 'A' },
+    f: { mode: 'metro', desi: '' },
+  };
+
+  it('returns each metro line in the snapshot exactly once', () => {
+    expect(metroLinesInFeed(feed)).toEqual(['M1', 'M2']);
+  });
+
+  it('is stable across snapshots whose key order differs, so it can be a fetch dependency', () => {
+    const reordered = {
+      c: feed.c,
+      e: feed.e,
+      a: feed.a,
+      b: feed.b,
+    };
+    expect(metroLinesInFeed(reordered).join(',')).toBe(metroLinesInFeed(feed).join(','));
+  });
+
+  it('returns nothing for a feed with no metro in it', () => {
+    expect(metroLinesInFeed({ a: { mode: 'tram', desi: '4' } })).toEqual([]);
   });
 });

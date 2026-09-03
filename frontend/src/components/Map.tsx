@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 // MapLibre GL 6 is ESM-only and dropped the default export.
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -28,7 +28,7 @@ import {
   METRO_ORANGE,
   TRAIN_PURPLE,
 } from '../lib/routeColors';
-import { buildTracks, placeOnTracks, pointOnTrack } from '../lib/metroTracks';
+import { buildTracks, metroLinesInFeed, placeOnTracks, pointOnTrack } from '../lib/metroTracks';
 import { glideFraction, predictedAdvance } from '../lib/deadReckon';
 import type { MetroTrack, TrackPlacement } from '../lib/metroTracks';
 import { assignCorridorSlots, directionalPaths } from '../lib/routeSlots';
@@ -43,6 +43,7 @@ import {
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection, TrafficLightFeature } from '../types';
 import { useTrafficLights } from '../hooks/useTrafficLights';
+import { useMetroGeometry } from '../hooks/useMetroGeometry';
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -792,6 +793,16 @@ export const Map: React.FC<MapProps> = ({
     }
   };
 
+  // Track geometry for every metro line currently in the feed. This is fetched
+  // independently of `routeGeometries` (which only covers lines the user has
+  // highlighted, because its job is drawing route ribbons): a train is snapped
+  // and dead-reckoned along its rails whether or not its line is highlighted,
+  // and hanging that off the highlight state meant the ordinary view — metro
+  // on, nothing selected — had no tracks and therefore no dead reckoning at
+  // all. See hooks/useMetroGeometry.
+  const metroLines = useMemo(() => metroLinesInFeed(trams), [trams]);
+  const metroGeometries = useMetroGeometry(metroLines);
+
   // Indexed metro track geometry, per line. Rebuilt only when a line's
   // polylines actually change: indexing walks every point of every pattern.
   const metroTracksRef = useRef<Record<string, MetroTrack[]>>({});
@@ -799,19 +810,17 @@ export const Map: React.FC<MapProps> = ({
 
   useEffect(() => {
     const tracks: Record<string, MetroTrack[]> = {};
-    Object.entries(routeGeometries).forEach(([line, data]) => {
-      // Metro lines are the only ones we snap to, and they are the only ones
-      // named "M<something>" — trams are numbers, trains single letters.
-      if (!/^M\d/i.test(line)) return;
-      if (metroGeometrySourceRef.current[line] === data.geometries) {
+    Object.entries(metroGeometries).forEach(([line, geometries]) => {
+      if (!geometries || geometries.length === 0) return;
+      if (metroGeometrySourceRef.current[line] === geometries) {
         tracks[line] = metroTracksRef.current[line];
         return;
       }
-      metroGeometrySourceRef.current[line] = data.geometries;
-      tracks[line] = buildTracks(data.geometries);
+      metroGeometrySourceRef.current[line] = geometries;
+      tracks[line] = buildTracks(geometries);
     });
     metroTracksRef.current = tracks;
-  }, [routeGeometries]);
+  }, [metroGeometries]);
 
   /**
    * Pull a reported metro position onto its line's tracks. Returns null when
