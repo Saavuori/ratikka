@@ -267,14 +267,17 @@ check(
 
 // 6. The doors have to stand proud of the flanks, or the doors-open cue is
 //    swallowed by the body they are drawn inside. Only a tilted view can see
-//    them — from straight above the roof hides the whole flank.
+//    them — from straight above the roof hides the whole flank. The leaves also
+//    have to *move*: a doorway that merely recolours in place is the thing this
+//    check exists to catch, so the amber has to be narrower than the doors it
+//    replaces rather than the same shape in a different colour.
 {
   const shut = await render({ mode: 'bus', zoom: 18, pitch: 60 });
   const open = await render({ mode: 'bus', zoom: 18, pitch: 60, doorsOpen: true });
   check(
-    'open doors are visible on the flank of a tilted body',
-    open.amber > 20 && shut.amber === 0,
-    `${open.amber} amber px with the doors open, ${shut.amber} with them shut`
+    'open doors uncover an amber doorway on the flank',
+    open.amber > 20 && shut.amber === 0 && open.amber < open.painted / 4,
+    `${open.amber} amber px of ${open.painted} painted with the doors open, ${shut.amber} with them shut`
   );
 }
 

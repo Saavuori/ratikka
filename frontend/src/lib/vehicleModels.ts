@@ -134,7 +134,7 @@ export function vehicleBodyColor(mode: string | null | undefined, desi: string |
 /** Window glass, and the door leaves that stand proud of it. */
 export const GLASS_COLOR = '#16202f';
 export const DOOR_COLOR = '#47566b';
-/** The amber a door turns while it is open, as in the schematic. */
+/** The amber of the doorway the leaves uncover, as in the schematic. */
 export const DOORS_OPEN_COLOR = '#ffb020';
 /** The cab patch laid on the roof at a driving end. */
 export const CAB_COLOR = '#9fd8f2';
@@ -253,7 +253,7 @@ export interface VehicleState {
   selected?: boolean;
 }
 
-export type VehiclePart = 'body' | 'glass' | 'door' | 'cab' | 'roof';
+export type VehiclePart = 'body' | 'glass' | 'doorway' | 'door' | 'cab' | 'roof';
 
 export interface ExtrusionFeature {
   type: 'Feature';
@@ -261,21 +261,22 @@ export interface ExtrusionFeature {
   properties: { veh: string; part: VehiclePart; color: string; base: number; top: number };
 }
 
-/** How far proud of the flank the window band and the doors stand, in metres. */
+/** How far proud of the flank each layer stands, in metres. */
 const GLASS_PROUD = 0.04;
-const DOOR_PROUD = 0.14;
+const DOORWAY_PROUD = 0.10;
+const DOOR_PROUD = 0.18;
 
 /**
  * Every extruded piece of one vehicle: the body (or bodies, for the coupled
- * metro), the window band around it, a door on each flank at every door
- * position, a cab patch on the roof at each driving end, and the roof detail
- * where the model has one. A selected vehicle turns gold, the same cue as the
- * flat selection ring.
+ * metro), the window band around it, a pair of door leaves on each flank at
+ * every door position, a cab patch on the roof at each driving end, and the
+ * roof detail where the model has one. A selected vehicle turns gold, the same
+ * cue as the flat selection ring.
  */
 export function vehicleExtrusions(v: VehicleState): ExtrusionFeature[] {
   const model = vehicleModel(v.mode);
   const bodyColor = v.selected ? SELECTED_COLOR : vehicleBodyColor(v.mode, v.desi);
-  const doorColor = v.doorsOpen ? DOORS_OPEN_COLOR : DOOR_COLOR;
+  const doorway = v.doorsOpen;
   const out: ExtrusionFeature[] = [];
 
   const push = (
@@ -309,21 +310,37 @@ export function vehicleExtrusions(v: VehicleState): ExtrusionFeature[] {
     section('glass', s, GLASS_COLOR, model.glassBase, model.glassTop, GLASS_PROUD);
   });
 
-  // Doors: one leaf on each flank at every door position, standing further out
-  // than the window band so they read as their own thing — and going amber, the
-  // way the schematic's leaves do, the moment the real doors open.
+  // Doors, drawn the way the schematic draws them: two leaves per doorway that
+  // actually slide apart rather than merely changing colour. Closed, the pair
+  // meets in the middle and covers the opening; open, each leaf slides its own
+  // width clear along the flank and the amber doorway shows in the gap between
+  // them. The leaves stand further out than the doorway, which stands further
+  // out than the window band, so the three never z-fight.
   const halfWidth = model.sections[0].halfWidth;
   const half = model.doorWidth / 2;
   model.doors.forEach((centre) => {
     [1, -1].forEach((side) => {
-      patch(
-        'door',
-        [centre - half, centre + half],
-        [side * (halfWidth - 0.05), side * (halfWidth + DOOR_PROUD)],
-        doorColor,
-        0.35,
-        model.glassTop,
-      );
+      const flank = (proud: number): [number, number] => [
+        side * (halfWidth - 0.05),
+        side * (halfWidth + proud),
+      ];
+      // The opening behind the leaves. Only drawn when it can be seen: a shut
+      // door hides it completely, and every vehicle is a few polygons already.
+      if (doorway) {
+        patch(
+          'doorway',
+          [centre - half, centre + half],
+          flank(DOORWAY_PROUD),
+          DOORS_OPEN_COLOR,
+          0.35,
+          model.glassTop,
+        );
+      }
+      // Each leaf slides its own width clear, which uncovers exactly the
+      // doorway between them — no wider, or plain body would show in the gap.
+      const slide = doorway ? half : 0;
+      patch('door', [centre - half - slide, centre - slide], flank(DOOR_PROUD), DOOR_COLOR, 0.35, model.glassTop);
+      patch('door', [centre + slide, centre + half + slide], flank(DOOR_PROUD), DOOR_COLOR, 0.35, model.glassTop);
     });
   });
 
