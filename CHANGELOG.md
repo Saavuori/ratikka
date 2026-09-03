@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.55.0] - 2026-09-03
+
+### Added
+- **The vehicles are solid, real-size models in 3D view**: turning on 3D used to tilt the buildings and leave the vehicles as flat stickers lying on the street. Each mode now has an extruded body built from the same anatomy as its schematic — a 27 m tram, a 12.5 m bus, the metro's coupled pair with the gap between its two units, and a 75 m commuter train with the pantograph on its roof — drawn at true scale in metres, so a train really is three tram-lengths of the street and the modes are tellable apart by size alone before you read a number. The schematic's detail comes with it, chosen for what a map camera looking down can actually see: a window band around the flanks, individual doors on both sides that go amber as they slide open, a pale cab patch on the roof at each driving end (which is what says which way a vehicle faces once the icon's nose has faded out), the metro's white roof band and the train's pantograph. Bodies carry their line's colour exactly as the icons do, and a selected vehicle goes gold. The bodies fade in over one zoom level as the flat icons fade out, so the swap is a crossfade rather than a pop, and only vehicles actually on screen are built.
+
+---
+
 ## [v0.54.2] - 2026-09-03
 
 ### Fixed
