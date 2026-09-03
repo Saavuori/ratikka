@@ -2,10 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.54.1] - 2026-09-03
+## [v0.54.2] - 2026-09-03
 
 ### Fixed
 - **Metro dead reckoning actually runs now, so trains stop looking frozen**: the prediction that carries a metro train down its tunnel through the seconds the feed is silent needs the line's track geometry, and it was reading that from the same state the map uses to *draw* highlighted route ribbons — which only holds a line while it is selected, or a stop or a vehicle on it is. In the ordinary view (metro switched on, nothing selected) there were no tracks, so no train was ever snapped to one, no position fix was ever recorded and nothing was ever predicted forward: every metro train sat still between reports and then jumped, exactly the motion v0.53.2 was written to remove. The metro's polylines are now fetched on their own, once per page load, for whichever metro lines are actually in the feed, and they never reach the map style — so the snapping, the along-track glide and the dead reckoning work whether or not a line is highlighted, and switching the metro off costs no request at all.
+
+---
+
+## [v0.54.1] - 2026-09-03
+
+### Fixed
+- **The metro and commuter trains get their own vehicle schematic**: the diagnostics panel drew one generic rail carriage for everything on rails, so clicking an M-train or an Sm-unit showed the same three-door tram body, only tinted a different colour — the map icons had told the modes apart for a while, the panel had not. Each mode now has its own side-on drawing: the metro is the coupled pair it actually is, two units with the coupling seam between them, a cab at each outer end and four door sets; the commuter train has the raked nose, the pantograph on the roof and paired bogie wheels; the tram keeps the single carriage with a cab at both ends. Doors still slide with the reported `drst` and the wheels still spin at the vehicle's own speed.
 
 ---
 

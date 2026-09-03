@@ -6,6 +6,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { useTrafficLights } from '../hooks/useTrafficLights';
 import { getRouteColor, getModeAccent } from '../lib/routeColors';
 import { classifyStopReason } from '../lib/trafficLights';
+import { VehicleSchematic } from './VehicleSchematic';
 
 interface TramPopupProps {
   tram: VehiclePosition;
@@ -427,87 +428,12 @@ export const TramPopup: React.FC<TramPopupProps> = ({
 
               {/* 2D Schematic Graphic */}
               <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0' }}>
-                {tram.mode === 'bus' ? (
-                  /* BUS SCHEMATIC */
-                  <svg width="220" height="70" viewBox="0 0 220 70" fill="none">
-                    <line x1="10" y1="58" x2="210" y2="58" stroke="rgba(255,255,255,0.08)" strokeWidth="2" strokeDasharray="4 4"/>
-                    <rect x="25" y="15" width="170" height="36" rx="3" fill="rgba(30, 41, 59, 0.4)" stroke="#0984e3" strokeWidth="2"/>
-                    <path d="M25,20 L35,20 L35,35 L25,35 Z" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8" strokeWidth="1"/>
-                    
-                    {/* Front door leaves */}
-                    <rect className="door-leaf-left" style={{ transform: isDoorsOpen ? 'translateX(-5px)' : 'none', transformOrigin: '53px 15px' }} x="53" y="20" width="6" height="31" fill="#475569" stroke="#1e293b" strokeWidth="1"/>
-                    <rect className="door-leaf-right" style={{ transform: isDoorsOpen ? 'translateX(5px)' : 'none', transformOrigin: '59px 15px' }} x="59" y="20" width="6" height="31" fill="#475569" stroke="#1e293b" strokeWidth="1"/>
-                    
-                    {/* Rear door leaves */}
-                    <rect className="door-leaf-left" style={{ transform: isDoorsOpen ? 'translateX(-5px)' : 'none', transformOrigin: '133px 15px' }} x="133" y="20" width="6" height="31" fill="#475569" stroke="#1e293b" strokeWidth="1"/>
-                    <rect className="door-leaf-right" style={{ transform: isDoorsOpen ? 'translateX(5px)' : 'none', transformOrigin: '139px 15px' }} x="139" y="20" width="6" height="31" fill="#475569" stroke="#1e293b" strokeWidth="1"/>
-
-                    {/* Indicator lights */}
-                    <circle cx="59" cy="11" r="3" fill={isDoorsOpen ? '#34d399' : '#f87171'} className={isDoorsOpen ? 'blinking-door-light' : ''}/>
-                    <circle cx="139" cy="11" r="3" fill={isDoorsOpen ? '#34d399' : '#f87171'} className={isDoorsOpen ? 'blinking-door-light' : ''}/>
-
-                    {/* Rubber tires */}
-                    <g className={isMoving ? 'rotating-wheel' : ''} style={{ '--wheel-speed': wheelSpeedCss, transformOrigin: '55px 54px' } as React.CSSProperties}>
-                      <circle cx="55" cy="54" r="8" fill="#111827" stroke="#374151" strokeWidth="2"/>
-                      <circle cx="55" cy="54" r="8" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1" strokeDasharray="3,3"/>
-                      <circle cx="55" cy="54" r="3" fill="#94a3b8"/>
-                    </g>
-                    <g className={isMoving ? 'rotating-wheel' : ''} style={{ '--wheel-speed': wheelSpeedCss, transformOrigin: '155px 54px' } as React.CSSProperties}>
-                      <circle cx="155" cy="54" r="8" fill="#111827" stroke="#374151" strokeWidth="2"/>
-                      <circle cx="155" cy="54" r="8" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1" strokeDasharray="3,3"/>
-                      <circle cx="155" cy="54" r="3" fill="#94a3b8"/>
-                    </g>
-                  </svg>
-                ) : (
-                  /* RAIL SCHEMATIC — trams, metro and commuter trains all run
-                     on rails with the same door layout, so they share one
-                     schematic, tinted by the mode's accent colour. */
-                  <svg width="220" height="70" viewBox="0 0 220 70" fill="none">
-                    <line x1="10" y1="58" x2="210" y2="58" stroke="rgba(255,255,255,0.08)" strokeWidth="2" strokeDasharray="4 4"/>
-                    <rect x="20" y="15" width="180" height="36" rx="6" fill="rgba(30, 41, 59, 0.4)" stroke={getModeAccent(tram.mode)} strokeWidth="2"/>
-                    <path d="M20,20 L30,20 L30,35 L20,35 Z" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8" strokeWidth="1"/>
-                    <path d="M200,20 L190,20 L190,35 L200,35 Z" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8" strokeWidth="1"/>
-
-                    {/* Door Set 1 */}
-                    <rect className="door-leaf-left" style={{ transform: isDoorsOpen ? 'translateX(-5px)' : 'none', transformOrigin: '58px 15px' }} x="58" y="20" width="6" height="31" fill="#475569" stroke="#1e293b" strokeWidth="1"/>
-                    <rect className="door-leaf-right" style={{ transform: isDoorsOpen ? 'translateX(5px)' : 'none', transformOrigin: '64px 15px' }} x="64" y="20" width="6" height="31" fill="#475569" stroke="#1e293b" strokeWidth="1"/>
-                    
-                    {/* Door Set 2 */}
-                    <rect className="door-leaf-left" style={{ transform: isDoorsOpen ? 'translateX(-5px)' : 'none', transformOrigin: '108px 15px' }} x="108" y="20" width="6" height="31" fill="#475569" stroke="#1e293b" strokeWidth="1"/>
-                    <rect className="door-leaf-right" style={{ transform: isDoorsOpen ? 'translateX(5px)' : 'none', transformOrigin: '114px 15px' }} x="114" y="20" width="6" height="31" fill="#475569" stroke="#1e293b" strokeWidth="1"/>
-                    
-                    {/* Door Set 3 */}
-                    <rect className="door-leaf-left" style={{ transform: isDoorsOpen ? 'translateX(-5px)' : 'none', transformOrigin: '158px 15px' }} x="158" y="20" width="6" height="31" fill="#475569" stroke="#1e293b" strokeWidth="1"/>
-                    <rect className="door-leaf-right" style={{ transform: isDoorsOpen ? 'translateX(5px)' : 'none', transformOrigin: '164px 15px' }} x="164" y="20" width="6" height="31" fill="#475569" stroke="#1e293b" strokeWidth="1"/>
-
-                    {/* Indicator lights */}
-                    <circle cx="64" cy="11" r="3" fill={isDoorsOpen ? '#34d399' : '#f87171'} className={isDoorsOpen ? 'blinking-door-light' : ''}/>
-                    <circle cx="114" cy="11" r="3" fill={isDoorsOpen ? '#34d399' : '#f87171'} className={isDoorsOpen ? 'blinking-door-light' : ''}/>
-                    <circle cx="164" cy="11" r="3" fill={isDoorsOpen ? '#34d399' : '#f87171'} className={isDoorsOpen ? 'blinking-door-light' : ''}/>
-
-                    {/* Spinning Wheels */}
-                    <g className={isMoving ? 'rotating-wheel' : ''} style={{ '--wheel-speed': wheelSpeedCss, transformOrigin: '45px 54px' } as React.CSSProperties}>
-                      <circle cx="45" cy="54" r="6" fill="#1e293b" stroke="#64748b" strokeWidth="2"/>
-                      <circle cx="45" cy="54" r="6" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" strokeDasharray="2,2"/>
-                      <circle cx="45" cy="54" r="2" fill="#94a3b8"/>
-                    </g>
-                    <g className={isMoving ? 'rotating-wheel' : ''} style={{ '--wheel-speed': wheelSpeedCss, transformOrigin: '95px 54px' } as React.CSSProperties}>
-                      <circle cx="95" cy="54" r="6" fill="#1e293b" stroke="#64748b" strokeWidth="2"/>
-                      <circle cx="95" cy="54" r="6" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" strokeDasharray="2,2"/>
-                      <circle cx="95" cy="54" r="2" fill="#94a3b8"/>
-                    </g>
-                    <g className={isMoving ? 'rotating-wheel' : ''} style={{ '--wheel-speed': wheelSpeedCss, transformOrigin: '145px 54px' } as React.CSSProperties}>
-                      <circle cx="145" cy="54" r="6" fill="#1e293b" stroke="#64748b" strokeWidth="2"/>
-                      <circle cx="145" cy="54" r="6" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" strokeDasharray="2,2"/>
-                      <circle cx="145" cy="54" r="2" fill="#94a3b8"/>
-                    </g>
-                    <g className={isMoving ? 'rotating-wheel' : ''} style={{ '--wheel-speed': wheelSpeedCss, transformOrigin: '175px 54px' } as React.CSSProperties}>
-                      <circle cx="175" cy="54" r="6" fill="#1e293b" stroke="#64748b" strokeWidth="2"/>
-                      <circle cx="175" cy="54" r="6" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" strokeDasharray="2,2"/>
-                      <circle cx="175" cy="54" r="2" fill="#94a3b8"/>
-                    </g>
-                  </svg>
-                )}
+                <VehicleSchematic
+                  mode={tram.mode}
+                  isDoorsOpen={isDoorsOpen}
+                  isMoving={isMoving}
+                  wheelSpeedCss={wheelSpeedCss}
+                />
               </div>
 
               {/* Door telemetry state string */}
