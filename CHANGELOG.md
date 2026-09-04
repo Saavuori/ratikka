@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.56.1] - 2026-09-04
+
+### Fixed
+- **Metro trains stop turning round and sliding backwards**: v0.55.1 started carrying a train along its track through the seconds its coordinate is held, and in doing so broke the thing that decides which way it is facing. That was worked out by comparing each new report with where the train was last drawn — which is now deliberately a prediction, running ahead of the feed. Every report therefore measured as travel *backwards*, so the train spun round and the next prediction carried it back down its own tunnel until the following report spun it round again. Replaying a captured feed through the animation, the shipped version turns trains round 152 times and draws 5% of frames moving backwards; both go to zero. Direction is now read from the last *reported* position, not from the prediction, and a new report is aimed a window ahead like a held one, so the train never has to step back to meet it.
+- **A single bad coordinate no longer reverses a train**: direction was re-derived on every report, so any step that measured backwards flipped the train. Off the live feed, 64 of some 1700 movement steps measure as reversals and every one of them falls in an exact pair — the signature of one coordinate flung off the line and then returned, not of a train turning. A metro train cannot turn round mid-pattern anyway: the two directions of a line are separate polylines, so a real reversal arrives as a change of pattern and is still read from the heading there, which agrees with the direction of travel 98% of the time.
+
+---
+
 ## [v0.56.0] - 2026-09-03
 
 ### Added
