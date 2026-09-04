@@ -1291,17 +1291,28 @@ export const Map: React.FC<MapProps> = ({
 
     filteredTrams.forEach(([id, tram]) => {
       const previous = targetPositionsRef.current[id];
+      const fix = tram.mode === 'metro' ? metroFixRef.current[id] : undefined;
+
+      // Which way along the track a train is running is judged by comparing this
+      // report with the one before it — so the comparison has to be against the
+      // last *reported* placement, not against the last target. The target is
+      // normally a prediction that has deliberately run ahead of the feed, and a
+      // new report measured against it reads as travel backwards: the train
+      // turns round, and the next prediction carries it back down its own track
+      // until the following report turns it round again.
+      const previousPlacement: TrackPlacement | undefined = fix
+        ? { line: fix.line, index: fix.index, distance: fix.distance, forward: fix.forward }
+        : previous?.track;
 
       // Metro trains are drawn on their tracks, not where the (largely
       // underground, therefore dead-reckoned) feed claims they are.
       const snapped =
-        tram.mode === 'metro' ? placeOnMetroTrack(tram, previous?.track) : null;
+        tram.mode === 'metro' ? placeOnMetroTrack(tram, previousPlacement) : null;
       let target: RenderPosition = snapped
         ? { lat: snapped.lat, lng: snapped.lng, hdg: snapped.hdg, track: snapped.track }
         : { lat: tram.lat, lng: tram.lng, hdg: tram.hdg };
 
       if (tram.mode === 'metro') {
-        const fix = metroFixRef.current[id];
         // Only a new *coordinate* is a new report. A metro message repeats the
         // previous position for seconds at a time while its timestamp keeps
         // ticking, so testing the timestamp — as this did — re-anchored the
@@ -1326,6 +1337,16 @@ export const Map: React.FC<MapProps> = ({
             forward: snapped.track.forward,
           };
           newGlides[id] = { spd: tram.spd ?? 0, acc: tram.acc ?? 0, ageStart: 0 };
+
+          // Aim at where the train will be at the *end* of this window, exactly
+          // as a held coordinate does below. Targeting the bare report instead
+          // would step the train back by the second of travel already drawn for
+          // it, so every report — one every three seconds — landed as a small
+          // reversal.
+          const projected = predictMetroPosition(newFixes[id], 0);
+          if (projected) {
+            target = projected;
+          }
         } else if (fix && !moved) {
           // The coordinate stood still. Carry the train on down its track at
           // the speed it last reported, and keep the anchor so the next real

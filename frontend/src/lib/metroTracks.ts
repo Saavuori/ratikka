@@ -267,10 +267,6 @@ export interface Placement {
 // along-track continuity every time it does. Metres.
 const TRACK_SWITCH_MARGIN = 25;
 
-// Below this, movement since the last snapshot is too small to tell which way
-// the train is pointing — a train at a platform still jitters by a few metres.
-// Metres.
-const DIRECTION_MIN_ADVANCE = 2;
 
 /**
  * Pull a reported metro position onto a line's tracks and work out which way
@@ -307,17 +303,28 @@ export function placeOnTracks(
   }
 
   const sameTrack = wasHere && previous!.index === fix.trackIndex;
-  const advance = sameTrack ? fix.distance - previous!.distance : 0;
 
-  // Which way the train faces: how it moved along the track since the last
-  // snapshot, if it moved at all; otherwise whatever we decided last time;
-  // otherwise the reported heading against the track's own bearing.
+  // Which way the train faces. Along one pattern polyline it never changes: the
+  // two directions of a metro line are separate patterns, so a train that turns
+  // round arrives here on a different track and has its direction read afresh
+  // from the heading below.
+  //
+  // Deriving it from movement instead — which way the train appears to have gone
+  // since the last placement — looks more direct and is a trap. It reverses the
+  // train on any step that measures backwards, and the feed produces those
+  // without the train ever turning: of ~1700 movement steps captured off the
+  // live feed, 64 measured as reversals and every one of them fell in an exact
+  // pair, the signature of a single coordinate flung off the line and then
+  // returned. Not one was a real reversal. A flip is expensive, too — it points
+  // the icon the wrong way and sends the dead reckoning back down the track — so
+  // the standing direction wins unless the train is somewhere new.
   let forward: boolean;
-  if (sameTrack && Math.abs(advance) > DIRECTION_MIN_ADVANCE) {
-    forward = advance > 0;
-  } else if (sameTrack) {
+  if (sameTrack) {
     forward = previous!.forward;
   } else {
+    // Reported heading against the track's own bearing. On the metro this is
+    // dead-reckoned like everything else, but it agrees with the direction of
+    // travel 98% of the time, which is what this has to get right.
     const delta = Math.abs((((position.hdg - fix.bearing) % 360) + 540) % 360 - 180);
     forward = delta <= 90;
   }

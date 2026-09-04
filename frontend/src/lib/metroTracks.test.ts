@@ -170,13 +170,41 @@ describe('placeOnTracks', () => {
     expect(west.hdg).toBeCloseTo(270, 0);
   });
 
-  it('prefers movement over the reported heading once the train has history', () => {
-    const first = placeOnTracks('M1', [eastbound], { lat: 60.1700, lng: 24.9350, hdg: 0 }, undefined)!;
-    // Reported heading is nonsense (0), but the train clearly moved east.
-    const second = placeOnTracks('M1', [eastbound], { lat: 60.1700, lng: 24.9400, hdg: 0 }, first.track)!;
+  it('keeps its direction along a track, whatever a later heading says', () => {
+    const first = placeOnTracks('M1', [eastbound], { lat: 60.1700, lng: 24.9350, hdg: 90 }, undefined)!;
+    expect(first.track.forward).toBe(true);
+    // The heading is dead-reckoned underground and wanders; the train has not
+    // turned round, and a pattern polyline only carries one direction anyway.
+    const second = placeOnTracks('M1', [eastbound], { lat: 60.1700, lng: 24.9400, hdg: 250 }, first.track)!;
     expect(second.track.forward).toBe(true);
     expect(second.hdg).toBeCloseTo(90, 0);
     expect(second.track.distance).toBeGreaterThan(first.track.distance);
+  });
+
+  it('does not turn a train round on a coordinate that measures backwards', () => {
+    // The regression this exists for. Off the live feed, 64 of ~1700 movement
+    // steps measure as reversals and every one falls in a pair — one coordinate
+    // flung off the line and then returned. Reversing on that points the icon
+    // the wrong way and sends the dead reckoning back down the track until the
+    // next report turns it round again.
+    const running = placeOnTracks('M1', [eastbound], { lat: 60.1700, lng: 24.9400, hdg: 90 }, {
+      line: 'M1', index: 0, distance: 800, forward: true,
+    })!;
+    // The new coordinate sits well behind where the train was last placed.
+    expect(running.track.distance).toBeLessThan(800);
+    expect(running.track.forward).toBe(true);
+    expect(running.hdg).toBeCloseTo(90, 0);
+  });
+
+  it('reads direction afresh when the train appears on another pattern', () => {
+    // A genuine reversal ends one journey and starts another, which runs on the
+    // opposite direction's own polyline — so it arrives as a track change, and
+    // the heading decides.
+    const p = placeOnTracks('M1', tracks, { lat: 60.1704, lng: 24.9390, hdg: 270 }, {
+      line: 'M1', index: 0, distance: 500, forward: true,
+    })!;
+    expect(p.track.index).toBe(1);
+    expect(p.hdg).toBeCloseTo(270, 0);
   });
 
   it('keeps facing the same way while standing at a platform', () => {
