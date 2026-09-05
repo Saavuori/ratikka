@@ -406,3 +406,75 @@ func TestIngestionWorker_OptionalModes(t *testing.T) {
 		t.Error("expected metro ingestion to be disabled")
 	}
 }
+
+// countingCache records how many writes actually reach the position cache, which
+// is the whole point of dropping duplicate readings: an identical message costs
+// a Redis round-trip it has no reason to cost.
+type countingCache struct {
+	cache.Cache
+	writes int
+}
+
+func (c *countingCache) SetPosition(ctx context.Context, vehicleID string, payload []byte) error {
+	c.writes++
+	return c.Cache.SetPosition(ctx, vehicleID, payload)
+}
+
+// HSL delivers each tram VP message four times over; only the first is worth
+// storing. See dedupeTTL.
+func TestIngestionWorker_DuplicateReadingsDropped(t *testing.T) {
+	counting := &countingCache{Cache: cache.NewMemoryCache()}
+	worker := NewIngestionWorker("tls://mock:8883", counting)
+
+	reading := func(tsi int64, lat float64) *mockMessage {
+		return &mockMessage{
+			payload: []byte(fmt.Sprintf(
+				`{"VP":{"desi":"9","dir":"1","oper":40,"veh":90,"tsi":%d,"spd":6.2,"acc":0.3,"hdg":225,"lat":%f,"long":24.9687,"oday":"2026-09-05","start":"20:54","route":"1009"}}`,
+				tsi, lat)),
+			topic: "/hfp/v2/journey/ongoing/vp/tram/0040/00090/1009/1/Eiranranta/20:54/1230410/5/60;24/29/06/3",
+		}
+	}
+
+	// The same reading four times, as the live feed delivers it.
+	for i := 0; i < 4; i++ {
+		worker.handleMessage(nil, reading(1788630995, 60.203964))
+	}
+	if counting.writes != 1 {
+		t.Errorf("expected 1 write for 4 identical readings, got %d", counting.writes)
+	}
+
+	// A new timestamp on the same coordinate is a real report: the vehicle is
+	// standing still, and the sweeper reads that timestamp to know it is alive.
+	worker.handleMessage(nil, reading(1788630996, 60.203964))
+	if counting.writes != 2 {
+		t.Errorf("expected a fresh timestamp to be stored, got %d writes", counting.writes)
+	}
+
+	// So is a new coordinate under a repeated timestamp.
+	worker.handleMessage(nil, reading(1788630996, 60.204120))
+	if counting.writes != 3 {
+		t.Errorf("expected a fresh coordinate to be stored, got %d writes", counting.writes)
+	}
+}
+
+// Two vehicles reporting the same timestamp and coordinate are two vehicles.
+// Deduping is per vehicle, never across the fleet.
+func TestIngestionWorker_DedupeIsPerVehicle(t *testing.T) {
+	counting := &countingCache{Cache: cache.NewMemoryCache()}
+	worker := NewIngestionWorker("tls://mock:8883", counting)
+
+	reading := func(veh int) *mockMessage {
+		return &mockMessage{
+			payload: []byte(fmt.Sprintf(
+				`{"VP":{"desi":"9","dir":"1","oper":40,"veh":%d,"tsi":1788630995,"spd":0,"hdg":225,"lat":60.203964,"long":24.9687,"oday":"2026-09-05","start":"20:54","route":"1009"}}`,
+				veh)),
+			topic: fmt.Sprintf("/hfp/v2/journey/ongoing/vp/tram/0040/%05d/1009/1/Eiranranta/20:54/1230410/5/60;24/29/06/3", veh),
+		}
+	}
+
+	worker.handleMessage(nil, reading(90))
+	worker.handleMessage(nil, reading(91))
+	if counting.writes != 2 {
+		t.Errorf("expected both vehicles stored, got %d writes", counting.writes)
+	}
+}

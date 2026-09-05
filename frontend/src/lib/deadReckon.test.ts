@@ -3,9 +3,13 @@ import {
   ACC_HORIZON,
   MAX_AGE,
   MAX_SPEED,
+  METRO_LIMITS,
+  SURFACE_MAX_AGE,
+  advanceAlongHeading,
   glideFraction,
   predictedAdvance,
   predictedSpeed,
+  reckonLimits,
   hasMoved,
 } from './deadReckon';
 
@@ -151,5 +155,132 @@ describe('the metro prediction horizon', () => {
     // train more than a kilometre past the platform.
     expect(MAX_AGE).toBeLessThanOrEqual(10);
     expect(predictedAdvance(20, 0, 0, 60)).toBeLessThanOrEqual(20 * 10);
+  });
+});
+
+describe('reckonLimits', () => {
+  it('gives the metro the long horizon and everything else the short one', () => {
+    // Different reasons, opposite conclusions: a metro holds its coordinate
+    // while it is still moving, so predicting through the silence is the only
+    // way to draw the truth. A surface vehicle that goes quiet has usually
+    // stopped, and its last speed then describes something that is no longer
+    // happening.
+    expect(reckonLimits('metro').maxAge).toBe(MAX_AGE);
+    expect(reckonLimits('tram').maxAge).toBe(SURFACE_MAX_AGE);
+    expect(reckonLimits('bus').maxAge).toBe(SURFACE_MAX_AGE);
+    expect(reckonLimits('train').maxAge).toBe(SURFACE_MAX_AGE);
+    expect(SURFACE_MAX_AGE).toBeLessThan(MAX_AGE);
+  });
+
+  it('caps each mode above its fastest honest reading and below the feed junk', () => {
+    // Observed maxima on the captured feed: tram 75 km/h, bus 100, train 160 —
+    // and single steps implying 1200 and 2800 km/h, which are the ones this
+    // keeps off the map.
+    expect(reckonLimits('tram').maxSpeed * 3.6).toBeGreaterThan(75);
+    expect(reckonLimits('bus').maxSpeed * 3.6).toBeGreaterThan(100);
+    expect(reckonLimits('train').maxSpeed * 3.6).toBeGreaterThan(160);
+    expect(reckonLimits('train').maxSpeed * 3.6).toBeLessThan(250);
+  });
+
+  it('treats an unknown mode as a tram', () => {
+    expect(reckonLimits(undefined)).toEqual(reckonLimits('tram'));
+    expect(reckonLimits('ferry')).toEqual(reckonLimits('tram'));
+  });
+
+  it('stops carrying a surface vehicle once its horizon passes', () => {
+    const bus = reckonLimits('bus');
+    // Two seconds of a 10 m/s bus, and then nothing however long the silence.
+    expect(predictedAdvance(10, 0, 0, 2, bus)).toBeCloseTo(20, 3);
+    expect(predictedAdvance(10, 0, 0, 30, bus)).toBeCloseTo(20, 3);
+    expect(predictedAdvance(10, 0, SURFACE_MAX_AGE, 30, bus)).toBe(0);
+    // Where a metro would still be running.
+    expect(predictedAdvance(10, 0, 0, 6, METRO_LIMITS)).toBeCloseTo(60, 3);
+  });
+
+  it('clamps a mode to its own top speed, not the metro line speed', () => {
+    // A commuter train genuinely runs faster than the metro's 22 m/s, and used
+    // to be clipped to it.
+    expect(predictedSpeed(40, 0, 1, reckonLimits('train'))).toBe(40);
+    expect(predictedSpeed(40, 0, 1, METRO_LIMITS)).toBe(MAX_SPEED);
+    // And a spurious reading is still caught.
+    expect(predictedSpeed(400, 0, 1, reckonLimits('bus'))).toBe(
+      reckonLimits('bus').maxSpeed
+    );
+  });
+});
+
+describe('glideFraction over a window that is not one second', () => {
+  it('still spans the whole window', () => {
+    const bus = reckonLimits('bus');
+    expect(glideFraction(10, 0, 0, 0, bus, 1.6)).toBeCloseTo(0, 6);
+    expect(glideFraction(10, 0, 0, 1, bus, 1.6)).toBeCloseTo(1, 6);
+  });
+
+  it('is linear at constant speed however long the window', () => {
+    const bus = reckonLimits('bus');
+    expect(glideFraction(10, 0, 0, 0.25, bus, 1.6)).toBeCloseTo(0.25, 3);
+  });
+
+  it('coasts to a halt when the window runs past the horizon', () => {
+    // A 2.5 s window opened 1 s into a gap: the bus covers the first second of
+    // it and then stops, because SURFACE_MAX_AGE says its speed reading has
+    // expired. The fraction reaches 1 early and stays there rather than
+    // carrying it on down the road.
+    const bus = reckonLimits('bus');
+    expect(glideFraction(10, 0, 1, 0.4, bus, 2.5)).toBeCloseTo(1, 3);
+  });
+});
+
+describe('advanceAlongHeading', () => {
+  const HELSINKI = { lat: 60.1699, lng: 24.9384 };
+
+  it('moves north, east, south and west by the heading given', () => {
+    const north = advanceAlongHeading(HELSINKI.lat, HELSINKI.lng, 0, 100);
+    expect(north.lat).toBeGreaterThan(HELSINKI.lat);
+    expect(north.lng).toBeCloseTo(HELSINKI.lng, 9);
+
+    const east = advanceAlongHeading(HELSINKI.lat, HELSINKI.lng, 90, 100);
+    expect(east.lng).toBeGreaterThan(HELSINKI.lng);
+    expect(east.lat).toBeCloseTo(HELSINKI.lat, 9);
+
+    const south = advanceAlongHeading(HELSINKI.lat, HELSINKI.lng, 180, 100);
+    expect(south.lat).toBeLessThan(HELSINKI.lat);
+
+    const west = advanceAlongHeading(HELSINKI.lat, HELSINKI.lng, 270, 100);
+    expect(west.lng).toBeLessThan(HELSINKI.lng);
+  });
+
+  it('moves the distance it was asked to', () => {
+    // A degree of latitude is ~111.19 km on a sphere of this radius; 100 m north
+    // is that many degrees. Longitude is the same scaled by cos(lat).
+    const moved = advanceAlongHeading(HELSINKI.lat, HELSINKI.lng, 45, 100);
+    const dNorth = (moved.lat - HELSINKI.lat) * (Math.PI / 180) * 6371000;
+    const dEast =
+      (moved.lng - HELSINKI.lng) *
+      (Math.PI / 180) *
+      6371000 *
+      Math.cos((HELSINKI.lat * Math.PI) / 180);
+    expect(Math.hypot(dNorth, dEast)).toBeCloseTo(100, 3);
+    expect(dNorth).toBeCloseTo(dEast, 3);
+  });
+
+  it('leaves a standing vehicle exactly where it is', () => {
+    expect(advanceAlongHeading(HELSINKI.lat, HELSINKI.lng, 225, 0)).toEqual(HELSINKI);
+    expect(advanceAlongHeading(HELSINKI.lat, HELSINKI.lng, 225, -5)).toEqual(HELSINKI);
+    expect(advanceAlongHeading(HELSINKI.lat, HELSINKI.lng, NaN, 20)).toEqual(HELSINKI);
+  });
+
+  it('composes with the predicted advance to place a vehicle a second on', () => {
+    // The whole surface-mode prediction in one line: a tram at 8 m/s heading
+    // due east is 8 m further east a second later.
+    const tram = reckonLimits('tram');
+    const metres = predictedAdvance(8, 0, 0, 1, tram);
+    const next = advanceAlongHeading(HELSINKI.lat, HELSINKI.lng, 90, metres);
+    const dEast =
+      (next.lng - HELSINKI.lng) *
+      (Math.PI / 180) *
+      6371000 *
+      Math.cos((HELSINKI.lat * Math.PI) / 180);
+    expect(dEast).toBeCloseTo(8, 2);
   });
 });
