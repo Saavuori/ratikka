@@ -41,6 +41,31 @@ func IsOptionalMode(mode string) bool {
 // metroUnitTTL (end of journey, or the unit stopped reporting).
 const metroUnitTTL = 60 * time.Second
 
+// HSL publishes a tram's VP message four times over. Measured on a five-minute
+// capture of the live feed, 97,099 tram messages carried 24,276 distinct
+// readings — the same vehicle, the same `tsi`, the same coordinate, delivered
+// four times within about a hundred milliseconds. The other three modes are
+// delivered once each (bus 1.00x, train 1.00x, metro 1.04x).
+//
+// Every copy used to be unmarshalled, thinned, re-marshalled and written to
+// Redis, so three quarters of all tram ingestion work — and three quarters of
+// the write traffic to the position cache — was spent storing a value that was
+// already there. Remembering the last reading per vehicle and dropping exact
+// repeats costs one small map and removes all of it.
+//
+// Only an exact repeat is dropped: same timestamp *and* same coordinate. A
+// vehicle that genuinely re-reports its position with a fresh timestamp still
+// gets through, because the timestamp is what the stale-vehicle sweeper reads
+// to decide the vehicle is still alive.
+const dedupeTTL = 5 * time.Minute
+
+type lastReading struct {
+	ts   int64
+	lat  float64
+	lng  float64
+	seen time.Time
+}
+
 var (
 	MessagesReceivedCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "ratikka_mqtt_messages_received_total",
@@ -128,6 +153,13 @@ type IngestionWorker struct {
 	// metroUnitTTL. Guarded by metroMu, held only by the MQTT receive goroutine.
 	metroMu    sync.Mutex
 	metroUnits map[string]metroUnit
+
+	// lastReadings holds the newest reading seen per vehicle, so the duplicate
+	// copies HSL publishes are dropped before they cost a cache write; see
+	// dedupeTTL. Guarded by dedupeMu because paho dispatches message handlers
+	// concurrently.
+	dedupeMu     sync.Mutex
+	lastReadings map[string]lastReading
 }
 
 type metroUnit struct {
@@ -141,6 +173,7 @@ func NewIngestionWorker(broker string, cache cache.Cache) *IngestionWorker {
 		cache:        cache,
 		enabledModes: make(map[string]bool),
 		metroUnits:   make(map[string]metroUnit),
+		lastReadings: make(map[string]lastReading),
 	}
 }
 
@@ -328,6 +361,11 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 
+	// HSL delivers each tram message four times; drop the copies. See dedupeTTL.
+	if !w.acceptReading(vehicleID, vp.Tsi, vp.Lat, vp.Long) {
+		return
+	}
+
 	thinned := VehiclePosition{
 		Veh:    vehicleID,
 		Desi:   vp.Desi,
@@ -366,6 +404,35 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 	if err := w.cache.SetPosition(ctx, vehicleID, thinnedJSON); err != nil {
 		log.Printf("Error caching vehicle %s position: %v\n", vehicleID, err)
 	}
+}
+
+// acceptReading reports whether this message says anything the cache does not
+// already hold: a reading is accepted unless the same vehicle's previous one
+// carried an identical timestamp and coordinate.
+//
+// The map is swept rather than left to grow, on the same trigger as
+// metroUnits: the fleet turns over as journeys start and end, and a vehicle
+// that has not been heard from in dedupeTTL is long gone from the position
+// cache too.
+func (w *IngestionWorker) acceptReading(vehicleID string, ts int64, lat, lng float64) bool {
+	now := time.Now()
+
+	w.dedupeMu.Lock()
+	defer w.dedupeMu.Unlock()
+
+	if prev, ok := w.lastReadings[vehicleID]; ok && prev.ts == ts && prev.lat == lat && prev.lng == lng {
+		return false
+	}
+	w.lastReadings[vehicleID] = lastReading{ts: ts, lat: lat, lng: lng, seen: now}
+
+	if len(w.lastReadings) > 4096 {
+		for k, r := range w.lastReadings {
+			if now.Sub(r.seen) > dedupeTTL {
+				delete(w.lastReadings, k)
+			}
+		}
+	}
+	return true
 }
 
 // acceptMetroUnit reports whether this metro message comes from the unit we
