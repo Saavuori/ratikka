@@ -43,13 +43,15 @@ const { rolldown } = await import(
   pathToFileURL(path.join(FRONTEND, 'node_modules', 'rolldown', 'dist', 'index.mjs')).href
 );
 const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ratikka-vehicles-'));
+process.once('exit', () => fs.rmSync(outDir, { recursive: true, force: true }));
 const bundle = await rolldown({
   input: path.join(FRONTEND, 'src', 'lib', 'vehicleModels.ts'),
   logLevel: 'silent',
 });
 await bundle.write({ dir: outDir, format: 'esm', entryFileNames: 'vehicleModels.mjs' });
+await bundle.close();
 const libSource = fs.readFileSync(path.join(outDir, 'vehicleModels.mjs'), 'utf8');
-const { VEHICLE_MODELS, VEHICLE_3D_MIN_ZOOM } = await import(
+const { VEHICLE_MODELS, VEHICLE_3D_MIN_ZOOM, VEHICLE_3D_FULL_ZOOM, vehicleExtrusions } = await import(
   pathToFileURL(path.join(outDir, 'vehicleModels.mjs')).href
 );
 
@@ -104,10 +106,14 @@ const CENTER = [24.94, 60.17];
  * bounding box of them, and — for the height check — the topmost row of the
  * projected ground footprint. All in CSS pixels.
  */
-const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false }) =>
+const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorProgress, braking = false, flat = false, focus, capture = false }) =>
   page.evaluate(
-    async ({ mode, hdg, zoom, pitch, doorsOpen, center, minZoom }) => {
-      const { vehicleExtrusionCollection, VEHICLE_3D_FADE_IN } = window.vehicleModels;
+    async ({ mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, capture, center, minZoom }) => {
+      const { vehicleExtrusionCollection, VEHICLE_3D_FADE_IN, vehicleModel, offsetMeters } = window.vehicleModels;
+      const model = vehicleModel(mode);
+      const cameraCenter = focus
+        ? offsetMeters(...center, hdg, focus === 'front' ? model.sections[0].front : model.sections.at(-1).back, 0)
+        : center;
       document.getElementById('map').innerHTML = '';
       const map = new maplibregl.Map({
         container: 'map',
@@ -117,7 +123,7 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false }) =>
           sources: {},
           layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#ffffff' } }],
         },
-        center,
+        center: cameraCenter,
         zoom,
         pitch,
         fadeDuration: 0,
@@ -126,14 +132,15 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false }) =>
       await new Promise((r) => map.on('load', r));
 
       const data = vehicleExtrusionCollection([
-        { veh: 'v', lng: center[0], lat: center[1], hdg, mode, desi: '', doorsOpen },
-      ]);
+        { veh: 'v', lng: center[0], lat: center[1], hdg, mode, desi: '', doorsOpen, doorProgress, braking },
+      ], zoom >= 16);
       map.addSource('vehicles-3d', { type: 'geojson', data });
       map.addLayer({
         id: 'vehicles-3d',
         type: 'fill-extrusion',
         source: 'vehicles-3d',
         minzoom: minZoom,
+        layout: { visibility: flat ? 'none' : 'visible' },
         paint: {
           'fill-extrusion-color': ['get', 'color'],
           'fill-extrusion-height': ['get', 'top'],
@@ -156,6 +163,9 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false }) =>
       // shaded by MapLibre's lighting, so the match is a band not a value.
       let amber = 0;
       let cab = 0;
+      let red = 0;
+      let head = 0;
+      let redStrength = 0;
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (let y = 0; y < scan.height; y++) {
         for (let x = 0; x < scan.width; x++) {
@@ -166,6 +176,11 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false }) =>
           if (px[i] > 150 && px[i + 1] > 90 && px[i + 1] < 200 && px[i + 2] < 80) amber++;
           // The pale blue cab patch (#9fd8f2), likewise shaded.
           if (px[i] > 110 && px[i] < 200 && px[i + 1] > 150 && px[i + 2] > 190) cab++;
+          if (px[i] > 90 && px[i] > px[i + 1] * 2 && px[i] > px[i + 2] * 1.7 && px[i + 2] > px[i + 1] * 1.05) {
+            red++;
+            redStrength += px[i];
+          }
+          if (px[i] > 170 && px[i + 1] > 160 && px[i + 2] > 95 && px[i + 2] < px[i + 1] * 0.8) head++;
           minX = Math.min(minX, x / dpr); maxX = Math.max(maxX, x / dpr);
           minY = Math.min(minY, y / dpr); maxY = Math.max(maxY, y / dpr);
         }
@@ -186,10 +201,11 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false }) =>
         return (Math.abs(b.lng - center[0]) * mPerDegLng) / 100;
       })();
 
+      const image = capture ? glCanvas.toDataURL('image/png') : undefined;
       map.remove();
-      return { painted, amber, cab, minX, maxX, minY, maxY, groundTop, metersPerPixel };
+      return { painted, amber, cab, red, head, redStrength, minX, maxX, minY, maxY, groundTop, metersPerPixel, image };
     },
-    { mode, hdg, zoom, pitch, doorsOpen, center: CENTER, minZoom: VEHICLE_3D_MIN_ZOOM }
+    { mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, capture, center: CENTER, minZoom: VEHICLE_3D_MIN_ZOOM }
   );
 
 const failures = [];
@@ -263,6 +279,10 @@ check(
     belowFade.painted === 0,
     `${belowFade.painted} px painted`
   );
+  const far = await render({ mode: 'tram', zoom: VEHICLE_3D_FULL_ZOOM });
+  check('real-scale bodies are visible at zoom 14', far.painted > 0, `${far.painted} px painted`);
+  const flat = await render({ mode: 'tram', zoom: 18, flat: true });
+  check('flat-map layer visibility hides all extrusions', flat.painted === 0, `${flat.painted} px painted`);
 }
 
 // 6. The doors have to stand proud of the flanks, or the doors-open cue is
@@ -274,11 +294,15 @@ check(
 {
   const shut = await render({ mode: 'bus', zoom: 18, pitch: 60 });
   const open = await render({ mode: 'bus', zoom: 18, pitch: 60, doorsOpen: true });
+  const halfway = await render({ mode: 'bus', zoom: 18, pitch: 60, doorProgress: 0.5 });
   check(
     'open doors uncover an amber doorway on the flank',
     open.amber > 20 && shut.amber === 0 && open.amber < open.painted / 4,
     `${open.amber} amber px of ${open.painted} painted with the doors open, ${shut.amber} with them shut`
   );
+  check('animated door progress progressively uncovers the opening',
+    halfway.amber > shut.amber && halfway.amber < open.amber,
+    `closed ${shut.amber}, half ${halfway.amber}, open ${open.amber} amber px`);
 }
 
 // 7. The cab patch marks the driving end on the roof, which is where a map
@@ -293,8 +317,61 @@ check(
   );
 }
 
+// Check visible mounted lamps against the complete body, not isolated polygons.
+for (const mode of Object.keys(VEHICLE_MODELS)) {
+  const front = await render({ mode, hdg: 150, zoom: 20, pitch: 60, focus: 'front' });
+  const rear = await render({ mode, hdg: 330, zoom: 20, pitch: 60, focus: 'rear' });
+  const braking = await render({ mode, hdg: 330, zoom: 20, pitch: 60, braking: true, focus: 'rear' });
+  check(`${mode} headlights are visible on the front face`, front.head > 3, `${front.head} headlamp px`);
+  check(`${mode} tail lamps are visible on the rear face`, rear.red > 3, `${rear.red} tail px`);
+  if (mode === 'bus' || mode === 'tram') {
+    check(`${mode} inferred road braking brightens rear lamps`,
+      braking.redStrength > rear.redStrength * 1.1,
+      `normal ${rear.redStrength}, braking ${braking.redStrength} red intensity sum`);
+  }
+  check(`${mode} inferred braking cue is visible on the roof`,
+    braking.amber > rear.amber + 3, `normal ${rear.amber}, braking ${braking.amber} amber px`);
+}
+
+// Structural assertions use the same bundled geometry rendered above. Each
+// open door must stay on a straight flank of its own section, never a gangway.
+for (const [mode, model] of Object.entries(VEHICLE_MODELS)) {
+  const state = { veh: 'v', lng: CENTER[0], lat: CENTER[1], hdg: 0, mode, desi: '', doorsOpen: true };
+  const parts = vehicleExtrusions(state);
+  const count = (part) => parts.filter((p) => p.properties.part === part).length;
+  check(`${mode} has individually modelled sections and running gear`,
+    count('body') === model.sections.length && count('gangway') === model.sections.length - 1 &&
+    count('wheel') > 0 && count('pillar') > 0 && count('hvac') === model.hvac.length,
+    `${count('body')} sections, ${count('wheel')} wheels, ${count('pillar')} pillars, ${count('hvac')} HVAC units`);
+  check(`${mode} has the intended door sides and section-safe travel`,
+    count('door') === model.doors.length * model.doorSides.length * 2 &&
+    model.doors.every((d) => model.sections.some((s) =>
+      d - model.doorWidth > s.back + (s.tail ?? 0) &&
+      d + model.doorWidth < s.front - (s.nose ?? 0))));
+  if (mode === 'metro' || mode === 'train') {
+    const tails = (features) => features.filter((f) => f.properties.part === 'taillight');
+    check(`${mode} tail lamps are not misrepresented as road brake lights`,
+      JSON.stringify(tails(parts)) === JSON.stringify(tails(vehicleExtrusions({ ...state, braking: true }))));
+  }
+}
+
+// Opt-in visual artifacts; normal verification leaves no images behind.
+if (process.env.VEHICLE_SCREENSHOTS === '1') {
+  const screenshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ratikka-vehicle-previews-'));
+  for (const mode of Object.keys(VEHICLE_MODELS)) {
+    const shot = await render({
+      mode, zoom: mode === 'bus' ? 20 : mode === 'tram' ? 19 : 17.5,
+      pitch: 60, hdg: 110, doorsOpen: true, braking: true, capture: true,
+    });
+    const filename = path.join(screenshotDir, `vehicle-3d-preview-${mode}.png`);
+    fs.writeFileSync(filename, Buffer.from(shot.image.split(',')[1], 'base64'));
+    console.log(`Vehicle preview: ${filename}`);
+  }
+}
+
 await browser.close();
 server.close();
+fs.rmSync(outDir, { recursive: true, force: true });
 
 console.log('\n--- 3D vehicle bodies ---');
 report.forEach((l) => console.log(l));

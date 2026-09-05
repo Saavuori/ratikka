@@ -56,10 +56,13 @@ import {
 import {
   vehicleExtrusionCollection,
   VEHICLE_3D_MIN_ZOOM,
+  VEHICLE_3D_FULL_ZOOM,
   VEHICLE_3D_FADE_IN,
   VEHICLE_ICON_FADE_OUT,
 } from '../lib/vehicleModels';
 import type { VehicleState } from '../lib/vehicleModels';
+import { advanceDoors, isVehicleBraking, vehicles3DEnabled } from '../lib/vehicleAnimation';
+import type { DoorAnimation } from '../lib/vehicleAnimation';
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection, TrafficLightFeature } from '../types';
 import { useTrafficLights } from '../hooks/useTrafficLights';
@@ -111,6 +114,7 @@ interface MapProps {
   selectedLine?: string | null;
   mapTheme: 'light' | 'dark';
   is3D: boolean;
+  always3DVehicles: boolean;
   isFollowing: boolean;
   onDisableFollowing: () => void;
   onMapBearingChange?: (bearing: number) => void;
@@ -231,6 +235,7 @@ export const Map: React.FC<MapProps> = ({
   selectedLine = null,
   mapTheme,
   is3D,
+  always3DVehicles,
   isFollowing,
   onDisableFollowing,
   onMapBearingChange,
@@ -284,6 +289,8 @@ export const Map: React.FC<MapProps> = ({
   const showTrainsRef = useRef<boolean>(showTrains);
   const showRoutesRef = useRef<boolean>(showRoutes);
   const is3DRef = useRef<boolean>(is3D);
+  const always3DVehiclesRef = useRef<boolean>(always3DVehicles);
+  const doorAnimationsRef = useRef<Record<string, DoorAnimation>>({});
   // Whether the 3D source currently holds bodies, so it is emptied exactly once
   // when 3D is switched off or the view zooms back out.
   const vehicles3dDrawnRef = useRef<boolean>(false);
@@ -366,6 +373,10 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     is3DRef.current = is3D;
   }, [is3D]);
+
+  useEffect(() => {
+    always3DVehiclesRef.current = always3DVehicles;
+  }, [always3DVehicles]);
 
   useEffect(() => {
     mapThemeRef.current = mapTheme;
@@ -709,10 +720,10 @@ export const Map: React.FC<MapProps> = ({
         map.setLayoutProperty(custom3DId, 'visibility', 'none');
       }
     }
+  };
 
-    // 4. Swap the flat carriage icons for the extruded vehicle bodies. Both are
-    //    drawn while the view crosses the fade band, one going out as the other
-    //    comes in; in 2D the icons are simply opaque and the bodies hidden.
+  // Vehicle visibility is independent of pitch/buildings, including on style reload.
+  const updateVehicle3DMode = (map: maplibregl.Map, active: boolean) => {
     if (map.getLayer('vehicles-3d')) {
       map.setLayoutProperty('vehicles-3d', 'visibility', active ? 'visible' : 'none');
     }
@@ -720,12 +731,18 @@ export const Map: React.FC<MapProps> = ({
       map.setPaintProperty('trams-body', 'icon-opacity', (active ? VEHICLE_ICON_FADE_OUT : 1) as maplibregl.DataDrivenPropertyValueSpecification<number>);
     }
     if (map.getLayer('trams-brake')) {
-      map.setPaintProperty('trams-brake', 'icon-opacity', [
+      const brakeOpacity = [
         'case',
         ['any', ['get', 'stopped'], ['<', ['get', 'acc'], -0.35]],
-        active ? VEHICLE_ICON_FADE_OUT : 1,
+        1,
         0,
-      ] as unknown as maplibregl.DataDrivenPropertyValueSpecification<number>);
+      ];
+      // Zoom expressions must be top-level, not nested inside the braking case.
+      const opacity = active
+        ? ['interpolate', ['linear'], ['zoom'],
+          VEHICLE_3D_MIN_ZOOM, brakeOpacity, VEHICLE_3D_FULL_ZOOM, 0]
+        : brakeOpacity;
+      map.setPaintProperty('trams-brake', 'icon-opacity', opacity as unknown as maplibregl.DataDrivenPropertyValueSpecification<number>);
     }
   };
 
@@ -1212,17 +1229,17 @@ export const Map: React.FC<MapProps> = ({
         });
       }
 
-      // 3D bodies for the tilted view, from the same interpolated positions the
-      // flat icons use. Built only while 3D is on and the view is close enough
+      // 3D bodies from the same interpolated positions the flat icons use.
+      // Built only while models are enabled and the view is close enough
       // for the layer to draw: extruding every vehicle is several polygons each,
       // and there is no point paying for it to render nothing.
       const source3d = map.getSource('vehicles-3d') as maplibregl.GeoJSONSource | undefined;
       if (source3d) {
-        const draw3d = is3DRef.current && map.getZoom() >= VEHICLE_3D_MIN_ZOOM;
+        const draw3d = vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current) &&
+          map.getZoom() >= VEHICLE_3D_MIN_ZOOM;
         if (draw3d || vehicles3dDrawnRef.current) {
-          // A body is a dozen polygons, against one point for the flat icon, so
-          // only what is actually on screen is built — at these zooms that is a
-          // handful of vehicles out of the whole feed. Padded by a body length
+          // A detailed body has many polygons, against one point for the flat icon,
+          // so only what is actually on screen is built. Padded by a body length
           // so a train is not clipped as it enters the view.
           const bounds = draw3d ? map.getBounds().toArray() : null;
           const pad = 0.0012;
@@ -1230,21 +1247,31 @@ export const Map: React.FC<MapProps> = ({
             !bounds ||
             (lng >= bounds[0][0] - pad && lng <= bounds[1][0] + pad &&
              lat >= bounds[0][1] - pad && lat <= bounds[1][1] + pad);
+          const doorAnimations: Record<string, DoorAnimation> = {};
           const states: VehicleState[] = draw3d
             ? features
                 .filter((f) => onScreen(f.geometry.coordinates[0], f.geometry.coordinates[1]))
-                .map((f) => ({
-                  veh: f.properties.veh,
-                  lng: f.geometry.coordinates[0],
-                  lat: f.geometry.coordinates[1],
-                  hdg: f.properties.hdg,
-                  mode: f.properties.mode,
-                  desi: f.properties.desi,
-                  doorsOpen: f.properties.doorsOpen,
-                  selected: f.properties.veh === selectedTramIdRef.current,
-                }))
+                .map((f) => {
+                  const id = f.properties.veh;
+                  const telemetry = latestTramsRef.current[id];
+                  const doors = advanceDoors(doorAnimationsRef.current[id], f.properties.doorsOpen, now);
+                  doorAnimations[id] = doors;
+                  return {
+                    veh: f.properties.veh,
+                    lng: f.geometry.coordinates[0],
+                    lat: f.geometry.coordinates[1],
+                    hdg: f.properties.hdg,
+                    mode: f.properties.mode,
+                    desi: f.properties.desi,
+                    doorsOpen: f.properties.doorsOpen,
+                    doorProgress: doors.progress,
+                    braking: isVehicleBraking(telemetry?.spd, telemetry?.acc, f.properties.doorsOpen),
+                    selected: f.properties.veh === selectedTramIdRef.current,
+                  };
+                })
             : [];
-          source3d.setData(vehicleExtrusionCollection(states));
+          doorAnimationsRef.current = doorAnimations;
+          source3d.setData(vehicleExtrusionCollection(states, map.getZoom() >= 16));
           vehicles3dDrawnRef.current = draw3d;
         }
       }
@@ -2025,13 +2052,9 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
-    // 7c. 3D vehicle bodies. In the tilted view the flat carriage icons give way
-    //     to extruded boxes at real vehicle scale (lib/vehicleModels), built from
-    //     the same anatomy the popup schematics draw: a 27 m tram, a boxy bus, the
-    //     metro's coupled pair with the gap between its units, and a 75 m commuter
-    //     train with its pantograph. Colour, height and base all come from the
-    //     feature, so one layer draws bodies, window bands and roof details.
-    //     Populated only while 3D is on (see the animation loop), and faded in
+    // 7c. Detailed 3D vehicle bodies at real vehicle scale (lib/vehicleModels).
+    //     Colour, height and base come from each part's feature.
+    //     Populated only while models are enabled (see the animation loop), and faded in
     //     across the same zooms the flat icons fade out over, so the swap between
     //     the two is a crossfade rather than a pop.
     if (!map.getSource('vehicles-3d')) {
@@ -2046,7 +2069,7 @@ export const Map: React.FC<MapProps> = ({
         type: 'fill-extrusion',
         source: 'vehicles-3d',
         minzoom: VEHICLE_3D_MIN_ZOOM,
-        layout: { visibility: is3DRef.current ? 'visible' : 'none' },
+        layout: { visibility: vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current) ? 'visible' : 'none' },
         paint: {
           'fill-extrusion-color': ['get', 'color'],
           'fill-extrusion-height': ['get', 'top'],
@@ -2837,6 +2860,7 @@ export const Map: React.FC<MapProps> = ({
       showRoutesRef.current,
     );
     update3DMode(map, is3DRef.current, mapThemeRef.current);
+    updateVehicle3DMode(map, vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current));
 
     // Hide white casing layers
     const casingLayers = ['stops_case', 'stops_rail_case', 'stops_hub', 'stops_rail_hub'];
@@ -2896,6 +2920,7 @@ export const Map: React.FC<MapProps> = ({
     // faint/zero-opacity for stationary vehicles, so bind both.
     map.on('click', 'trams-body', handleTramClick);
     map.on('click', 'trams-circles', handleTramClick);
+    map.on('click', 'vehicles-3d', handleTramClick);
 
     const handleStopClick = (e: maplibregl.MapLayerMouseEvent) => {
       if (!e.features || e.features.length === 0) return;
@@ -2949,6 +2974,8 @@ export const Map: React.FC<MapProps> = ({
     map.on('mouseleave', 'trams-body', resetCursor);
     map.on('mouseenter', 'trams-circles', setCursorPointer);
     map.on('mouseleave', 'trams-circles', resetCursor);
+    map.on('mouseenter', 'vehicles-3d', setCursorPointer);
+    map.on('mouseleave', 'vehicles-3d', resetCursor);
     map.on('mouseenter', 'stops_tram', setCursorPointer);
     map.on('mouseleave', 'stops_tram', resetCursor);
     map.on('mouseenter', 'stops_metro', setCursorPointer);
@@ -3270,6 +3297,13 @@ export const Map: React.FC<MapProps> = ({
       update3DMode(map, is3D, mapTheme);
     }
   }, [is3D, mapTheme]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && map.getStyle()) {
+      updateVehicle3DMode(map, vehicles3DEnabled(is3D, always3DVehicles));
+    }
+  }, [is3D, always3DVehicles, mapTheme]);
 
   // Dynamic Route visibility changes: the background network respects the
   // per-mode Trams/Buses toggles, gives way to the highlighted ribbons wherever

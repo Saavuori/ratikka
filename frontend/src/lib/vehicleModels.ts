@@ -1,21 +1,5 @@
-// 3D vehicle bodies for the tilted map.
-//
-// In 3D view the flat carriage icons are replaced by extruded bodies built from
-// the same anatomy the popup schematics draw (see VehicleSchematic): a tram is
-// one carriage with a cab at either end, the metro is the coupled pair with the
-// gap between its two units, a commuter train is one long body with a raked
-// nose, and a bus is short and boxy. The details carry over too — a window band
-// wrapping the flanks, individual doors that turn amber as they slide open, a
-// pale cab patch at each driving end, and the train's pantograph — because a
-// plain slab tells you nothing a dot would not.
-//
-// Everything here is in metres at real vehicle scale, so a train really is
-// three tram-lengths long on the map. `fill-extrusion` geometry is anchored to
-// the ground in world units, which is what makes the bodies sit in the street
-// alongside the extruded buildings instead of floating at an icon size. It also
-// decides what is worth drawing: a map camera looks down at these, so the
-// details that read are the ones on the roof and standing proud of the flanks,
-// not anything tucked under the sills.
+// Representative Helsinki vehicles, not fleet-specific engineering drawings.
+// All dimensions are ground metres, including details: zoom never inflates them.
 
 import { ROUTE_COLORS, METRO_COLORS, TRAIN_COLORS, TRAM_GREEN, METRO_ORANGE, TRAIN_PURPLE, BUS_BLUE } from './routeColors';
 
@@ -44,6 +28,10 @@ export interface VehicleModel {
   doors: number[];
   /** How wide one door set is along the body. */
   doorWidth: number;
+  doorSides: number[];
+  bogies: number[];
+  hvac: number[];
+  pantograph?: number;
   /**
    * Driving ends, as distances from the centre: a pale patch is laid on the
    * roof at each, the 3D read of the schematic's cab windscreen. The sign says
@@ -52,59 +40,78 @@ export interface VehicleModel {
   cabs: number[];
   /** A lighter stripe down the middle of the roof (the metro's white band). */
   roofStripe?: { color: string; halfWidth: number };
-  /** Optional roof box — the commuter train's pantograph. */
-  roof?: BodySection & { base: number; top: number };
 }
 
 // Dimensions follow the real rolling stock closely enough that the modes are
 // tellable apart by size alone: an Artic tram is 27 m, a city bus 12.5 m, a
 // two-unit metro train just under 90 m, and a four-car Sm-series unit 75 m.
-// Door counts and positions match the schematics: three sets on a tram, two on
-// a bus, two per metro unit, three on a commuter train.
+// Rail doors appear on both flanks because HFP does not report the platform side.
 export const VEHICLE_MODELS: Record<string, VehicleModel> = {
   tram: {
-    sections: [{ front: 13.5, back: -13.5, halfWidth: 1.2, nose: 1.6, tail: 1.6 }],
+    sections: [
+      { front: 13.5, back: 4.8, halfWidth: 1.2, nose: 1.6 },
+      { front: 4.3, back: -4.3, halfWidth: 1.2 },
+      { front: -4.8, back: -13.5, halfWidth: 1.2, tail: 1.2 },
+    ],
     height: 3.4,
     glassBase: 1.5,
     glassTop: 2.6,
-    doors: [7.2, 0, -7.2],
+    doors: [8.8, 1.8, -1.8, -8.2],
     doorWidth: 1.3,
-    cabs: [13.5, -13.5],
+    doorSides: [1],
+    bogies: [10, 0, -10],
+    hvac: [7, -7],
+    pantograph: 0,
+    cabs: [13.5],
   },
   bus: {
-    sections: [{ front: 6.2, back: -6.3, halfWidth: 1.28, nose: 1.2 }],
+    sections: [{ front: 6.2, back: -6.3, halfWidth: 1.28, nose: 0.35, tail: 0.2 }],
     height: 3.1,
     glassBase: 1.6,
     glassTop: 2.6,
-    doors: [2.6, -2.4],
+    doors: [4.2, -1.5],
     doorWidth: 1.1,
+    doorSides: [1],
+    bogies: [3, -3.8],
+    hvac: [-2],
     cabs: [6.2],
   },
-  // Two units nose to nose with the coupling gap between them — the seam is the
-  // cue that reads at a glance, exactly as in the schematic.
+  // Four cars in two paired metro units; a larger coupling gap separates pairs.
   metro: {
     sections: [
-      { front: 44.5, back: 1.0, halfWidth: 1.6, nose: 2.2 },
-      { front: -1.0, back: -44.5, halfWidth: 1.6, tail: 2.2 },
+      { front: 44.5, back: 22.9, halfWidth: 1.6, nose: 2.2 },
+      { front: 22.3, back: 0.6, halfWidth: 1.6 },
+      { front: -0.6, back: -22.3, halfWidth: 1.6 },
+      { front: -22.9, back: -44.5, halfWidth: 1.6, tail: 2.2 },
     ],
     height: 3.6,
     glassBase: 1.7,
     glassTop: 2.8,
-    doors: [34, 12, -12, -34],
+    doors: [39, 33.5, 27.5, 18, 11.5, 5, -5, -11.5, -18, -27.5, -33.5, -39],
     doorWidth: 1.4,
+    doorSides: [1, -1],
+    bogies: [40, 27, 18, 5, -5, -18, -27, -40],
+    hvac: [33.5, 11.5, -11.5, -33.5],
     cabs: [44.5, -44.5],
     roofStripe: { color: '#f1f5f9', halfWidth: 0.45 },
   },
   train: {
-    sections: [{ front: 37.5, back: -37.5, halfWidth: 1.6, nose: 3.5, tail: 3.5 }],
+    sections: [
+      { front: 37.5, back: 19.1, halfWidth: 1.6, nose: 3.5 },
+      { front: 18.5, back: 0.3, halfWidth: 1.6 },
+      { front: -0.3, back: -18.5, halfWidth: 1.6 },
+      { front: -19.1, back: -37.5, halfWidth: 1.6, tail: 3.5 },
+    ],
     height: 4.0,
     glassBase: 1.9,
     glassTop: 3.0,
-    doors: [22, 0, -22],
+    doors: [27, 12, -12, -27],
     doorWidth: 1.4,
+    doorSides: [1, -1],
+    bogies: [32, 18.8, 0, -18.8, -32],
+    hvac: [25, 9, -9, -25],
+    pantograph: -5,
     cabs: [37.5, -37.5],
-    // The pantograph on the roof, reaching for the overhead wire.
-    roof: { front: 6, back: -6, halfWidth: 0.55, base: 4.0, top: 4.7 },
   },
 };
 
@@ -140,6 +147,10 @@ export const DOORS_OPEN_COLOR = '#ffb020';
 export const CAB_COLOR = '#9fd8f2';
 /** The gold a selected vehicle's body takes, matching the selection ring. */
 export const SELECTED_COLOR = '#fdcb6e';
+export const HEADLIGHT_COLOR = '#fff3ad';
+export const TAILLIGHT_COLOR = '#a92532';
+export const BRAKE_LIGHT_COLOR = '#ff3344';
+export const BRAKE_INDICATOR_COLOR = '#ff962b';
 
 const EARTH_RADIUS = 6378137;
 const DEG = 180 / Math.PI;
@@ -193,9 +204,9 @@ export function sectionRing(
   const hw = section.halfWidth + widen;
   const nose = section.nose ?? 0;
   const tail = section.tail ?? 0;
-  // Chamfered corners are pulled in to about a third of the width, which is
+  // Chamfered corners retain enough width for the windscreen and end lamps,
   // enough taper to read as a nose without narrowing the cab to a point.
-  const tip = hw * 0.35;
+  const tip = hw * 0.6;
 
   const pts: Array<[number, number]> = [];
   const add = (along: number, across: number) => pts.push([along, across]);
@@ -250,10 +261,16 @@ export interface VehicleState {
   mode: string;
   desi: string;
   doorsOpen: boolean;
+  /** Inferred deceleration, not an observed lamp or brake-circuit state. */
+  braking?: boolean;
+  /** Animated opening fraction; omitted/non-finite values use doorsOpen. */
+  doorProgress?: number;
   selected?: boolean;
 }
 
-export type VehiclePart = 'body' | 'glass' | 'doorway' | 'door' | 'cab' | 'roof';
+export type VehiclePart = 'body' | 'glass' | 'pillar' | 'doorway' | 'door' | 'cab' | 'roof'
+  | 'gangway' | 'bogie' | 'wheel' | 'wheel-hub' | 'hvac' | 'pantograph' | 'lamp-housing'
+  | 'headlight' | 'taillight' | 'brake-indicator' | 'bumper' | 'destination';
 
 export interface ExtrusionFeature {
   type: 'Feature';
@@ -267,16 +284,15 @@ const DOORWAY_PROUD = 0.10;
 const DOOR_PROUD = 0.18;
 
 /**
- * Every extruded piece of one vehicle: the body (or bodies, for the coupled
- * metro), the window band around it, a pair of door leaves on each flank at
- * every door position, a cab patch on the roof at each driving end, and the
- * roof detail where the model has one. A selected vehicle turns gold, the same
- * cue as the flat selection ring.
+ * Sectioned bodies, window pillars, running gear, roof equipment, mounted lamps,
+ * and sliding door leaves. Selected bodies and pillars match the gold ring.
  */
-export function vehicleExtrusions(v: VehicleState): ExtrusionFeature[] {
+export function vehicleExtrusions(v: VehicleState, detailed = true): ExtrusionFeature[] {
   const model = vehicleModel(v.mode);
   const bodyColor = v.selected ? SELECTED_COLOR : vehicleBodyColor(v.mode, v.desi);
-  const doorway = v.doorsOpen;
+  const progress = Number.isFinite(v.doorProgress)
+    ? Math.max(0, Math.min(1, v.doorProgress!))
+    : v.doorsOpen ? 1 : 0;
   const out: ExtrusionFeature[] = [];
 
   const push = (
@@ -303,12 +319,39 @@ export function vehicleExtrusions(v: VehicleState): ExtrusionFeature[] {
     top: number,
   ) => push(part, patchRing(v.lng, v.lat, v.hdg, along, across), color, base, top);
 
-  model.sections.forEach((s) => {
-    section('body', s, bodyColor, 0, model.height);
+  const halfWidth = model.sections[0].halfWidth;
+  model.sections.forEach((s, index) => {
+    section('body', s, bodyColor, 0.55, model.height);
     // A few centimetres proud of the flanks, so the band is visible against the
     // body rather than z-fighting with it.
     section('glass', s, GLASS_COLOR, model.glassBase, model.glassTop, GLASS_PROUD);
+    const start = s.back + (s.tail ?? 0) + 0.5;
+    const end = s.front - (s.nose ?? 0) - 0.5;
+    for (let along = start; detailed && along < end; along += 2.2) {
+      for (const side of [1, -1]) {
+        patch('pillar', [along, along + 0.16],
+          [side * (s.halfWidth - 0.03), side * (s.halfWidth + 0.07)],
+          bodyColor, model.glassBase, model.glassTop);
+      }
+    }
+    if (index > 0) {
+      const previous = model.sections[index - 1];
+      patch('gangway', [s.front - 0.08, previous.back + 0.08],
+        [-halfWidth * 0.82, halfWidth * 0.82], '#39414b', 0.8, model.height - 0.15);
+    }
   });
+
+  for (const axle of detailed ? model.bogies : []) {
+    patch('bogie', [axle - 0.8, axle + 0.8], [-halfWidth, halfWidth], '#30343b', 0.18, 0.7);
+    for (const side of [1, -1]) {
+      for (const delta of v.mode === 'bus' ? [0] : [-0.6, 0.6]) {
+        patch('wheel', [axle + delta - 0.36, axle + delta + 0.36],
+          [side * (halfWidth - 0.12), side * (halfWidth + 0.09)], '#14181e', 0.06, 0.82);
+        patch('wheel-hub', [axle + delta - 0.17, axle + delta + 0.17],
+          [side * (halfWidth + 0.09), side * (halfWidth + 0.11)], '#8b96a3', 0.26, 0.6);
+      }
+    }
+  }
 
   // Doors, drawn the way the schematic draws them: two leaves per doorway that
   // actually slide apart rather than merely changing colour. Closed, the pair
@@ -316,17 +359,17 @@ export function vehicleExtrusions(v: VehicleState): ExtrusionFeature[] {
   // width clear along the flank and the amber doorway shows in the gap between
   // them. The leaves stand further out than the doorway, which stands further
   // out than the window band, so the three never z-fight.
-  const halfWidth = model.sections[0].halfWidth;
   const half = model.doorWidth / 2;
-  model.doors.forEach((centre) => {
-    [1, -1].forEach((side) => {
+  (detailed ? model.doors : []).forEach((centre) => {
+    const owner = model.sections.find((s) => centre >= s.back && centre <= s.front)!;
+    model.doorSides.forEach((side) => {
       const flank = (proud: number): [number, number] => [
-        side * (halfWidth - 0.05),
-        side * (halfWidth + proud),
+        side * (owner.halfWidth - 0.05),
+        side * (owner.halfWidth + proud),
       ];
       // The opening behind the leaves. Only drawn when it can be seen: a shut
       // door hides it completely, and every vehicle is a few polygons already.
-      if (doorway) {
+      if (progress > 0) {
         patch(
           'doorway',
           [centre - half, centre + half],
@@ -338,7 +381,7 @@ export function vehicleExtrusions(v: VehicleState): ExtrusionFeature[] {
       }
       // Each leaf slides its own width clear, which uncovers exactly the
       // doorway between them — no wider, or plain body would show in the gap.
-      const slide = doorway ? half : 0;
+      const slide = half * progress;
       patch('door', [centre - half - slide, centre - slide], flank(DOOR_PROUD), DOOR_COLOR, 0.35, model.glassTop);
       patch('door', [centre + slide, centre + half + slide], flank(DOOR_PROUD), DOOR_COLOR, 0.35, model.glassTop);
     });
@@ -372,18 +415,60 @@ export function vehicleExtrusions(v: VehicleState): ExtrusionFeature[] {
     });
   }
 
-  if (model.roof) {
-    section('roof', model.roof, '#94a3b8', model.roof.base, model.roof.top);
+  for (const centre of detailed ? model.hvac : []) {
+    patch('hvac', [centre - 1.1, centre + 1.1], [-0.7, 0.7], '#aeb8c4', model.height, model.height + 0.3);
+    patch('roof', [centre - 0.8, centre + 0.8], [-0.45, 0.45], '#596673', model.height + 0.3, model.height + 0.34);
+  }
+  if (detailed && model.pantograph !== undefined) {
+    const p = model.pantograph;
+    // Stepped arms approximate a raised collector without a mesh/custom layer.
+    patch('pantograph', [p - 0.9, p + 0.9], [-0.4, 0.4], '#55616d', model.height, model.height + 0.15);
+    for (const side of [-1, 1]) {
+      for (let step = 0; step < 5; step++) {
+        patch('pantograph', [p - 0.7 + step * 0.16, p - 0.5 + step * 0.16],
+          [side * 0.22 - 0.06, side * 0.22 + 0.06], '#d4dce3',
+          model.height + 0.15 + step * 0.1, model.height + 0.27 + step * 0.1);
+      }
+    }
+    patch('pantograph', [p - 0.1, p + 0.12], [-0.9, 0.9], '#303a45', model.height + 0.65, model.height + 0.8);
+  }
+
+  const front = model.sections[0].front;
+  const back = model.sections[model.sections.length - 1].back;
+  for (const [end, direction] of [[front, 1], [back, -1]]) {
+    patch('bumper', [end - direction * 0.08, end + direction * 0.09],
+      [-halfWidth * 0.55, halfWidth * 0.55], '#303a45', 0.55, 0.8);
+    for (const side of [-1, 1]) {
+      const across = side * halfWidth * 0.38;
+      patch('lamp-housing', [end - direction * 0.04, end + direction * 0.15],
+        [across - 0.24, across + 0.24], '#202833', 1.05, 1.55);
+      patch(direction === 1 ? 'headlight' : 'taillight',
+        [end + direction * 0.15, end + direction * 0.23], [across - 0.18, across + 0.18],
+        direction === 1 ? HEADLIGHT_COLOR
+          : v.braking && (v.mode === 'bus' || v.mode === 'tram') ? BRAKE_LIGHT_COLOR : TAILLIGHT_COLOR,
+        1.13, 1.47);
+    }
+  }
+  patch('destination', [front - 0.45, front - 0.2], [-0.5, 0.5], '#e8e5bb',
+    model.height + 0.06, model.height + 0.16);
+  if (v.braking) {
+    // A schematic telemetry cue, NOT a claim that rail stock has brake lamps.
+    // Rail tail lamps stay red/steady; only road rear lamps brighten.
+    patch('brake-indicator', [back + 1.5, back + 2.1], [-0.4, 0.4],
+      BRAKE_INDICATOR_COLOR, model.height + 0.08, model.height + 0.2);
   }
 
   return out;
 }
 
-/** Every vehicle's extrusions as one GeoJSON FeatureCollection. */
-export function vehicleExtrusionCollection(vehicles: VehicleState[]) {
+/**
+ * Omit sub-pixel running gear, pillars, doors and roof machinery at distant zooms.
+ * Bodies, joints, lamps and selection retain identical ground geometry.
+ */
+export function vehicleExtrusionCollection(vehicles: VehicleState[], detailed = true) {
   return {
     type: 'FeatureCollection' as const,
-    features: vehicles.flatMap(vehicleExtrusions),
+    features: vehicles.flatMap((v) => vehicleExtrusions(v, detailed)),
   };
 }
 
@@ -393,7 +478,8 @@ export function vehicleExtrusionCollection(vehicles: VehicleState[]) {
 // swap over a short zoom band so neither pops in. Typed loosely (rather than
 // against MapLibre's expression types) so this module stays renderer-agnostic
 // and testable without a map.
-export const VEHICLE_3D_MIN_ZOOM = 15;
+export const VEHICLE_3D_MIN_ZOOM = 13;
+export const VEHICLE_3D_FULL_ZOOM = 14;
 
 /** A MapLibre zoom-interpolate expression; cast at the call site. */
 export type ZoomFade = (string | number | (string | number)[])[];
@@ -402,12 +488,12 @@ export type ZoomFade = (string | number | (string | number)[])[];
 export const VEHICLE_3D_FADE_IN: ZoomFade = [
   'interpolate', ['linear'], ['zoom'],
   VEHICLE_3D_MIN_ZOOM, 0,
-  16, 1,
+  VEHICLE_3D_FULL_ZOOM, 1,
 ];
 
 /** The mirror image, applied to the flat icons while 3D is on. */
 export const VEHICLE_ICON_FADE_OUT: ZoomFade = [
   'interpolate', ['linear'], ['zoom'],
   VEHICLE_3D_MIN_ZOOM, 1,
-  16, 0,
+  VEHICLE_3D_FULL_ZOOM, 0,
 ];
