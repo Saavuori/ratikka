@@ -360,7 +360,7 @@ export function vehicleExtrusions(v: VehicleState, detailed = true): ExtrusionFe
   // them. The leaves stand further out than the doorway, which stands further
   // out than the window band, so the three never z-fight.
   const half = model.doorWidth / 2;
-  model.doors.forEach((centre) => {
+  (detailed ? model.doors : []).forEach((centre) => {
     const owner = model.sections.find((s) => centre >= s.back && centre <= s.front)!;
     model.doorSides.forEach((side) => {
       const flank = (proud: number): [number, number] => [
@@ -462,8 +462,8 @@ export function vehicleExtrusions(v: VehicleState, detailed = true): ExtrusionFe
 }
 
 /**
- * Omit sub-pixel running gear, pillars and roof machinery at distant zooms.
- * Bodies, joints, doors, lamps and selection retain identical ground geometry.
+ * Omit sub-pixel running gear, pillars, doors and roof machinery at distant zooms.
+ * Bodies, joints, lamps and selection retain identical ground geometry.
  */
 export function vehicleExtrusionCollection(vehicles: VehicleState[], detailed = true) {
   return {

@@ -300,13 +300,16 @@ describe('vehicleExtrusions', () => {
       const v = { ...base, mode, braking: true, doorProgress: 0.5, selected: true };
       const full = vehicleExtrusionCollection([v]).features;
       const distant = vehicleExtrusionCollection([v], false).features;
-      expect(distant.length).toBeLessThan(full.length * 0.7);
-      const omitted = new Set(['pillar', 'bogie', 'wheel', 'wheel-hub', 'hvac', 'pantograph']);
+      expect(distant.length).toBeLessThan(full.length * 0.5);
+      const omitted = new Set(['pillar', 'bogie', 'wheel', 'wheel-hub', 'hvac', 'pantograph', 'door', 'doorway']);
       expect(distant.some((p) => omitted.has(p.properties.part))).toBe(false);
-      for (const part of ['body', 'gangway', 'cab', 'door', 'doorway', 'headlight', 'taillight', 'brake-indicator']) {
+      for (const part of ['body', 'glass', 'gangway', 'cab', 'headlight', 'taillight', 'brake-indicator']) {
         expect(distant.filter((p) => p.properties.part === part))
           .toEqual(full.filter((p) => p.properties.part === part));
       }
+      const normal = { ...v, selected: false };
+      expect(vehicleExtrusionCollection([normal], false).features.filter((p) => p.properties.part === 'body'))
+        .toEqual(vehicleExtrusionCollection([normal]).features.filter((p) => p.properties.part === 'body'));
     }
   });
 });

@@ -24,6 +24,7 @@ import { chromium } from 'playwright';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -41,8 +42,7 @@ if (!fs.existsSync(path.join(MAPLIBRE_DIST, 'maplibre-gl.mjs'))) {
 const { rolldown } = await import(
   pathToFileURL(path.join(FRONTEND, 'node_modules', 'rolldown', 'dist', 'index.mjs')).href
 );
-const outDir = path.join(ROOT, `.vehicle-3d-verification-${process.pid}`);
-fs.mkdirSync(outDir);
+const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ratikka-vehicles-'));
 process.once('exit', () => fs.rmSync(outDir, { recursive: true, force: true }));
 const bundle = await rolldown({
   input: path.join(FRONTEND, 'src', 'lib', 'vehicleModels.ts'),
@@ -106,9 +106,9 @@ const CENTER = [24.94, 60.17];
  * bounding box of them, and — for the height check — the topmost row of the
  * projected ground footprint. All in CSS pixels.
  */
-const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorProgress, braking = false, flat = false, focus }) =>
+const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorProgress, braking = false, flat = false, focus, capture = false }) =>
   page.evaluate(
-    async ({ mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, center, minZoom }) => {
+    async ({ mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, capture, center, minZoom }) => {
       const { vehicleExtrusionCollection, VEHICLE_3D_FADE_IN, vehicleModel, offsetMeters } = window.vehicleModels;
       const model = vehicleModel(mode);
       const cameraCenter = focus
@@ -201,10 +201,11 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorP
         return (Math.abs(b.lng - center[0]) * mPerDegLng) / 100;
       })();
 
+      const image = capture ? glCanvas.toDataURL('image/png') : undefined;
       map.remove();
-      return { painted, amber, cab, red, head, redStrength, minX, maxX, minY, maxY, groundTop, metersPerPixel };
+      return { painted, amber, cab, red, head, redStrength, minX, maxX, minY, maxY, groundTop, metersPerPixel, image };
     },
-    { mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, center: CENTER, minZoom: VEHICLE_3D_MIN_ZOOM }
+    { mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, capture, center: CENTER, minZoom: VEHICLE_3D_MIN_ZOOM }
   );
 
 const failures = [];
@@ -351,6 +352,20 @@ for (const [mode, model] of Object.entries(VEHICLE_MODELS)) {
     const tails = (features) => features.filter((f) => f.properties.part === 'taillight');
     check(`${mode} tail lamps are not misrepresented as road brake lights`,
       JSON.stringify(tails(parts)) === JSON.stringify(tails(vehicleExtrusions({ ...state, braking: true }))));
+  }
+}
+
+// Opt-in visual artifacts; normal verification leaves no images behind.
+if (process.env.VEHICLE_SCREENSHOTS === '1') {
+  const screenshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ratikka-vehicle-previews-'));
+  for (const mode of Object.keys(VEHICLE_MODELS)) {
+    const shot = await render({
+      mode, zoom: mode === 'bus' ? 20 : mode === 'tram' ? 19 : 17.5,
+      pitch: 60, hdg: 110, doorsOpen: true, braking: true, capture: true,
+    });
+    const filename = path.join(screenshotDir, `vehicle-3d-preview-${mode}.png`);
+    fs.writeFileSync(filename, Buffer.from(shot.image.split(',')[1], 'base64'));
+    console.log(`Vehicle preview: ${filename}`);
   }
 }
 

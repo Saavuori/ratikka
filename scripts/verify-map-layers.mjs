@@ -90,6 +90,8 @@ await page.route('**/api/v1/bike-station/**', (r) =>
   r.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
 await page.route('**/api/v1/traffic-lights', (r) =>
   r.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
+await page.route('**/api/v1/route/**', (r) =>
+  r.fulfill({ json: { geometries: [], stops: [] } }));
 // VersionBadge does info.git_sha.substring(0, 7) unguarded, so an incomplete
 // payload here crashes the whole app before the map ever initialises.
 await page.route('**/api/v1/version', (r) =>
@@ -128,6 +130,7 @@ const stubAsset = (r) => {
 // layer spec is valid, which is what this check is about.
 await page.route('**/*', (r) => {
   const u = r.request().url();
+  if (u.startsWith(`${base}/stub/`)) return stubAsset(r);
   if (u.startsWith(base)) return r.fallback();
   return stubAsset(r);
 });
@@ -136,7 +139,10 @@ await page.goto(base, { waitUntil: 'load' });
 await page.waitForTimeout(6000);
 
 // Exercise the actual App → Map path, not only static layer declarations.
-await page.waitForFunction(() => window.__mlMap?.getLayer('vehicles-3d'));
+await page.waitForFunction(() => window.__mlMap?.getLayer('vehicles-3d')).catch((error) => {
+  console.error('Map initialization errors:', errors);
+  throw error;
+});
 await page.evaluate(() => window.__mlMap.jumpTo({ center: [24.94, 60.17], zoom: 14 }));
 const vehicleToggle = page.getByRole('button', { name: 'Always show 3D vehicles, including on the flat map', exact: true });
 assert.equal(await vehicleToggle.getAttribute('aria-pressed'), 'false');
@@ -151,6 +157,7 @@ assert.equal(await page.evaluate(() => window.__mlMap.getPitch()), 0, 'vehicle t
 assert.equal(await page.evaluate(() => localStorage.getItem('always3DVehicles')), 'true');
 assert.equal(await page.evaluate(() => window.__mlMap.getLayoutProperty('vehicles-3d', 'visibility')), 'visible');
 
+await page.evaluate(() => window.__mlMap.jumpTo({ zoom: 16 }));
 vehicle.drst = 1;
 sendVehicle();
 await page.waitForFunction(async () => {
