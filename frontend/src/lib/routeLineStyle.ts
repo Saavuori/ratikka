@@ -11,21 +11,21 @@ import type { DataDrivenPropertyValueSpecification, ExpressionSpecification } fr
 // offset is bounded by *ground* distance instead (see ROUTE_LINE_OFFSET), so
 // the ribbons close up and eventually merge — being on the right street matters
 // more there than being told apart.
-const routeLineWidth = (selected: number, other: number): ExpressionSpecification =>
-  ['case', ['get', 'selected'], selected, other];
+const routeLineWidth = (selected: number, other: number, dim: number): ExpressionSpecification =>
+  ['case', ['get', 'selected'], selected, ['get', 'dim'], dim, other];
 
 export const ROUTE_LINE_WIDTH: DataDrivenPropertyValueSpecification<number> = [
   'interpolate', ['linear'], ['zoom'],
-  10, routeLineWidth(3, 1.8),
-  13, routeLineWidth(4.6, 2.8),
-  16, routeLineWidth(6.8, 3.8),
+  10, routeLineWidth(2.4, 1.2, 0.8),
+  13, routeLineWidth(3.6, 2, 1.2),
+  16, routeLineWidth(5, 3, 1.8),
 ];
 
 export const ROUTE_CASING_WIDTH: DataDrivenPropertyValueSpecification<number> = [
   'interpolate', ['linear'], ['zoom'],
-  10, routeLineWidth(4.6, 3),
-  13, routeLineWidth(6.6, 4.2),
-  16, routeLineWidth(9.2, 5.6),
+  10, routeLineWidth(3.6, 1.8, 1.2),
+  13, routeLineWidth(5, 3, 1.8),
+  16, routeLineWidth(6.8, 4.2, 2.6),
 ];
 
 //
@@ -61,7 +61,11 @@ export const ROUTE_LINE_OFFSET: DataDrivenPropertyValueSpecification<number> = [
 
 // Non-selected routes fade back so the clicked vehicle's line reads first.
 export const ROUTE_LINE_OPACITY: DataDrivenPropertyValueSpecification<number> =
-  ['case', ['get', 'dim'], 0.4, 0.95];
+  ['case', ['get', 'selected'], 1, ['get', 'dim'], 0.25, 0.95];
+
+// Context outlines should not obscure streets after their route has faded.
+export const ROUTE_CASING_OPACITY: DataDrivenPropertyValueSpecification<number> =
+  ['case', ['get', 'selected'], 0.9, ['get', 'dim'], 0.12, 0.65];
 
 // The selected line is drawn last within the layer, so it wins where the
 // ribbons still cross.

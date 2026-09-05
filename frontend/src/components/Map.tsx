@@ -49,6 +49,7 @@ import type { RoutePath } from '../lib/routeSlots';
 import {
   ROUTE_LINE_WIDTH,
   ROUTE_CASING_WIDTH,
+  ROUTE_CASING_OPACITY,
   ROUTE_LINE_OFFSET,
   ROUTE_LINE_OPACITY,
   ROUTE_LINE_SORT_KEY,
@@ -2099,7 +2100,7 @@ export const Map: React.FC<MapProps> = ({
           'line-color': mapThemeRef.current === 'dark' ? '#0b1220' : '#ffffff',
           'line-width': ROUTE_CASING_WIDTH,
           'line-offset': ROUTE_LINE_OFFSET,
-          'line-opacity': ['case', ['get', 'dim'], 0.3, 0.85],
+          'line-opacity': ROUTE_CASING_OPACITY,
         },
       }, 'trams-circles');
     }
