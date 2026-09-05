@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.57.0] - 2026-09-05
+
+### Added
+- **Stops are places on the map, not pins on it**: a stop was a coloured circle that became a disc on a stick — a road sign, in a city where the stop itself is usually a raised island you can see from the tram. The island was already on screen and had been all along: OpenStreetMap has the platform footprints, the basemap carries them in its `transportation` layer, and the light style drew them as `road_service_area` — the same anonymous grey it gives every pedestrian square and service yard. They are now drawn as what they are: a paved surface with a kerb line around it and a dashed ochre edge band at close zoom, fading in from zoom 15 so the city view stays clean. No geometry is invented; it is the OSM footprint, restyled. The dark theme has no platform data of its own (Carto's dark-matter carries no dependable platform subclass), so it attaches the same Digitransit tiles the light theme already loads, gated to zoom 14 and up — one extra request, only when zoomed in, so both themes draw identical ground.
+- **A kerbside sign board instead of a road sign**: HSL's stop furniture is a rectangular board on a pole, and drawing it that way is most of what makes a stop read as a stop. The disc is gone; each stop now carries a mode-coloured board with a white pictogram, a pole beneath it and a contact shadow at its foot, drawn at twice the resolution so the board's edges and the glyph stay crisp zoomed in. The stop's name appears under the board from zoom 17. Boards no longer ignore placement, so at a dense terminal the labels step out of each other's way rather than stacking.
+- **Stop furniture at real scale in 3D**: in the tilted view the vehicles have been extruded bodies measured in ground metres since v0.56; the stops they call at were still flat symbols. Each stop now gets a pad, a glazed shelter with a roof slab, a pole and a sign board, all in metres — a tram island 24 m long against the 27 m Artic drawing up beside it, a shorter kerbside pad for a bus, a wider apron and canopy for a metro or commuter-rail entrance. Nothing about the stop tiles says which way a stop faces, so the bearing is read off geometry already on the map: the long axis of the platform polygon the stop stands in, or failing that the nearest route line. A stop with neither gets a square pad and a pole and no shelter — furniture placed at a guessed angle would read as data. Where OSM already gives a stop a platform, that polygon is extruded to kerb height instead of a synthetic slab being laid over it. Clicking a shelter opens the same popup its sign does.
+- **The stop a selected vehicle is heading for shows it**: pick a vehicle and its next stop takes the gold of the selection ring across its board, pole and pad, and pulses under it on the same clock the vehicles animate to. While the vehicle is standing there with its doors open, the platform edge lights amber — the boarding cue in the place a passenger would be standing.
+
+### Changed
+- **A fifth map check**: `scripts/verify-stop-markers.mjs` joins the four existing ones (see CLAUDE.md). A stop now fails invisibly in three separate ways — a kerb drawn from drifted geometry still renders, a shelter at the wrong size or heading is still a box, and the live cues are colour swaps that render either way — so the script draws a synthetic stop with the app's own models and paint and measures the pixels: kerb against polygon, pad length against the model, walls above the footprint, zoom gates honoured, cues visible. It needs no Digitransit key.
+
+---
+
 ## [v0.56.2] - 2026-09-05
 
 ### Fixed

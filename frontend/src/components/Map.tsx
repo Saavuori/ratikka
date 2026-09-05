@@ -61,6 +61,32 @@ import {
   VEHICLE_ICON_FADE_OUT,
 } from '../lib/vehicleModels';
 import type { VehicleState } from '../lib/vehicleModels';
+import {
+  PLATFORM_FILTER,
+  PLATFORM_FILL_LAYER,
+  PLATFORM_KERB_LAYER,
+  PLATFORM_TACTILE_LAYER,
+  PLATFORM_3D_LAYER,
+  STOP_PLATFORM_MIN_ZOOM,
+  STOP_TACTILE_MIN_ZOOM,
+  platformFillPaint,
+  platformKerbPaint,
+  platformTactilePaint,
+  platformExtrusionPaint,
+  platformSourceSpec,
+} from '../lib/stopPlatforms';
+import {
+  stopFurnitureCollection,
+  longestEdgeBearing,
+  nearestLineBearing,
+  pointInRing,
+  STOP_3D_MIN_ZOOM,
+  STOP_3D_FADE_IN,
+  STOP_FURNITURE_LIMIT,
+  STOP_FURNITURE_SOURCE,
+  STOP_FURNITURE_LAYER,
+} from '../lib/stopModels';
+import type { StopFurnitureState } from '../lib/stopModels';
 import { advanceDoors, isVehicleBraking, vehicles3DEnabled } from '../lib/vehicleAnimation';
 import type { DoorAnimation } from '../lib/vehicleAnimation';
 import { fetchBikeStations } from '../lib/api';
@@ -294,6 +320,22 @@ export const Map: React.FC<MapProps> = ({
   // Whether the 3D source currently holds bodies, so it is emptied exactly once
   // when 3D is switched off or the view zooms back out.
   const vehicles3dDrawnRef = useRef<boolean>(false);
+  const stopFurnitureDrawnRef = useRef<boolean>(false);
+  // Cheap signature of what the furniture was last built for, so the `idle`
+  // event — which fires on every tile that lands — does no work in the common
+  // case where nothing that matters has moved.
+  const stopFurnitureSigRef = useRef<string>('');
+  // Name/code/mode for the stops currently carrying furniture, so a click on a
+  // shelter can open the same popup a click on its sign would.
+  const stopFurnitureMetaRef = useRef<Record<string, { name: string; code: string; mode: string }>>({});
+  // The stop a selected vehicle is heading for, and whether it is boarding
+  // there right now. Keyed so the furniture is only rebuilt when it changes.
+  const stopHighlightRef = useRef<{
+    key: string;
+    stopId: string | null;
+    boarding: boolean;
+    coords: [number, number] | null;
+  }>({ key: '', stopId: null, boarding: false, coords: null });
   const mapThemeRef = useRef<'light' | 'dark'>(mapTheme);
   const isFollowingRef = useRef<boolean>(isFollowing);
   const isInteractingRef = useRef<boolean>(false);
@@ -672,6 +714,12 @@ export const Map: React.FC<MapProps> = ({
       duration: 800,
     });
 
+    // 1b. The platform kerb face. Flat, the polygon is already drawn as a
+    //     surface with an outline; tilted, it needs a side to stand on.
+    if (map.getLayer(PLATFORM_3D_LAYER)) {
+      map.setLayoutProperty(PLATFORM_3D_LAYER, 'visibility', active ? 'visible' : 'none');
+    }
+
     // 2. Toggle light-mode built-in 3D buildings
     if (map.getLayer('building_3d')) {
       map.setLayoutProperty('building_3d', 'visibility', active ? 'visible' : 'none');
@@ -722,10 +770,203 @@ export const Map: React.FC<MapProps> = ({
     }
   };
 
+  // Stop platforms: the OSM footprint the basemap already carries, restyled as
+  // a paved island with a kerb (see lib/stopPlatforms). Added under the route
+  // ribbons so a highlighted line still reads across the platform it serves.
+  const ensureStopPlatformLayers = (map: maplibregl.Map, theme: 'light' | 'dark') => {
+    const spec = platformSourceSpec(theme);
+    if (spec.add && !map.getSource(spec.add.id)) {
+      // The dark basemap is Carto's, which carries no guaranteed platform
+      // subclass — so the same Digitransit tiles the light theme uses are
+      // attached here, gated to close zoom. transformRequest adds the key.
+      map.addSource(spec.add.id, {
+        type: 'vector',
+        url: spec.add.url,
+        minzoom: spec.add.minzoom,
+      });
+    }
+    if (!map.getSource(spec.source)) return;
+
+    const below = map.getLayer('route-lines-casing')
+      ? 'route-lines-casing'
+      : map.getLayer('trams-circles') ? 'trams-circles' : undefined;
+    const base = {
+      source: spec.source,
+      'source-layer': spec.sourceLayer,
+      minzoom: STOP_PLATFORM_MIN_ZOOM,
+      filter: PLATFORM_FILTER as maplibregl.FilterSpecification,
+    };
+
+    if (!map.getLayer(PLATFORM_FILL_LAYER)) {
+      map.addLayer({
+        id: PLATFORM_FILL_LAYER, type: 'fill', ...base,
+        paint: platformFillPaint(theme) as maplibregl.FillLayerSpecification['paint'],
+      }, below);
+    }
+    if (!map.getLayer(PLATFORM_TACTILE_LAYER)) {
+      map.addLayer({
+        id: PLATFORM_TACTILE_LAYER, type: 'line', ...base,
+        minzoom: STOP_TACTILE_MIN_ZOOM,
+        layout: { 'line-join': 'round' },
+        paint: platformTactilePaint(theme) as maplibregl.LineLayerSpecification['paint'],
+      }, below);
+    }
+    if (!map.getLayer(PLATFORM_KERB_LAYER)) {
+      map.addLayer({
+        id: PLATFORM_KERB_LAYER, type: 'line', ...base,
+        layout: { 'line-join': 'round' },
+        paint: platformKerbPaint(theme) as maplibregl.LineLayerSpecification['paint'],
+      }, below);
+    }
+    // The 3D face of the same polygon, shown only while the map is tilted.
+    if (!map.getLayer(PLATFORM_3D_LAYER)) {
+      map.addLayer({
+        id: PLATFORM_3D_LAYER, type: 'fill-extrusion', ...base,
+        minzoom: STOP_3D_MIN_ZOOM,
+        layout: { visibility: 'none' },
+        paint: platformExtrusionPaint(theme) as maplibregl.FillExtrusionLayerSpecification['paint'],
+      }, below);
+    }
+  };
+
+  /**
+   * Rebuild the 3D stop furniture for what is on screen.
+   *
+   * Nothing in the stop tiles says which way a stop faces, so the bearing is
+   * read off geometry already drawn: the platform polygon the stop stands in
+   * (its long axis runs with the track), or failing that the nearest route
+   * line. A stop with neither gets a square pad and a pole and no shelter —
+   * furniture at a guessed angle would read as data when it is a guess.
+   *
+   * Runs on view changes rather than per frame: the geometry only moves when
+   * the map does, and querying rendered features is far too heavy for 60fps.
+   */
+  const updateStopFurniture = (map: maplibregl.Map, theme: 'light' | 'dark') => {
+    const source = map.getSource(STOP_FURNITURE_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    if (!source) return;
+    const empty = { type: 'FeatureCollection' as const, features: [] };
+
+    const active =
+      vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current) &&
+      map.getZoom() >= STOP_3D_MIN_ZOOM &&
+      map.getLayer('stops_signs') !== undefined;
+    if (!active) {
+      if (stopFurnitureDrawnRef.current) {
+        source.setData(empty);
+        stopFurnitureDrawnRef.current = false;
+        stopFurnitureSigRef.current = '';
+      }
+      return;
+    }
+
+    const centre = map.getCenter();
+    const signature = [
+      theme,
+      centre.lng.toFixed(4),
+      centre.lat.toFixed(4),
+      map.getZoom().toFixed(2),
+      map.getBearing().toFixed(0),
+      stopHighlightRef.current.key,
+    ].join('|');
+    if (signature === stopFurnitureSigRef.current) return;
+    stopFurnitureSigRef.current = signature;
+
+    // The visible stops are whatever `stops_signs` is drawing, so the furniture
+    // inherits the mode toggles and route filters already applied to it.
+    const stopFeatures = map.queryRenderedFeatures({ layers: ['stops_signs'] });
+
+    const platformRings: [number, number][][] = [];
+    if (map.getLayer(PLATFORM_FILL_LAYER)) {
+      for (const feature of map.queryRenderedFeatures({ layers: [PLATFORM_FILL_LAYER] })) {
+        const geometry = feature.geometry;
+        if (geometry.type === 'Polygon') {
+          platformRings.push(geometry.coordinates[0] as [number, number][]);
+        } else if (geometry.type === 'MultiPolygon') {
+          for (const polygon of geometry.coordinates) {
+            platformRings.push(polygon[0] as [number, number][]);
+          }
+        }
+      }
+    }
+
+    const routeLines: [number, number][][] = [];
+    if (map.getLayer('route-lines-layer')) {
+      for (const feature of map.queryRenderedFeatures({ layers: ['route-lines-layer'] })) {
+        const geometry = feature.geometry;
+        if (geometry.type === 'LineString') {
+          routeLines.push(geometry.coordinates as [number, number][]);
+        } else if (geometry.type === 'MultiLineString') {
+          for (const line of geometry.coordinates) routeLines.push(line as [number, number][]);
+        }
+      }
+    }
+
+    const highlightId = stopHighlightRef.current.stopId?.replace(/^HSL:/, '') ?? null;
+    const seen = new Set<string>();
+    const meta: Record<string, { name: string; code: string; mode: string }> = {};
+    const stops: Array<{ state: StopFurnitureState; distance: number }> = [];
+
+    for (const feature of stopFeatures) {
+      if (feature.geometry.type !== 'Point') continue;
+      const properties = feature.properties ?? {};
+      const rawId = properties.gtfsId ?? properties.stopId ?? properties.id ?? feature.id;
+      if (rawId === undefined || rawId === null) continue;
+      const stopId = String(rawId).replace(/^HSL:/, '');
+      if (seen.has(stopId)) continue;
+      seen.add(stopId);
+
+      const [lng, lat] = feature.geometry.coordinates as [number, number];
+      meta[stopId] = {
+        name: String(properties.name ?? properties.nameFi ?? 'Unknown Stop'),
+        code: String(properties.code ?? properties.shortId ?? ''),
+        mode: String(properties.mode ?? properties.type ?? 'TRAM'),
+      };
+      let bearing: number | null = null;
+      let hasPlatform = false;
+      for (const ring of platformRings) {
+        if (pointInRing([lng, lat], ring)) {
+          hasPlatform = true;
+          bearing = longestEdgeBearing(ring);
+          break;
+        }
+      }
+      if (bearing === null) {
+        bearing = nearestLineBearing([lng, lat], routeLines);
+      }
+
+      stops.push({
+        state: {
+          stopId,
+          lng,
+          lat,
+          mode: String(properties.mode ?? properties.type ?? 'TRAM'),
+          bearing,
+          hasPlatform,
+          highlighted: highlightId !== null && stopId === highlightId,
+          boarding: stopHighlightRef.current.boarding && stopId === highlightId,
+        },
+        distance: Math.hypot(lng - centre.lng, lat - centre.lat),
+      });
+    }
+
+    // A dense view can hold hundreds of stops, each several polygons. Nearest
+    // to the middle of the screen wins, which is where the eye is.
+    stops.sort((a, b) => a.distance - b.distance);
+    const states = stops.slice(0, STOP_FURNITURE_LIMIT).map((s) => s.state);
+    stopFurnitureMetaRef.current = meta;
+    source.setData(stopFurnitureCollection(states, theme));
+    stopFurnitureDrawnRef.current = true;
+  };
+
   // Vehicle visibility is independent of pitch/buildings, including on style reload.
   const updateVehicle3DMode = (map: maplibregl.Map, active: boolean) => {
     if (map.getLayer('vehicles-3d')) {
       map.setLayoutProperty('vehicles-3d', 'visibility', active ? 'visible' : 'none');
+    }
+    // Stop furniture follows the vehicles: both are real-scale bodies, and a
+    // shelter without a tram beside it (or the reverse) reads as a mistake.
+    if (map.getLayer(STOP_FURNITURE_LAYER)) {
+      map.setLayoutProperty(STOP_FURNITURE_LAYER, 'visibility', active ? 'visible' : 'none');
     }
     if (map.getLayer('trams-body')) {
       map.setPaintProperty('trams-body', 'icon-opacity', (active ? VEHICLE_ICON_FADE_OUT : 1) as maplibregl.DataDrivenPropertyValueSpecification<number>);
@@ -1279,6 +1520,8 @@ export const Map: React.FC<MapProps> = ({
       // Update next stop highlight and route line segment
       let selectedVehiclePos: [number, number] | null = null;
       let nextStopCoords: [number, number] | null = null;
+      let nextStopId: string | null = null;
+      let nextStopBoarding = false;
       let routeSegmentCoords: [number, number][] = [];
 
       if (selectedTramIdRef.current && selectedTripDetailsRef.current) {
@@ -1333,6 +1576,10 @@ export const Map: React.FC<MapProps> = ({
           if (nextStopIndex !== -1) {
             const matchedStop = tripStops[nextStopIndex];
             nextStopCoords = [matchedStop.lon, matchedStop.lat];
+            nextStopId = matchedStop.gtfsId ?? null;
+            // Doors open at the stop we are pointing at: the platform edge
+            // lights up while passengers are actually boarding.
+            nextStopBoarding = isStopped && nextStopIndex === lastKnownIndex;
 
             if (HIGHLIGHT_NEXT_STOP_ROUTE && selectedVehiclePos && selectedTripDetailsRef.current.geometry) {
               const polylineCoords = decodePolyline(selectedTripDetailsRef.current.geometry);
@@ -1390,6 +1637,39 @@ export const Map: React.FC<MapProps> = ({
             },
           }] : [],
         });
+      }
+
+      // Phase 4 liveness: the stop a selected vehicle is heading for takes the
+      // gold of the selection ring across its furniture, and pulses. Rebuilding
+      // the furniture is only worth it when the highlight actually changed.
+      const highlightKey = `${nextStopId ?? ''}|${nextStopBoarding}`;
+      if (highlightKey !== stopHighlightRef.current.key) {
+        stopHighlightRef.current = {
+          key: highlightKey,
+          stopId: nextStopId,
+          boarding: nextStopBoarding,
+          coords: nextStopCoords,
+        };
+        const pulseSource = map.getSource('stop-pulse') as maplibregl.GeoJSONSource | undefined;
+        if (pulseSource) {
+          pulseSource.setData({
+            type: 'FeatureCollection',
+            features: nextStopCoords ? [{
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: nextStopCoords },
+              properties: {},
+            }] : [],
+          });
+        }
+        updateStopFurniture(map, mapThemeRef.current);
+      }
+      // The pulse itself, driven off the same clock as the vehicles so the two
+      // beat together rather than drifting apart.
+      if (map.getLayer('stop-pulse-ring') && stopHighlightRef.current.coords) {
+        const phase = (now % 1600) / 1600;
+        map.setPaintProperty('stop-pulse-ring', 'circle-radius', 14 + 16 * phase);
+        map.setPaintProperty('stop-pulse-ring', 'circle-opacity', 0.28 * (1 - phase));
+        map.setPaintProperty('stop-pulse-ring', 'circle-stroke-opacity', 0.9 * (1 - phase));
       }
 
       // Update route line source
@@ -1722,197 +2002,85 @@ export const Map: React.FC<MapProps> = ({
       };
     }
 
-    // Create Sign Tram Image if missing
-    if (!map.hasImage('sign-tram')) {
-      const tramSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
-          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
-          <circle cx="16" cy="14" r="11" fill="#00985f" stroke="#ffffff" stroke-width="2"/>
-          <rect x="11.5" y="8" width="9" height="10" rx="1.5" fill="white"/>
-          <rect x="12.5" y="9.5" width="7" height="3" fill="#00985f"/>
-          <circle cx="13.5" cy="15.2" r="0.8" fill="#00985f"/>
-          <circle cx="18.5" cy="15.2" r="0.8" fill="#00985f"/>
-          <path d="M16,8 L16,5.5 M13.5,5.5 L18.5,5.5" stroke="white" stroke-width="0.8"/>
+    // Stop signs. Not a road sign on a stick: HSL's kerbside furniture is a
+    // rectangular board on a pole, and drawing it that way is most of what
+    // makes a stop read as a stop rather than as a map pin. Each is a board in
+    // the mode's colour with a white pictogram, a pole below it and a contact
+    // shadow at the foot, so the sign looks planted rather than floating.
+    //
+    // Every variant is the same art with a different board colour and glyph;
+    // the "-selected" pair swaps the white border for the gold of the
+    // selection ring. Drawn at 2x and registered with pixelRatio 2, so the
+    // board's edges and the glyph stay crisp when zoomed in.
+    const SIGN_W = 44;
+    const SIGN_H = 62;
+    const signGlyphs: Record<string, (color: string) => string> = {
+      // A tram: body with a pantograph stub, destination window and two lamps.
+      tram: (color) => `
+        <path d="M22 7.5 L22 5 M18.6 5 L25.4 5" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round"/>
+        <rect x="15.6" y="7.6" width="12.8" height="17" rx="3" fill="#ffffff"/>
+        <rect x="17.4" y="9.6" width="9.2" height="4.6" rx="1" fill="${color}"/>
+        <circle cx="18.6" cy="19.4" r="1.15" fill="${color}"/>
+        <circle cx="25.4" cy="19.4" r="1.15" fill="${color}"/>
+        <path d="M18.2 24.6 L16.6 27 M25.8 24.6 L27.4 27" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+      `,
+      // A bus: boxier than the tram, windscreen band and two wheels.
+      bus: (color) => `
+        <rect x="14.4" y="8.4" width="15.2" height="15.4" rx="2.6" fill="#ffffff"/>
+        <rect x="16.2" y="10.4" width="11.6" height="4.4" rx="1" fill="${color}"/>
+        <circle cx="18.1" cy="19.6" r="1.2" fill="${color}"/>
+        <circle cx="25.9" cy="19.6" r="1.2" fill="${color}"/>
+        <rect x="16.4" y="23.8" width="3" height="2.4" rx="1" fill="#ffffff"/>
+        <rect x="24.6" y="23.8" width="3" height="2.4" rx="1" fill="#ffffff"/>
+      `,
+      // The metro's M.
+      metro: () => `
+        <path d="M15 25 L15 8 L22 17.4 L29 8 L29 25" stroke="#ffffff" stroke-width="3.2"
+              stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      `,
+      // A commuter train: rounded cab roof, windscreen, lamps and rails below.
+      train: (color) => `
+        <path d="M15.4 12.6 C15.4 9.2 18.4 7.4 22 7.4 C25.6 7.4 28.6 9.2 28.6 12.6
+                 L28.6 21.6 C28.6 23.2 27.4 24.4 25.8 24.4 L18.2 24.4
+                 C16.6 24.4 15.4 23.2 15.4 21.6 Z" fill="#ffffff"/>
+        <rect x="17.4" y="11" width="9.2" height="4.6" rx="1.2" fill="${color}"/>
+        <circle cx="18.7" cy="20.4" r="1.2" fill="${color}"/>
+        <circle cx="25.3" cy="20.4" r="1.2" fill="${color}"/>
+        <path d="M18 24.6 L16.2 27.2 M26 24.6 L27.8 27.2" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+      `,
+    };
+
+    const registerStopSign = (name: string, glyph: keyof typeof signGlyphs, color: string, selected: boolean) => {
+      if (map.hasImage(name)) return;
+      const border = selected ? '#fdcb6e' : '#ffffff';
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${SIGN_W}" height="${SIGN_H}" viewBox="0 0 ${SIGN_W} ${SIGN_H}" fill="none">
+          <ellipse cx="22" cy="58.4" rx="7.6" ry="2.4" fill="rgba(15,23,42,0.28)"/>
+          <rect x="20.2" y="30" width="3.6" height="28.4" rx="1.6" fill="#4b5563"/>
+          <rect x="20.2" y="30" width="1.3" height="28.4" fill="#6b7684"/>
+          <rect x="3.4" y="3.4" width="37.2" height="29.2" rx="4.4" fill="${color}"
+                stroke="${border}" stroke-width="${selected ? 3.4 : 2.6}"/>
+          ${signGlyphs[glyph](color)}
         </svg>
       `;
-      const tramImg = new Image(32, 42);
-      tramImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(tramSvg);
-      tramImg.onload = () => {
+      const img = new Image(SIGN_W, SIGN_H);
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      img.onload = () => {
         if (mapRef.current !== map) return;
-        if (!map.hasImage('sign-tram')) map.addImage('sign-tram', tramImg);
+        if (!map.hasImage(name)) map.addImage(name, img, { pixelRatio: 2 });
       };
-    }
+    };
 
-    // Create Sign Bus Image if missing
-    if (!map.hasImage('sign-bus')) {
-      const busSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
-          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
-          <circle cx="16" cy="14" r="11" fill="#007ac9" stroke="#ffffff" stroke-width="2"/>
-          <rect x="10.5" y="9" width="11" height="9" rx="1.5" fill="white"/>
-          <rect x="11.5" y="10.5" width="9" height="3" fill="#007ac9"/>
-          <circle cx="12.5" cy="15.7" r="0.8" fill="#007ac9"/>
-          <circle cx="19.5" cy="15.7" r="0.8" fill="#007ac9"/>
-        </svg>
-      `;
-      const busImg = new Image(32, 42);
-      busImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(busSvg);
-      busImg.onload = () => {
-        if (mapRef.current !== map) return;
-        if (!map.hasImage('sign-bus')) map.addImage('sign-bus', busImg);
-      };
-    }
-
-    // Create Sign Bus Trunk Image if missing
-    if (!map.hasImage('sign-bus-trunk')) {
-      const busTrunkSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
-          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
-          <circle cx="16" cy="14" r="11" fill="#CA4300" stroke="#ffffff" stroke-width="2"/>
-          <rect x="10.5" y="9" width="11" height="9" rx="1.5" fill="white"/>
-          <rect x="11.5" y="10.5" width="9" height="3" fill="#CA4300"/>
-          <circle cx="12.5" cy="15.7" r="0.8" fill="#CA4300"/>
-          <circle cx="19.5" cy="15.7" r="0.8" fill="#CA4300"/>
-        </svg>
-      `;
-      const busTrunkImg = new Image(32, 42);
-      busTrunkImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(busTrunkSvg);
-      busTrunkImg.onload = () => {
-        if (!map.hasImage('sign-bus-trunk')) map.addImage('sign-bus-trunk', busTrunkImg);
-      };
-    }
-
-    // Create Sign Metro Image if missing
-    if (!map.hasImage('sign-metro')) {
-      const metroSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
-          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
-          <circle cx="16" cy="14" r="11" fill="#FF6319" stroke="#ffffff" stroke-width="2"/>
-          <path d="M11 19 L11 9 L16 15.5 L21 9 L21 19" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        </svg>
-      `;
-      const metroImg = new Image(32, 42);
-      metroImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(metroSvg);
-      metroImg.onload = () => {
-        if (mapRef.current !== map) return;
-        if (!map.hasImage('sign-metro')) map.addImage('sign-metro', metroImg);
-      };
-    }
-
-    // Create Sign Train Image if missing
-    if (!map.hasImage('sign-train')) {
-      const trainSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
-          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
-          <circle cx="16" cy="14" r="11" fill="#8C4799" stroke="#ffffff" stroke-width="2"/>
-          <path d="M11.5 11.5 C11.5 9.3 13.5 8 16 8 C18.5 8 20.5 9.3 20.5 11.5 L20.5 17.5 C20.5 18.6 19.6 19.5 18.5 19.5 L13.5 19.5 C12.4 19.5 11.5 18.6 11.5 17.5 Z" fill="white"/>
-          <rect x="12.8" y="10.4" width="6.4" height="3.2" rx="0.8" fill="#8C4799"/>
-          <circle cx="13.8" cy="16.6" r="0.85" fill="#8C4799"/>
-          <circle cx="18.2" cy="16.6" r="0.85" fill="#8C4799"/>
-          <path d="M13 20.5 L11.5 22.5 M19 20.5 L20.5 22.5" stroke="white" stroke-width="1.1" stroke-linecap="round"/>
-        </svg>
-      `;
-      const trainImg = new Image(32, 42);
-      trainImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(trainSvg);
-      trainImg.onload = () => {
-        if (mapRef.current !== map) return;
-        if (!map.hasImage('sign-train')) map.addImage('sign-train', trainImg);
-      };
-    }
-
-    // Create Sign Metro Selected Image if missing (gold border)
-    if (!map.hasImage('sign-metro-selected')) {
-      const metroSelectedSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
-          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
-          <circle cx="16" cy="14" r="11" fill="#FF6319" stroke="#fdcb6e" stroke-width="2.8"/>
-          <path d="M11 19 L11 9 L16 15.5 L21 9 L21 19" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        </svg>
-      `;
-      const metroImg = new Image(32, 42);
-      metroImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(metroSelectedSvg);
-      metroImg.onload = () => {
-        if (!map.hasImage('sign-metro-selected')) map.addImage('sign-metro-selected', metroImg);
-      };
-    }
-
-    // Create Sign Train Selected Image if missing (gold border)
-    if (!map.hasImage('sign-train-selected')) {
-      const trainSelectedSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
-          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
-          <circle cx="16" cy="14" r="11" fill="#8C4799" stroke="#fdcb6e" stroke-width="2.8"/>
-          <path d="M11.5 11.5 C11.5 9.3 13.5 8 16 8 C18.5 8 20.5 9.3 20.5 11.5 L20.5 17.5 C20.5 18.6 19.6 19.5 18.5 19.5 L13.5 19.5 C12.4 19.5 11.5 18.6 11.5 17.5 Z" fill="white"/>
-          <rect x="12.8" y="10.4" width="6.4" height="3.2" rx="0.8" fill="#8C4799"/>
-          <circle cx="13.8" cy="16.6" r="0.85" fill="#8C4799"/>
-          <circle cx="18.2" cy="16.6" r="0.85" fill="#8C4799"/>
-          <path d="M13 20.5 L11.5 22.5 M19 20.5 L20.5 22.5" stroke="white" stroke-width="1.1" stroke-linecap="round"/>
-        </svg>
-      `;
-      const trainImg = new Image(32, 42);
-      trainImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(trainSelectedSvg);
-      trainImg.onload = () => {
-        if (!map.hasImage('sign-train-selected')) map.addImage('sign-train-selected', trainImg);
-      };
-    }
-
-    // Create Sign Tram Selected Image if missing (gold border)
-    if (!map.hasImage('sign-tram-selected')) {
-      const tramSelectedSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
-          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
-          <circle cx="16" cy="14" r="11" fill="#00985f" stroke="#fdcb6e" stroke-width="2.8"/>
-          <rect x="11.5" y="8" width="9" height="10" rx="1.5" fill="white"/>
-          <rect x="12.5" y="9.5" width="7" height="3" fill="#00985f"/>
-          <circle cx="13.5" cy="15.2" r="0.8" fill="#00985f"/>
-          <circle cx="18.5" cy="15.2" r="0.8" fill="#00985f"/>
-          <path d="M16,8 L16,5.5 M13.5,5.5 L18.5,5.5" stroke="white" stroke-width="0.8"/>
-        </svg>
-      `;
-      const tramImg = new Image(32, 42);
-      tramImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(tramSelectedSvg);
-      tramImg.onload = () => {
-        if (!map.hasImage('sign-tram-selected')) map.addImage('sign-tram-selected', tramImg);
-      };
-    }
-
-    // Create Sign Bus Selected Image if missing (gold border)
-    if (!map.hasImage('sign-bus-selected')) {
-      const busSelectedSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
-          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
-          <circle cx="16" cy="14" r="11" fill="#007ac9" stroke="#fdcb6e" stroke-width="2.8"/>
-          <rect x="10.5" y="9" width="11" height="9" rx="1.5" fill="white"/>
-          <rect x="11.5" y="10.5" width="9" height="3" fill="#007ac9"/>
-          <circle cx="12.5" cy="15.7" r="0.8" fill="#007ac9"/>
-          <circle cx="19.5" cy="15.7" r="0.8" fill="#007ac9"/>
-        </svg>
-      `;
-      const busImg = new Image(32, 42);
-      busImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(busSelectedSvg);
-      busImg.onload = () => {
-        if (!map.hasImage('sign-bus-selected')) map.addImage('sign-bus-selected', busImg);
-      };
-    }
-
-    // Create Sign Bus Trunk Selected Image if missing (gold border)
-    if (!map.hasImage('sign-bus-trunk-selected')) {
-      const busTrunkSelectedSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42" fill="none">
-          <line x1="16" y1="26" x2="16" y2="40" stroke="#111827" stroke-width="2.5" stroke-linecap="round"/>
-          <circle cx="16" cy="14" r="11" fill="#CA4300" stroke="#fdcb6e" stroke-width="2.8"/>
-          <rect x="10.5" y="9" width="11" height="9" rx="1.5" fill="white"/>
-          <rect x="11.5" y="10.5" width="9" height="3" fill="#CA4300"/>
-          <circle cx="12.5" cy="15.7" r="0.8" fill="#CA4300"/>
-          <circle cx="19.5" cy="15.7" r="0.8" fill="#CA4300"/>
-        </svg>
-      `;
-      const busTrunkImg = new Image(32, 42);
-      busTrunkImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(busTrunkSelectedSvg);
-      busTrunkImg.onload = () => {
-        if (!map.hasImage('sign-bus-trunk-selected')) map.addImage('sign-bus-trunk-selected', busTrunkImg);
-      };
-    }
+    ([
+      ['sign-tram', 'tram', TRAM_GREEN],
+      ['sign-bus', 'bus', '#007ac9'],
+      ['sign-bus-trunk', 'bus', '#CA4300'],
+      ['sign-metro', 'metro', METRO_ORANGE],
+      ['sign-train', 'train', TRAIN_PURPLE],
+    ] as Array<[string, keyof typeof signGlyphs, string]>).forEach(([name, glyph, color]) => {
+      registerStopSign(name, glyph, color, false);
+      registerStopSign(`${name}-selected`, glyph, color, true);
+    });
 
     // 3. Add Live Trams Source (GeoJSON)
     if (!map.getSource('trams')) {
@@ -2326,15 +2494,94 @@ export const Map: React.FC<MapProps> = ({
 
           'icon-anchor': 'bottom',
           'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
+          // Placement is no longer ignored: the sign boards are much wider than
+          // the discs they replace, and the stop labels below have to be able
+          // to step out of their way.
+          'icon-ignore-placement': false,
           'icon-size': [
             'interpolate',
             ['linear'],
             ['zoom'],
-            15, 0.8,
-            20, 1.2
-          ]
+            15.5, 1.0,
+            17, 1.3,
+            20, 1.8
+          ],
+          // The stop's own name, once there is room to read it. Optional, so a
+          // sign is never dropped for want of space for its label.
+          'text-field': [
+            'step',
+            ['zoom'],
+            '',
+            17, ['coalesce', ['get', 'name'], ['get', 'nameFi'], ''],
+          ],
+          // Same stack the vehicle and bike labels use, so stop names sit in
+          // the app's own typeface rather than the basemap's.
+          'text-font': ['Gotham Rounded Book'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 17, 11, 20, 14],
+          'text-anchor': 'top',
+          'text-offset': [0, 0.4],
+          'text-optional': true,
+          'text-max-width': 9,
+        },
+        paint: {
+          'text-color': mapThemeRef.current === 'dark' ? '#e5e7eb' : '#1f2937',
+          'text-halo-color': mapThemeRef.current === 'dark' ? 'rgba(11,18,32,0.9)' : 'rgba(255,255,255,0.9)',
+          'text-halo-width': 1.4,
         }
+      }, 'trams-circles');
+    }
+
+    // 11b. Stop platforms lifted out of the basemap, and the 3D furniture that
+    //      stands on them (lib/stopPlatforms, lib/stopModels). The platform
+    //      layers need the route ribbons to already exist so they can be slid
+    //      underneath them, which is why this sits below section 8.
+    ensureStopPlatformLayers(map, mapThemeRef.current);
+
+    if (!map.getSource(STOP_FURNITURE_SOURCE)) {
+      map.addSource(STOP_FURNITURE_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    if (!map.getLayer(STOP_FURNITURE_LAYER)) {
+      map.addLayer({
+        id: STOP_FURNITURE_LAYER,
+        type: 'fill-extrusion',
+        source: STOP_FURNITURE_SOURCE,
+        minzoom: STOP_3D_MIN_ZOOM,
+        layout: {
+          visibility: vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current) ? 'visible' : 'none',
+        },
+        paint: {
+          'fill-extrusion-color': ['get', 'color'],
+          'fill-extrusion-height': ['get', 'top'],
+          'fill-extrusion-base': ['get', 'base'],
+          'fill-extrusion-opacity': STOP_3D_FADE_IN as maplibregl.PropertyValueSpecification<number>,
+        },
+      }, map.getLayer('vehicles-3d') ? 'vehicles-3d' : undefined);
+    }
+
+    // The pulse under the stop a selected vehicle is heading for. Radius and
+    // opacity are animated from the same clock as the vehicles (see the tick).
+    if (!map.getSource('stop-pulse')) {
+      map.addSource('stop-pulse', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    if (!map.getLayer('stop-pulse-ring')) {
+      map.addLayer({
+        id: 'stop-pulse-ring',
+        type: 'circle',
+        source: 'stop-pulse',
+        paint: {
+          'circle-radius': 14,
+          'circle-color': 'rgba(253, 203, 110, 0.18)',
+          'circle-opacity': 0.25,
+          'circle-stroke-color': '#fdcb6e',
+          'circle-stroke-width': 2,
+          'circle-stroke-opacity': 0.8,
+        },
       }, 'trams-circles');
     }
 
@@ -2598,10 +2845,10 @@ export const Map: React.FC<MapProps> = ({
             'interpolate',
             ['linear'],
             ['zoom'],
-            10, 0.5,
-            14, 0.8,
-            16, 1.0,
-            20, 1.5
+            10, 0.7,
+            14, 1.1,
+            16, 1.4,
+            20, 2.1
           ]
         }
       }, 'trams-circles');
@@ -2658,10 +2905,10 @@ export const Map: React.FC<MapProps> = ({
             'interpolate',
             ['linear'],
             ['zoom'],
-            10, 0.5,
-            14, 0.8,
-            16, 1.0,
-            20, 1.5
+            10, 0.7,
+            14, 1.1,
+            16, 1.4,
+            20, 2.1
           ]
         }
       }, 'trams-circles');
@@ -2861,6 +3108,10 @@ export const Map: React.FC<MapProps> = ({
     );
     update3DMode(map, is3DRef.current, mapThemeRef.current);
     updateVehicle3DMode(map, vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current));
+    // The style reload recreated every source, so whatever the furniture was
+    // last built for no longer exists.
+    stopFurnitureSigRef.current = '';
+    updateStopFurniture(map, mapThemeRef.current);
 
     // Hide white casing layers
     const casingLayers = ['stops_case', 'stops_rail_case', 'stops_hub', 'stops_rail_hub'];
@@ -2954,6 +3205,19 @@ export const Map: React.FC<MapProps> = ({
     map.on('click', 'stops_trunk', handleStopClick);
     map.on('click', 'stops_signs', handleStopClick);
 
+    // A click on the 3D furniture opens the same popup as its sign. The
+    // extrusions carry only a stop id, so the rest comes from the meta table
+    // built alongside them.
+    map.on('click', STOP_FURNITURE_LAYER, (e: maplibregl.MapLayerMouseEvent) => {
+      const stopId = e.features?.[0]?.properties?.stopId;
+      if (!stopId) return;
+      const info = stopFurnitureMetaRef.current[String(stopId)];
+      if (!info) return;
+      callbacksRef.current.onSelectStop(
+        `HSL:${stopId}`, info.name, info.code, e.lngLat.lat, e.lngLat.lng, info.mode, false,
+      );
+    });
+
     const handleBikeClick = (e: maplibregl.MapLayerMouseEvent) => {
       if (!e.features || e.features.length === 0) return;
       const feat = e.features[0];
@@ -2988,8 +3252,17 @@ export const Map: React.FC<MapProps> = ({
     map.on('mouseleave', 'stops_trunk', resetCursor);
     map.on('mouseenter', 'stops_signs', setCursorPointer);
     map.on('mouseleave', 'stops_signs', resetCursor);
+    map.on('mouseenter', STOP_FURNITURE_LAYER, setCursorPointer);
+    map.on('mouseleave', STOP_FURNITURE_LAYER, resetCursor);
     map.on('mouseenter', 'citybike_gauge', setCursorPointer);
     map.on('mouseleave', 'citybike_gauge', resetCursor);
+
+    // Stop furniture is rebuilt when the view settles, not per frame. `idle`
+    // rather than `moveend` because the platform polygons it orients itself
+    // from arrive with the tiles, which land after the move has ended.
+    const rebuildFurniture = () => updateStopFurniture(map, mapThemeRef.current);
+    map.on('moveend', rebuildFurniture);
+    map.on('idle', rebuildFurniture);
   };
 
   // Initial Map Setup
@@ -3302,6 +3575,8 @@ export const Map: React.FC<MapProps> = ({
     const map = mapRef.current;
     if (map && map.getStyle()) {
       updateVehicle3DMode(map, vehicles3DEnabled(is3D, always3DVehicles));
+      stopFurnitureSigRef.current = '';
+      updateStopFurniture(map, mapTheme);
     }
   }, [is3D, always3DVehicles, mapTheme]);
 
