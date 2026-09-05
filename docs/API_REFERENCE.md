@@ -205,12 +205,17 @@ query GetStopTimetable($stopId: String!, $numberOfDepartures: Int!) {
       longName
       mode
     }
-    stoptimesWithoutPatterns(numberOfDepartures: $numberOfDepartures) {
+    platformCode
+    stoptimesWithoutPatterns(numberOfDepartures: $numberOfDepartures, omitCanceled: false) {
       scheduledArrival
       realtimeArrival
       arrivalDelay
       realtime
       realtimeState
+      serviceDay
+      scheduledDeparture
+      realtimeDeparture
+      departureDelay
       headsign
       trip {
         gtfsId
@@ -320,7 +325,7 @@ All endpoints are served by the Go backend at `http://localhost:8080` and proxie
 Trams always stream. Buses, metro and commuter trains are opt-in: the backend
 only subscribes to those HFP feeds while at least one connected client wants
 them. A client announces what it wants on connect and whenever the user toggles
-a mode:
+a mode or selects a journey using that mode:
 
 ```json
 { "modes": { "bus": false, "metro": true, "train": true } }
@@ -465,7 +470,7 @@ Get route and ETA info for a specific vehicle trip (supporting both trams and bu
 
 ### REST — Stop Details
 
-Get upcoming tram arrivals at a specific stop.
+Get upcoming transit departures at a specific stop, including cancellations.
 
 | Property | Value |
 |---|---|
@@ -499,6 +504,36 @@ Get upcoming tram arrivals at a specific stop.
   ]
 }
 ```
+
+The response also includes:
+
+| Field | Meaning |
+|---|---|
+| `fetchedAt` | Epoch milliseconds when the backend fetched the result; retained on cache hits |
+| `stop.platformCode` | Platform identifier, when provided |
+| `departures[].scheduledDeparture` / `realtimeDeparture` | Boarding departure clocks (`HH:mm`), not arrival clocks |
+| `departures[].scheduledDepartureTime` / `realtimeDepartureTime` | Epoch milliseconds calculated from the upstream service day and departure seconds; omitted when unknown |
+| `departures[].departureDelay` | Departure delay in seconds |
+| `departures[].realtimeState` | Upstream state, including `CANCELED` |
+
+Legacy arrival fields remain for compatibility. Use departure fields for boarding
+and absolute timestamps for countdowns, including trips after midnight. A scheduled
+departure without a live prediction must not be presented as “on time”.
+
+The UI refreshes open departure boards automatically, retains the last successful
+response after errors, and marks failed or old fetches as stale. Cancellation
+labels are retained, but cancelled rows cannot select a vehicle.
+
+### REST — Nearby Stops
+
+`GET /api/v1/stops/nearby?lat=60.1699&lon=24.9384&radius=1000`
+
+Coordinates must be finite and within geographic bounds. `radius` is optional
+(default 1,000 metres, maximum 3,000). Returns `{ "stops": [...], "fetchedAt": ... }`
+with up to ten nearby stops, sorted by distance. Each stop includes the same
+metadata as `StopInfo`, optional `platformCode`, and `distance` in metres.
+The frontend separately fetches bounded departure previews for these stops.
+Invalid parameters return `400`; upstream failures return `502`.
 
 ---
 
@@ -721,6 +756,7 @@ seconds. The frontend defaults the origin to the user's current location.
 | `toLat` / `toLon` | Yes | `60.1990` / `24.9330` | Destination coordinates |
 | `numItineraries` | No | `4` | Number of itineraries (1–6, default 4) |
 | `arriveBy` | No | `false` | If `true`, treat the time as an arrival deadline |
+| `date` / `time` | Together | `2026-09-05` / `23:55` | Service-local planning date and time in Europe/Helsinki; omit both to plan now |
 | `modes` | No | `TRAM,BUS` | CSV of transit modes (`TRAM,BUS,RAIL,SUBWAY,FERRY`); `WALK` is always included. Empty = all |
 
 **Response** `200 OK`:
@@ -769,7 +805,40 @@ seconds. The frontend defaults the origin to the user's current location.
 }
 ```
 
-`400` on missing/invalid coordinates; `404` if no journey is found; `502` on an upstream error.
+Plan responses also include `fetchedAt` (epoch milliseconds). Transit legs expose
+`legId` (opaque refresh identifier), `tripId`, `serviceDate` (`YYYY-MM-DD`),
+`realtime`, `realtimeState`, `departureDelay` and `arrivalDelay` (seconds).
+Optional `directionId` is GTFS 0/1; `startTimeSeconds` is the trip's origin
+departure in service-day seconds, not the rider's boarding time. These fields,
+plus `route.gtfsId`, allow conservative matching to HFP telemetry. Stop places
+include `platformCode` when available.
+
+`startTime` and `endTime` are epoch milliseconds and reflect predictions where
+available. `scheduledStartTime` / `scheduledEndTime` preserve the scheduled
+epochs when upstream delay information permits deriving them. Never infer the
+operating day from the calendar date of a post-midnight boarding.
+
+`400` on missing/invalid coordinates or date/time; `404` if no journey is found;
+`502` on an upstream error.
+
+### REST — Monitor Selected Journey
+
+`GET /api/v1/journey/monitor?legId=...&legId=...`
+
+Accepts one to eight opaque leg IDs from a plan response (up to 2,048 characters
+each). Refreshes those exact legs via Digitransit's `leg(id:)` query, including
+after boarding, rather than replacing them with a newly planned journey.
+Responses are cached for ten seconds.
+
+Returns `{ "legs": [...], "fetchedAt": ... }`, preserving request order. Each
+element uses the journey-leg schema above or is `null` when that original leg
+is unavailable. Missing legs do **not** prove cancellation. The UI retains
+their last known data as stale and offers an explicit search for alternatives.
+
+Transfer warnings subtract walking time from the interval between transit legs.
+They are estimates, not guaranteed connections; scheduled or stale data is
+identified separately. Invalid requests return `400`; upstream errors return
+`502`.
 
 ---
 

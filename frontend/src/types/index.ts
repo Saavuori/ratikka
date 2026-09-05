@@ -69,6 +69,7 @@ export interface StopInfo {
   code: string;
   lat: number;
   lon: number;
+  platformCode?: string;
 }
 
 export interface StopDepartureInfo {
@@ -79,12 +80,28 @@ export interface StopDepartureInfo {
   delay: number;
   realtime: boolean;
   tripId: string;
+  scheduledDeparture?: string;
+  realtimeDeparture?: string;
+  scheduledDepartureTime?: number;
+  realtimeDepartureTime?: number;
+  departureDelay?: number;
+  realtimeState?: string;
 }
 
 export interface StopDetailsResponse {
   stop: StopInfo;
   routes: string[];
   departures: StopDepartureInfo[];
+  fetchedAt?: number;
+}
+
+export interface NearbyStop extends StopInfo {
+  distance: number;
+}
+
+export interface NearbyStopsResponse {
+  stops: NearbyStop[];
+  fetchedAt?: number;
 }
 
 export interface VersionResponse {
@@ -189,9 +206,11 @@ export interface JourneyPlace {
   lon: number;
   stopId?: string;
   stopCode?: string;
+  platformCode?: string;
 }
 
 export interface JourneyRoute {
+  gtfsId?: string;
   shortName: string;
   longName: string;
   color: string;
@@ -211,6 +230,17 @@ export interface JourneyLeg {
   to: JourneyPlace;
   intermediateStops: JourneyPlace[];
   geometry: string; // encoded polyline
+  tripId?: string;
+  legId?: string;
+  serviceDate?: string;
+  directionId?: number;
+  startTimeSeconds?: number;
+  scheduledStartTime?: number;
+  scheduledEndTime?: number;
+  realtime?: boolean;
+  departureDelay?: number;
+  arrivalDelay?: number;
+  realtimeState?: string;
 }
 
 export interface JourneyItinerary {
@@ -224,6 +254,18 @@ export interface JourneyItinerary {
 
 export interface JourneyPlanResponse {
   itineraries: JourneyItinerary[];
+  fetchedAt?: number;
+}
+
+export interface JourneyPlanOptions {
+  date?: string;
+  time?: string;
+  arriveBy?: boolean;
+}
+
+export interface JourneyMonitorResponse {
+  legs: (JourneyLeg | null)[];
+  fetchedAt?: number;
 }
 
 // A resolved point used as journey origin/destination.
@@ -232,5 +274,3 @@ export interface JourneyEndpoint {
   lat: number;
   lon: number;
 }
-
-

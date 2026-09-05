@@ -1,0 +1,84 @@
+.journey-time-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 14px 12px;
+}
+
+.journey-time-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  min-width: 0;
+}
+
+.journey-time-controls input,
+.journey-time-controls select,
+.journey-time-controls button,
+.journey-monitor button,
+.journey-refresh {
+  border: 1px solid var(--border-button-hover);
+  border-radius: 6px;
+  padding: 6px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.journey-time-zone {
+  flex-basis: 100%;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.journey-monitor {
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  border: 1px solid var(--border-button-hover);
+  border-radius: 8px;
+}
+
+.journey-monitor h3,
+.journey-monitor h4,
+.journey-monitor p,
+.journey-alternatives-title {
+  margin: 5px 0;
+}
+
+.journey-alternatives-title {
+  font-size: 12px;
+}
+
+.journey-monitored-leg {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-button-hover);
+}
+
+.journey-prediction-status,
+.journey-monitored-leg small {
+  display: block;
+  color: var(--text-secondary);
+}
+
+.journey-monitor .warning,
+.journey-monitor-summary.warning {
+  color: var(--accent-coral);
+}
+
+.journey-monitor-summary {
+  font-size: 10px;
+  white-space: normal;
+  text-align: left;
+}
+
+.journey-alert {
+  overflow-wrap: anywhere;
+}
+
+.journey-monitor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

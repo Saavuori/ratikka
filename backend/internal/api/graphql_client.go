@@ -94,24 +94,29 @@ type rawRouteInfo struct {
 
 type rawStopResponse struct {
 	Stop *struct {
-		GtfsId string  `json:"gtfsId"`
-		Name   string  `json:"name"`
-		Code   string  `json:"code"`
-		Lat    float64 `json:"lat"`
-		Lon    float64 `json:"lon"`
-		Routes []struct {
+		GtfsId       string  `json:"gtfsId"`
+		Name         string  `json:"name"`
+		Code         string  `json:"code"`
+		PlatformCode string  `json:"platformCode"`
+		Lat          float64 `json:"lat"`
+		Lon          float64 `json:"lon"`
+		Routes       []struct {
 			ShortName string `json:"shortName"`
 			LongName  string `json:"longName"`
 			Mode      string `json:"mode"`
 		} `json:"routes"`
 		StoptimesWithoutPatterns []struct {
-			ScheduledArrival int    `json:"scheduledArrival"`
-			RealtimeArrival  int    `json:"realtimeArrival"`
-			ArrivalDelay     int    `json:"arrivalDelay"`
-			Realtime         bool   `json:"realtime"`
-			RealtimeState    string `json:"realtimeState"`
-			Headsign         string `json:"headsign"`
-			Trip             struct {
+			ScheduledDeparture *int   `json:"scheduledDeparture"`
+			RealtimeDeparture  *int   `json:"realtimeDeparture"`
+			ServiceDay         *int64 `json:"serviceDay"`
+			DepartureDelay     int    `json:"departureDelay"`
+			ScheduledArrival   int    `json:"scheduledArrival"`
+			RealtimeArrival    int    `json:"realtimeArrival"`
+			ArrivalDelay       int    `json:"arrivalDelay"`
+			Realtime           bool   `json:"realtime"`
+			RealtimeState      string `json:"realtimeState"`
+			Headsign           string `json:"headsign"`
+			Trip               struct {
 				GtfsId string `json:"gtfsId"`
 				Route  struct {
 					ShortName string `json:"shortName"`

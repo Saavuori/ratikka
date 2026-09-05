@@ -91,6 +91,7 @@ const STOP_MODE: maplibregl.ExpressionSpecification = [
 interface MapProps {
   trams: Record<string, VehiclePosition>;
   selectedTramId: string | null;
+  journeyVehicleIds?: string[];
   selectedStopId: string | null;
   selectedBikeStationId: string | null;
   selectedStopCoords?: [number, number] | null;
@@ -222,6 +223,7 @@ interface Glide {
 export const Map: React.FC<MapProps> = ({
   trams,
   selectedTramId,
+  journeyVehicleIds = [],
   selectedStopId,
   selectedBikeStationId,
   selectedStopCoords,
@@ -279,6 +281,7 @@ export const Map: React.FC<MapProps> = ({
   const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing, onMapBearingChange });
   const routeGeometriesRef = useRef<Record<string, { geometries: string[]; color?: string; stops?: string[] }>>(routeGeometries);
   const selectedTramIdRef = useRef<string | null>(selectedTramId);
+  const journeyVehicleIdsRef = useRef<string[]>(journeyVehicleIds);
   const selectedLineRef = useRef<string | null>(selectedLine);
   const selectedStopIdRef = useRef<string | null>(selectedStopId);
   const selectedBikeStationIdRef = useRef<string | null>(selectedBikeStationId);
@@ -333,6 +336,10 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     selectedTramIdRef.current = selectedTramId;
   }, [selectedTramId]);
+
+  useEffect(() => {
+    journeyVehicleIdsRef.current = journeyVehicleIds;
+  }, [journeyVehicleIds]);
 
   useEffect(() => {
     selectedLineRef.current = selectedLine;
@@ -2170,7 +2177,7 @@ export const Map: React.FC<MapProps> = ({
           'circle-stroke-color': '#fdcb6e',
           'circle-stroke-width': 3,
         },
-        filter: ['==', ['get', 'veh'], selectedTramIdRef.current || ''],
+        filter: ['in', ['get', 'veh'], ['literal', [...journeyVehicleIdsRef.current, selectedTramIdRef.current || '']]],
       }, 'trams-labels');
     }
 
@@ -3178,11 +3185,11 @@ export const Map: React.FC<MapProps> = ({
     if (!map) return;
 
     if (map.getStyle() && map.getLayer('trams-selected-layer')) {
-      map.setFilter('trams-selected-layer', ['==', ['get', 'veh'], selectedTramId || '']);
+      map.setFilter('trams-selected-layer', ['in', ['get', 'veh'], ['literal', [...journeyVehicleIds, selectedTramId || '']]]);
     } else {
       console.warn('[Map] trams-selected-layer not found');
     }
-  }, [selectedTramId]);
+  }, [selectedTramId, journeyVehicleIds]);
 
   // Update selected stop data source dynamically
   useEffect(() => {
