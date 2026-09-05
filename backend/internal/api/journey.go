@@ -163,15 +163,17 @@ func (h *Handlers) Geocode(w http.ResponseWriter, r *http.Request) {
 // JourneyPlace describes an endpoint of a journey leg. For transit legs the
 // stop fields are populated; for walk legs they are empty.
 type JourneyPlace struct {
-	Name     string  `json:"name"`
-	Lat      float64 `json:"lat"`
-	Lon      float64 `json:"lon"`
-	StopId   string  `json:"stopId,omitempty"`
-	StopCode string  `json:"stopCode,omitempty"`
+	PlatformCode string  `json:"platformCode,omitempty"`
+	Name         string  `json:"name"`
+	Lat          float64 `json:"lat"`
+	Lon          float64 `json:"lon"`
+	StopId       string  `json:"stopId,omitempty"`
+	StopCode     string  `json:"stopCode,omitempty"`
 }
 
 // JourneyRoute carries the display metadata for a transit leg's route.
 type JourneyRoute struct {
+	GtfsId    string `json:"gtfsId"`
 	ShortName string `json:"shortName"`
 	LongName  string `json:"longName"`
 	Color     string `json:"color"`
@@ -180,32 +182,44 @@ type JourneyRoute struct {
 
 // JourneyLeg is a single leg of an itinerary (a walk or a transit ride).
 type JourneyLeg struct {
-	Mode              string         `json:"mode"`
-	Transit           bool           `json:"transit"`
-	Duration          int            `json:"duration"` // seconds
-	Distance          float64        `json:"distance"` // meters
-	StartTime         int64          `json:"startTime"` // epoch ms
-	EndTime           int64          `json:"endTime"`   // epoch ms
-	Headsign          string         `json:"headsign,omitempty"`
-	Route             *JourneyRoute  `json:"route,omitempty"`
-	From              JourneyPlace   `json:"from"`
-	To                JourneyPlace   `json:"to"`
-	IntermediateStops []JourneyPlace `json:"intermediateStops"`
-	Geometry          string         `json:"geometry"` // encoded polyline
+	LegId              string         `json:"legId,omitempty"`
+	TripId             string         `json:"tripId,omitempty"`
+	ServiceDate        string         `json:"serviceDate,omitempty"`
+	DirectionId        *int           `json:"directionId,omitempty"`
+	StartTimeSeconds   *int           `json:"startTimeSeconds,omitempty"` // trip origin, seconds since service midnight
+	Realtime           bool           `json:"realtime"`
+	RealtimeState      string         `json:"realtimeState,omitempty"`
+	DepartureDelay     int            `json:"departureDelay"`
+	ArrivalDelay       int            `json:"arrivalDelay"`
+	ScheduledStartTime int64          `json:"scheduledStartTime,omitempty"`
+	ScheduledEndTime   int64          `json:"scheduledEndTime,omitempty"`
+	Mode               string         `json:"mode"`
+	Transit            bool           `json:"transit"`
+	Duration           int            `json:"duration"`  // seconds
+	Distance           float64        `json:"distance"`  // meters
+	StartTime          int64          `json:"startTime"` // epoch ms
+	EndTime            int64          `json:"endTime"`   // epoch ms
+	Headsign           string         `json:"headsign,omitempty"`
+	Route              *JourneyRoute  `json:"route,omitempty"`
+	From               JourneyPlace   `json:"from"`
+	To                 JourneyPlace   `json:"to"`
+	IntermediateStops  []JourneyPlace `json:"intermediateStops"`
+	Geometry           string         `json:"geometry"` // encoded polyline
 }
 
 // JourneyItinerary is one suggested way to reach the destination.
 type JourneyItinerary struct {
-	Duration      int          `json:"duration"` // seconds
-	WalkDistance  float64      `json:"walkDistance"`
-	StartTime     int64        `json:"startTime"` // epoch ms
-	EndTime       int64        `json:"endTime"`   // epoch ms
-	Transfers     int          `json:"transfers"`
-	Legs          []JourneyLeg `json:"legs"`
+	Duration     int          `json:"duration"` // seconds
+	WalkDistance float64      `json:"walkDistance"`
+	StartTime    int64        `json:"startTime"` // epoch ms
+	EndTime      int64        `json:"endTime"`   // epoch ms
+	Transfers    int          `json:"transfers"`
+	Legs         []JourneyLeg `json:"legs"`
 }
 
 // JourneyPlanResponse is the payload for GET /api/v1/plan.
 type JourneyPlanResponse struct {
+	FetchedAt   int64              `json:"fetchedAt"`
 	Itineraries []JourneyItinerary `json:"itineraries"`
 }
 
@@ -213,33 +227,49 @@ type JourneyPlanResponse struct {
 type rawPlanResponse struct {
 	Plan *struct {
 		Itineraries []struct {
-			Duration     float64 `json:"duration"`
-			WalkDistance float64 `json:"walkDistance"`
-			StartTime    int64   `json:"startTime"`
-			EndTime      int64   `json:"endTime"`
-			Legs         []struct {
-				Mode      string  `json:"mode"`
-				Duration  float64 `json:"duration"`
-				Distance  float64 `json:"distance"`
-				StartTime int64   `json:"startTime"`
-				EndTime   int64   `json:"endTime"`
-				Transit   bool    `json:"transitLeg"`
-				Headsign  string  `json:"headsign"`
-				Route     *struct {
-					ShortName string `json:"shortName"`
-					LongName  string `json:"longName"`
-					Color     string `json:"color"`
-					Mode      string `json:"mode"`
-				} `json:"route"`
-				LegGeometry struct {
-					Points string `json:"points"`
-				} `json:"legGeometry"`
-				From              rawPlanPlace   `json:"from"`
-				To                rawPlanPlace   `json:"to"`
-				IntermediatePlaces []rawPlanPlace `json:"intermediatePlaces"`
-			} `json:"legs"`
+			Duration     float64      `json:"duration"`
+			WalkDistance float64      `json:"walkDistance"`
+			StartTime    int64        `json:"startTime"`
+			EndTime      int64        `json:"endTime"`
+			Legs         []rawPlanLeg `json:"legs"`
 		} `json:"itineraries"`
 	} `json:"plan"`
+}
+
+type rawPlanLeg struct {
+	ID             string `json:"id"`
+	ServiceDate    string `json:"serviceDate"`
+	Realtime       bool   `json:"realTime"`
+	RealtimeState  string `json:"realtimeState"`
+	DepartureDelay *int   `json:"departureDelay"`
+	ArrivalDelay   *int   `json:"arrivalDelay"`
+	Trip           *struct {
+		GtfsId            string          `json:"gtfsId"`
+		DirectionId       json.RawMessage `json:"directionId"`
+		DepartureStoptime *struct {
+			ScheduledDeparture *int `json:"scheduledDeparture"`
+		} `json:"departureStoptime"`
+	} `json:"trip"`
+	Mode      string  `json:"mode"`
+	Duration  float64 `json:"duration"`
+	Distance  float64 `json:"distance"`
+	StartTime int64   `json:"startTime"`
+	EndTime   int64   `json:"endTime"`
+	Transit   bool    `json:"transitLeg"`
+	Headsign  string  `json:"headsign"`
+	Route     *struct {
+		GtfsId    string `json:"gtfsId"`
+		ShortName string `json:"shortName"`
+		LongName  string `json:"longName"`
+		Color     string `json:"color"`
+		Mode      string `json:"mode"`
+	} `json:"route"`
+	LegGeometry struct {
+		Points string `json:"points"`
+	} `json:"legGeometry"`
+	From               rawPlanPlace   `json:"from"`
+	To                 rawPlanPlace   `json:"to"`
+	IntermediatePlaces []rawPlanPlace `json:"intermediatePlaces"`
 }
 
 type rawPlanPlace struct {
@@ -247,9 +277,10 @@ type rawPlanPlace struct {
 	Lat  float64 `json:"lat"`
 	Lon  float64 `json:"lon"`
 	Stop *struct {
-		GtfsId string `json:"gtfsId"`
-		Name   string `json:"name"`
-		Code   string `json:"code"`
+		PlatformCode string `json:"platformCode"`
+		GtfsId       string `json:"gtfsId"`
+		Name         string `json:"name"`
+		Code         string `json:"code"`
 	} `json:"stop"`
 }
 
@@ -258,6 +289,7 @@ func toJourneyPlace(p rawPlanPlace) JourneyPlace {
 	if p.Stop != nil {
 		jp.StopId = p.Stop.GtfsId
 		jp.StopCode = p.Stop.Code
+		jp.PlatformCode = p.Stop.PlatformCode
 		if jp.Name == "" {
 			jp.Name = p.Stop.Name
 		}
@@ -305,9 +337,19 @@ func (h *Handlers) Plan(w http.ResponseWriter, r *http.Request) {
 	fromLon, err2 := strconv.ParseFloat(q.Get("fromLon"), 64)
 	toLat, err3 := strconv.ParseFloat(q.Get("toLat"), 64)
 	toLon, err4 := strconv.ParseFloat(q.Get("toLon"), 64)
-	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil ||
+		!validCoordinates(fromLat, fromLon) || !validCoordinates(toLat, toLon) {
 		http.Error(w, "missing or invalid coordinates (fromLat, fromLon, toLat, toLon required)", http.StatusBadRequest)
 		return
+	}
+	date, clock := q.Get("date"), q.Get("time")
+	if q.Has("date") || q.Has("time") {
+		d, dateErr := time.Parse("2006-01-02", date)
+		t, timeErr := time.Parse("15:04", clock)
+		if dateErr != nil || timeErr != nil || d.Format("2006-01-02") != date || t.Format("15:04") != clock {
+			http.Error(w, "date (YYYY-MM-DD) and time (HH:mm) must both be valid Helsinki local values", http.StatusBadRequest)
+			return
+		}
 	}
 
 	numItineraries := 4
@@ -317,8 +359,8 @@ func (h *Handlers) Plan(w http.ResponseWriter, r *http.Request) {
 	arriveBy := q.Get("arriveBy") == "true"
 	modes := planModes(q.Get("modes"))
 
-	key := fmt.Sprintf("plan:%.5f,%.5f>%.5f,%.5f:%d:%v:%s",
-		fromLat, fromLon, toLat, toLon, numItineraries, arriveBy, q.Get("modes"))
+	key := fmt.Sprintf("plan:%g,%g>%g,%g:%d:%v:%s:%s:%s",
+		fromLat, fromLon, toLat, toLon, numItineraries, arriveBy, q.Get("modes"), date, clock)
 
 	if cached, ok := h.apiCache.Get(key); ok {
 		w.Header().Set("Content-Type", "application/json")
@@ -336,7 +378,7 @@ func (h *Handlers) Plan(w http.ResponseWriter, r *http.Request) {
 				$fromLat: Float!, $fromLon: Float!,
 				$toLat: Float!, $toLon: Float!,
 				$numItineraries: Int!, $arriveBy: Boolean!,
-				$modes: [TransportMode!]
+				$modes: [TransportMode!], $date: String, $time: String
 			) {
 				plan(
 					from: {lat: $fromLat, lon: $fromLon}
@@ -344,48 +386,15 @@ func (h *Handlers) Plan(w http.ResponseWriter, r *http.Request) {
 					numItineraries: $numItineraries
 					arriveBy: $arriveBy
 					transportModes: $modes
+					date: $date
+					time: $time
 				) {
 					itineraries {
 						duration
 						walkDistance
 						startTime
 						endTime
-						legs {
-							mode
-							transitLeg
-							duration
-							distance
-							startTime
-							endTime
-							headsign
-							route {
-								shortName
-								longName
-								color
-								mode
-							}
-							legGeometry {
-								points
-							}
-							from {
-								name
-								lat
-								lon
-								stop { gtfsId name code }
-							}
-							to {
-								name
-								lat
-								lon
-								stop { gtfsId name code }
-							}
-							intermediatePlaces {
-								name
-								lat
-								lon
-								stop { gtfsId name code }
-							}
-						}
+						legs { ` + journeyLegFields + ` }
 					}
 				}
 			}
@@ -400,6 +409,12 @@ func (h *Handlers) Plan(w http.ResponseWriter, r *http.Request) {
 			"arriveBy":       arriveBy,
 			"modes":          modes,
 		}
+		// Digitransit interprets these wall-clock values in the router's
+		// Europe/Helsinki timezone, not in the browser or this server's zone.
+		if date != "" {
+			variables["date"] = date
+			variables["time"] = clock
+		}
 
 		var raw rawPlanResponse
 		if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
@@ -411,37 +426,12 @@ func (h *Handlers) Plan(w http.ResponseWriter, r *http.Request) {
 			return nil, fmt.Errorf("no plan")
 		}
 
-		resp := JourneyPlanResponse{Itineraries: make([]JourneyItinerary, 0, len(raw.Plan.Itineraries))}
+		resp := JourneyPlanResponse{FetchedAt: time.Now().UnixMilli(), Itineraries: make([]JourneyItinerary, 0, len(raw.Plan.Itineraries))}
 		for _, it := range raw.Plan.Itineraries {
 			legs := make([]JourneyLeg, 0, len(it.Legs))
 			transitLegs := 0
 			for _, l := range it.Legs {
-				leg := JourneyLeg{
-					Mode:              l.Mode,
-					Transit:           l.Transit,
-					Duration:          int(l.Duration),
-					Distance:          l.Distance,
-					StartTime:         l.StartTime,
-					EndTime:           l.EndTime,
-					Headsign:          l.Headsign,
-					From:              toJourneyPlace(l.From),
-					To:                toJourneyPlace(l.To),
-					IntermediateStops: make([]JourneyPlace, 0, len(l.IntermediatePlaces)),
-					Geometry:          l.LegGeometry.Points,
-				}
-				if l.Route != nil {
-					leg.Route = &JourneyRoute{
-						ShortName: l.Route.ShortName,
-						LongName:  l.Route.LongName,
-						Color:     l.Route.Color,
-						Mode:      l.Route.Mode,
-					}
-				}
-				for _, ip := range l.IntermediatePlaces {
-					if ip.Stop != nil {
-						leg.IntermediateStops = append(leg.IntermediateStops, toJourneyPlace(ip))
-					}
-				}
+				leg := toJourneyLeg(l)
 				if l.Transit {
 					transitLegs++
 				}

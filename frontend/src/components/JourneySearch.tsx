@@ -1,9 +1,12 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Search, MapPin, Navigation, X, LocateFixed, ArrowRight, Footprints, Train, Bus, TrainFront, Ship, ArrowUpDown, Loader2, ChevronDown, Minimize2 } from 'lucide-react';
-import type { GeocodeResult, JourneyItinerary, JourneyLeg, JourneyEndpoint } from '../types';
-import { fetchGeocode, fetchJourneyPlan } from '../lib/api';
+import type { Alert, VehiclePosition, GeocodeResult, JourneyItinerary, JourneyLeg, JourneyEndpoint } from '../types';
+import { fetchGeocode, fetchJourneyPlan, fetchJourneyMonitor } from '../lib/api';
 import { useGeolocation } from '../hooks/useGeolocation';
+import { findJourneyVehicle } from '../lib/journeyVehicles';
+import { findRefreshedItinerary, helsinkiDateTime, itineraryIdentity, journeyLegStatus, mergeMonitoredLegs, monitoredLegIds, relevantJourneyAlerts, transferEstimates, JOURNEY_REFRESH_MS, JOURNEY_STALE_MS } from '../lib/journeyMonitor';
+import './JourneyMonitor.css';
 
 export interface JourneySelection {
   from: JourneyEndpoint;
@@ -19,6 +22,9 @@ interface JourneySearchProps {
   /** Hide the collapsed launcher (e.g. while a top-center vehicle card is shown). */
   hidden?: boolean;
   isMobile: boolean;
+  alerts?: Alert[];
+  vehicles?: VehiclePosition[];
+  onSelectVehicle?: (vehicle: VehiclePosition) => void;
 }
 
 const CURRENT_LOCATION_LABEL = 'Current location';
@@ -32,8 +38,7 @@ function formatDuration(seconds: number): string {
 }
 
 function formatClock(epochMs: number): string {
-  const d = new Date(epochMs);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return helsinkiDateTime(epochMs).time;
 }
 
 function legModeIcon(mode: string, size = 12) {
@@ -73,7 +78,7 @@ function legColor(leg: JourneyLeg): string {
   }
 }
 
-export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange, onOpenChange, hidden = false, isMobile }) => {
+export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange, onOpenChange, hidden = false, isMobile, alerts = [], vehicles = [], onSelectVehicle }) => {
   const [open, setOpen] = useState(false);
   // When collapsed the planner shrinks to a summary bar so the highlighted route
   // stays on the map and remains visible (closing, by contrast, clears it).
@@ -90,13 +95,47 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const [suggestLoading, setSuggestLoading] = useState(false);
 
   const [itineraries, setItineraries] = useState<JourneyItinerary[]>([]);
-  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [selectedItinerary, setSelectedItinerary] = useState<JourneyItinerary | null>(null);
+  const selectedRef = useRef<JourneyItinerary | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
+  const [monitorLoading, setMonitorLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchTime, setSearchTime] = useState(() => helsinkiDateTime(Date.now()));
+  const [arriveBy, setArriveBy] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const [alternativesUpdatedAt, setAlternativesUpdatedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now);
+  const [unavailable, setUnavailable] = useState(false);
+  const [alternativesError, setAlternativesError] = useState<string | null>(null);
 
   const geocodeAbortRef = useRef<AbortController | null>(null);
   const planAbortRef = useRef<AbortController | null>(null);
+  const monitorAbortRef = useRef<AbortController | null>(null);
+  const generationRef = useRef(0);
+  const monitorGenerationRef = useRef(0);
+  const endpointGenerationRef = useRef(0);
+  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const geocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectionCallback = useRef(onSelectionChange);
   const toInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { selectionCallback.current = onSelectionChange; }, [onSelectionChange]);
+
+  const cancelPending = useCallback(() => {
+    generationRef.current++;
+    monitorGenerationRef.current++;
+    endpointGenerationRef.current++;
+    geocodeAbortRef.current?.abort();
+    planAbortRef.current?.abort();
+    monitorAbortRef.current?.abort();
+    if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    setSuggestLoading(false);
+    setSuggestions([]);
+    setMonitorLoading(false);
+  }, []);
+
+  useEffect(() => cancelPending, [cancelPending]);
 
   useEffect(() => {
     onOpenChange?.(open);
@@ -106,14 +145,18 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   useEffect(() => {
     if (!open) return;
     if (from) return;
+    let active = true;
+    const generation = endpointGenerationRef.current;
     requestGeo()
       .then((c) => {
+        if (!active || generation !== endpointGenerationRef.current) return;
         setFrom({ name: CURRENT_LOCATION_LABEL, lat: c.lat, lon: c.lon });
         setFromText(CURRENT_LOCATION_LABEL);
       })
       .catch(() => {
         // Geolocation denied/unavailable — the user can type an origin instead.
       });
+    return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -127,72 +170,153 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   // Debounced autocomplete for the active field.
   const activeQuery = activeField === 'from' ? fromText : activeField === 'to' ? toText : '';
   useEffect(() => {
-    if (!activeField) return;
+    geocodeAbortRef.current?.abort();
+    if (!open || collapsed || !activeField) return;
+    const controller = new AbortController();
+    geocodeAbortRef.current = controller;
     const q = activeQuery.trim();
     if (q.length < 2 || q === CURRENT_LOCATION_LABEL) {
       setSuggestions([]);
       setSuggestLoading(false);
-      return;
+      return () => controller.abort();
     }
 
     setSuggestLoading(true);
     const handle = setTimeout(() => {
-      geocodeAbortRef.current?.abort();
-      const controller = new AbortController();
-      geocodeAbortRef.current = controller;
       fetchGeocode(q, coords ?? undefined, controller.signal)
         .then((res) => {
+          if (controller.signal.aborted) return;
           setSuggestions(res.results);
         })
         .catch((err) => {
-          if (err?.name !== 'AbortError') setSuggestions([]);
+          if (!controller.signal.aborted && err?.name !== 'AbortError') setSuggestions([]);
         })
-        .finally(() => setSuggestLoading(false));
+        .finally(() => { if (!controller.signal.aborted) setSuggestLoading(false); });
     }, 280);
+    geocodeTimerRef.current = handle;
 
-    return () => clearTimeout(handle);
-  }, [activeQuery, activeField, coords]);
+    return () => { clearTimeout(handle); controller.abort(); };
+  }, [activeQuery, activeField, coords, open, collapsed]);
 
-  // Plan a journey whenever both endpoints are resolved.
+  // Searching alternatives never replaces an existing selection.
   const runPlan = useCallback((f: JourneyEndpoint, t: JourneyEndpoint) => {
     planAbortRef.current?.abort();
+    const generation = ++generationRef.current;
     const controller = new AbortController();
     planAbortRef.current = controller;
     setPlanLoading(true);
-    setError(null);
-    fetchJourneyPlan(f, t, controller.signal)
+    setAlternativesError(null);
+    fetchJourneyPlan(f, t, controller.signal, { ...searchTime, arriveBy })
       .then((res) => {
+        if (controller.signal.aborted || generation !== generationRef.current) return;
         const list = res.itineraries || [];
         setItineraries(list);
-        setSelectedIdx(0);
-        if (list.length === 0) {
-          setError('No routes found for this trip.');
-          onSelectionChange(null);
+        const fetchedAt = res.fetchedAt ?? Date.now();
+        setAlternativesUpdatedAt(fetchedAt);
+        const previous = selectedRef.current;
+        if (previous) {
+          if (!list.length) setAlternativesError('No alternatives found for the chosen date and time.');
+          return;
+        }
+        const next = list[0];
+        if (next) {
+          selectedRef.current = next;
+          setSelectedItinerary(next);
+          setUpdatedAt(fetchedAt);
+          setUnavailable(false);
+          setError(null);
+          selectionCallback.current({ from: f, to: t, itinerary: next });
         } else {
-          onSelectionChange({ from: f, to: t, itinerary: list[0] });
+          setError('No routes found for this trip.');
         }
       })
       .catch((err) => {
-        if (err?.name === 'AbortError') return;
-        setError('Could not plan this journey. Please try again.');
-        setItineraries([]);
-        onSelectionChange(null);
+        if (controller.signal.aborted || generation !== generationRef.current || err?.name === 'AbortError') return;
+        setAlternativesError('Could not find alternatives. Last known results retained. Please retry.');
       })
       .finally(() => {
         // An aborted plan must not clear the loading state of the newer
         // request that superseded it.
-        if (planAbortRef.current === controller) setPlanLoading(false);
+        if (!controller.signal.aborted && generation === generationRef.current) setPlanLoading(false);
       });
-  }, [onSelectionChange]);
+  }, [searchTime, arriveBy]);
+
+  const runMonitor = useCallback((f: JourneyEndpoint, t: JourneyEndpoint) => {
+    const selected = selectedRef.current;
+    if (!selected) return;
+    monitorAbortRef.current?.abort();
+    const generation = ++monitorGenerationRef.current;
+    const controller = new AbortController();
+    monitorAbortRef.current = controller;
+    setMonitorLoading(true);
+    const legIds = monitoredLegIds(selected);
+    const request = legIds
+      ? fetchJourneyMonitor(legIds, controller.signal).then(response => ({
+        ...mergeMonitoredLegs(selected, response.legs),
+        fetchedAt: response.fetchedAt ?? Date.now(),
+      }))
+      : fetchJourneyPlan(f, t, controller.signal, { ...searchTime, arriveBy }).then(response => {
+        const match = findRefreshedItinerary(selected, response.itineraries);
+        return {
+          itinerary: match ?? selected,
+          missingLegIndexes: match ? [] : selected.legs.map((_, index) => index),
+          fetchedAt: response.fetchedAt ?? Date.now(),
+        };
+      });
+    request.then(result => {
+      if (controller.signal.aborted || generation !== monitorGenerationRef.current) return;
+      const missing = result.missingLegIndexes.length > 0;
+      selectedRef.current = result.itinerary;
+      setSelectedItinerary(result.itinerary);
+      selectionCallback.current({ from: f, to: t, itinerary: result.itinerary });
+      setUnavailable(missing);
+      if (!missing) {
+        setUpdatedAt(result.fetchedAt);
+        setError(null);
+      } else {
+        setError(itineraryIdentity(selected)
+          ? 'Some selected legs are unavailable. Last known values retained; this does not mean they are cancelled. Journey estimates are stale.'
+          : 'This itinerary has no reliable trip identity. Last known results retained; choose an alternative explicitly.');
+      }
+    }).catch(err => {
+      if (controller.signal.aborted || generation !== monitorGenerationRef.current || err?.name === 'AbortError') return;
+      setError('Could not refresh this journey. Last known results retained. Please retry.');
+    }).finally(() => {
+      if (!controller.signal.aborted && generation === monitorGenerationRef.current) setMonitorLoading(false);
+    });
+  }, [searchTime, arriveBy]);
 
   useEffect(() => {
-    if (from && to) {
-      runPlan(from, to);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to]);
+    selectedRef.current = null;
+    setSelectedItinerary(null);
+    setItineraries([]);
+    setUpdatedAt(null);
+    setAlternativesUpdatedAt(null);
+    setUnavailable(false);
+    setError(null);
+    setAlternativesError(null);
+    setPlanLoading(false);
+    selectionCallback.current(null);
+    if (!open || !from || !to || !searchTime.date || !searchTime.time) return;
+    runPlan(from, to);
+    return cancelPending;
+  }, [from, to, open, runPlan, cancelPending, searchTime.date, searchTime.time]);
+
+  useEffect(() => {
+    if (!open || !selectedItinerary) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [open, selectedItinerary]);
+
+  useEffect(() => {
+    if (!open || !selectedItinerary || !from || !to) return;
+    const timer = setInterval(() => runMonitor(from, to), JOURNEY_REFRESH_MS);
+    refreshTimerRef.current = timer;
+    return () => clearInterval(timer);
+  }, [open, selectedItinerary, from, to, runMonitor]);
 
   const handlePickSuggestion = (field: 'from' | 'to', s: GeocodeResult) => {
+    cancelPending();
     const endpoint: JourneyEndpoint = { name: s.name || s.label, lat: s.lat, lon: s.lon };
     if (field === 'from') {
       setFrom(endpoint);
@@ -206,19 +330,24 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   };
 
   const handleUseCurrentLocation = () => {
+    const generation = ++endpointGenerationRef.current;
     requestGeo()
       .then((c) => {
+        if (generation !== endpointGenerationRef.current) return;
+        cancelPending();
         setFrom({ name: CURRENT_LOCATION_LABEL, lat: c.lat, lon: c.lon });
         setFromText(CURRENT_LOCATION_LABEL);
         setActiveField(null);
         setSuggestions([]);
       })
       .catch(() => {
+        if (generation !== endpointGenerationRef.current) return;
         setError('Location unavailable. Please type a starting point.');
       });
   };
 
   const handleSwap = () => {
+    cancelPending();
     setFrom(to);
     setTo(from);
     setFromText(toText);
@@ -226,8 +355,18 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   };
 
   const handleSelectItinerary = (idx: number) => {
-    setSelectedIdx(idx);
+    planAbortRef.current?.abort();
+    monitorAbortRef.current?.abort();
+    generationRef.current++;
+    monitorGenerationRef.current++;
+    setPlanLoading(false);
+    setMonitorLoading(false);
     if (from && to && itineraries[idx]) {
+      selectedRef.current = itineraries[idx];
+      setSelectedItinerary(itineraries[idx]);
+      setUpdatedAt(alternativesUpdatedAt);
+      setUnavailable(false);
+      setError(alternativesError ? 'Alternatives could not be refreshed. Showing last known values.' : null);
       onSelectionChange({ from, to, itinerary: itineraries[idx] });
     }
     // On mobile the expanded panel covers the map, so collapse to a summary bar
@@ -236,11 +375,14 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   };
 
   const resetAll = () => {
+    cancelPending();
     setFrom(null);
     setTo(null);
     setFromText('');
     setToText('');
     setItineraries([]);
+    selectedRef.current = null;
+    setSelectedItinerary(null);
     setSuggestions([]);
     setActiveField(null);
     setError(null);
@@ -253,7 +395,12 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     setOpen(false);
   };
 
-  const selectedItinerary = itineraries[selectedIdx] ?? null;
+  const ageSeconds = updatedAt === null ? null : Math.max(0, Math.floor((now - updatedAt) / 1000));
+  const stale = unavailable || !!error || updatedAt === null || now - updatedAt > JOURNEY_STALE_MS;
+  const transfers = selectedItinerary ? transferEstimates(selectedItinerary) : [];
+  const journeyAlerts = selectedItinerary ? relevantJourneyAlerts(selectedItinerary, alerts) : [];
+  const cancelled = selectedItinerary?.legs.some(leg => journeyLegStatus(leg, false) === 'Cancelled');
+  const monitorSummary = `${stale ? 'Stale · ' : ''}${ageSeconds === null ? 'Not updated yet' : `Updated ${ageSeconds}s ago`}`;
 
   // Compact row of mode/route chips shared by the results list and summary bar.
   const renderLegChips = (it: JourneyItinerary) => (
@@ -285,7 +432,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     return (
       <button
         className="journey-launcher"
-        onClick={() => setOpen(true)}
+        onClick={() => { setSearchTime(helsinkiDateTime(Date.now())); setOpen(true); }}
         aria-label="Plan a journey"
       >
         <Search size={16} />
@@ -308,6 +455,11 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
             <>
               {renderLegChips(selectedItinerary)}
               <span className="journey-collapsed-dur">{formatDuration(selectedItinerary.duration)}</span>
+              <span className={`journey-monitor-summary ${stale ? 'warning' : ''}`}>
+                {formatClock(selectedItinerary.endTime)} Helsinki · {monitorSummary}
+                {error && ' · Update unavailable'}
+                {(cancelled || transfers.some(t => t.risk !== 'normal') || journeyAlerts.length > 0) && ' · Warnings — expand'}
+              </span>
               <ChevronDown size={15} className="journey-collapsed-caret" />
             </>
           ) : (
@@ -343,6 +495,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
           placeholder={isFrom ? 'Choose starting point' : 'Choose destination'}
           value={value}
           onChange={(e) => {
+            cancelPending();
             setValue(e.target.value);
             clearEndpoint();
           }}
@@ -354,6 +507,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
             aria-label="Clear"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
+              cancelPending();
               setValue('');
               clearEndpoint();
               setActiveField(field);
@@ -400,6 +554,39 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         </button>
       </div>
 
+      <div className="journey-time-controls">
+        <label>
+          Journey time
+          <select value={arriveBy ? 'arrival' : 'departure'} onChange={e => {
+            cancelPending();
+            setArriveBy(e.target.value === 'arrival');
+          }}>
+            <option value="departure">Depart at</option>
+            <option value="arrival">Arrive by</option>
+          </select>
+        </label>
+        <label>
+          Date
+          <input type="date" value={searchTime.date} onChange={e => {
+            cancelPending();
+            setSearchTime(current => ({ ...current, date: e.target.value }));
+          }} />
+        </label>
+        <label>
+          Time
+          <input type="time" value={searchTime.time} onChange={e => {
+            cancelPending();
+            setSearchTime(current => ({ ...current, time: e.target.value }));
+          }} />
+        </label>
+        <span className="journey-time-zone">Europe/Helsinki · All journey times are Helsinki local time.</span>
+        <button type="button" onClick={() => {
+          cancelPending();
+          setSearchTime(helsinkiDateTime(Date.now()));
+          setArriveBy(false);
+        }}>Depart now</button>
+      </div>
+
       {/* Autocomplete suggestions */}
       {showSuggestions && (
         <div className="journey-suggestions">
@@ -437,24 +624,75 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
       {/* Results */}
       {!showSuggestions && (
         <div className="journey-results">
-          {planLoading && (
+          {(planLoading || monitorLoading) && (
             <div className="journey-status">
-              <Loader2 size={16} className="spin" /> Finding the best routes…
+              <Loader2 size={16} className="spin" /> {selectedItinerary ? 'Refreshing predictions…' : 'Finding routes…'}
             </div>
           )}
-          {!planLoading && error && <div className="journey-status error">{error}</div>}
+          {error && <div className="journey-status error" role="status">{error}</div>}
+          {alternativesError && <div className="journey-status error" role="status">{alternativesError}</div>}
+          {from && to && searchTime.date && searchTime.time && (
+            <div className="journey-monitor-actions">
+              {selectedItinerary && <button className="journey-refresh" disabled={monitorLoading} onClick={() => runMonitor(from, to)}>
+                Refresh predictions
+              </button>}
+              <button className="journey-refresh" disabled={planLoading} onClick={() => runPlan(from, to)}>
+                Find alternatives
+              </button>
+            </div>
+          )}
+          {selectedItinerary && (
+            <section className="journey-monitor" aria-label="Selected journey monitoring">
+              <h3>Selected journey</h3>
+              <p className={stale ? 'warning' : ''}>{monitorSummary} · Automatic refresh every 20s</p>
+              <p>Predictions and transfer margins are estimates, not guaranteed connections.</p>
+              {cancelled && <p className="warning" role="status">Cancellation reported. Check alternatives before travelling.</p>}
+              {selectedItinerary.legs.map((leg, index) => {
+                const vehicle = leg.transit && !stale && journeyLegStatus(leg, false) !== 'Cancelled'
+                  ? findJourneyVehicle(leg, vehicles, now) : undefined;
+                return (
+                  <div className="journey-monitored-leg" key={index}>
+                    <strong>{leg.transit ? `${leg.route?.shortName ?? leg.mode} ${leg.headsign ?? ''}` : 'Walk'}</strong>
+                    {leg.transit && <span className="journey-prediction-status">{journeyLegStatus(leg, stale)}{stale && journeyLegStatus(leg, false) === 'Cancelled' ? ' · Stale' : ''}</span>}
+                    <div>{leg.transit ? 'Board' : 'Leave'} {leg.from.name} · {formatClock(leg.startTime)}
+                      {leg.from.platformCode && ` · Platform ${leg.from.platformCode}`}
+                    </div>
+                    <div>Arrive {leg.to.name} · {formatClock(leg.endTime)}
+                      {helsinkiDateTime(leg.endTime).date !== helsinkiDateTime(leg.startTime).date && ` (${helsinkiDateTime(leg.endTime).date})`}
+                      {leg.to.platformCode && ` · Platform ${leg.to.platformCode}`}
+                    </div>
+                    {leg.transit && (vehicle && onSelectVehicle
+                      ? <button onClick={() => onSelectVehicle(vehicle)}>Show this live vehicle</button>
+                      : <small>No reliable live vehicle match{stale ? ' while predictions are stale' : ' — the exact trip may not be reporting yet'}.</small>)}
+                  </div>
+                );
+              })}
+              {transfers.map(transfer => (
+                <p key={transfer.legIndex} className={transfer.risk !== 'normal' ? 'warning' : ''}>
+                  Connection to {selectedItinerary.legs[transfer.legIndex].route?.shortName ?? selectedItinerary.legs[transfer.legIndex].mode}: {transfer.message}
+                </p>
+              ))}
+              {journeyAlerts.length > 0 && <h4>Alerts affecting this journey</h4>}
+              {journeyAlerts.map((alert, index) => (
+                <div className="journey-alert warning" key={index}>
+                  <strong>{alert.headerText}</strong>
+                  <p>{alert.descriptionText}</p>
+                </div>
+              ))}
+            </section>
+          )}
           {!planLoading && !error && itineraries.length === 0 && (
             <div className="journey-status muted">
               Pick a destination to see routes that take you there.
             </div>
           )}
-          {!planLoading &&
-            itineraries.map((it, idx) => {
+          {itineraries.length > 0 && <h3 className="journey-alternatives-title">Choose an itinerary</h3>}
+          {itineraries.map((it, idx) => {
               const transitLegs = it.legs.filter((l) => l.transit);
               return (
                 <button
                   key={idx}
-                  className={`journey-itinerary ${idx === selectedIdx ? 'active' : ''}`}
+                  className={`journey-itinerary ${it === selectedItinerary || (selectedItinerary && itineraryIdentity(it) && itineraryIdentity(it) === itineraryIdentity(selectedItinerary)) ? 'active' : ''}`}
                   onClick={() => handleSelectItinerary(idx)}
                 >
                   <div className="journey-itinerary-top">

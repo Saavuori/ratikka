@@ -1,11 +1,14 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useEffectEvent, useState } from 'react';
 import type { StopDetailsResponse, Alert } from '../types';
 import { fetchStopDetails } from '../lib/api';
 import { getRouteColor } from '../lib/routeColors';
 import { relevantStopAlerts } from '../lib/stopAlerts';
 import { X, Clock, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useSavedStops } from '../hooks/useSavedStops';
+import { departureView, isCancelledDeparture, isDepartureSourceStale, MAX_SAVED_STOPS, pollDepartures } from '../lib/departures';
+import './departures.css';
 
 interface StopPopupProps {
   stopId: string;
@@ -34,10 +37,15 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   onToggleCollapse,
   alerts = [],
 }) => {
-  const [details, setDetails] = useState<StopDetailsResponse | null>(null);
+  const [response, setResponse] = useState<{ stopId: string; data: StopDetailsResponse } | null>(null);
+  const details = response?.stopId === stopId ? response.data : null;
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const { savedStops, toggleStop } = useSavedStops();
+  const savedStop = savedStops.find((stop) => stop.gtfsId === stopId);
+  const stale = isDepartureSourceStale(details?.fetchedAt, now, Boolean(error));
   // The timetable is what the panel is for, so alerts stay folded away until
   // asked for — a stop served by many routes can otherwise collect enough of
   // them to fill the panel on its own.
@@ -73,55 +81,39 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   const relevantAlerts = relevantStopAlerts(alerts, stopId, details?.routes);
   const worstSeverity = relevantAlerts[0]?.severityLevel ?? 'INFO';
 
+  const publishDetails = useEffectEvent((data: StopDetailsResponse) => {
+    onStopDeparturesLoaded?.(data.departures.filter((d) => !isCancelledDeparture(d)).map((d) => d.tripId).filter(Boolean));
+    onStopRoutesLoaded?.(data.routes || []);
+    if (data.stop) onStopCoordsLoaded?.(data.stop.lat, data.stop.lon);
+  });
+
   useEffect(() => {
-    // Guard against a slow response for a previously selected stop landing
-    // after this one and overwriting both local state and the parent's
-    // route/coordinate state with the wrong stop's data.
-    let active = true;
+    setResponse(null);
     setLoading(true);
     setError(null);
     setAlertsExpanded(false);
-
-    fetchStopDetails(stopId, 8)
-      .then((data) => {
-        if (!active) return;
-        setDetails(data);
+    setNow(Date.now());
+    const clock = setInterval(() => setNow(Date.now()), 1000);
+    const stopPolling = pollDepartures(
+      (signal) => fetchStopDetails(stopId, 8, signal),
+      (data) => {
+        setResponse({ stopId, data });
         setLoading(false);
-        if (onStopDeparturesLoaded) {
-          const tripIds = data.departures.map((d) => d.tripId).filter(Boolean);
-          onStopDeparturesLoaded(tripIds);
-        }
-        if (onStopRoutesLoaded) {
-          onStopRoutesLoaded(data.routes || []);
-        }
-        if (onStopCoordsLoaded && data.stop) {
-          onStopCoordsLoaded(data.stop.lat, data.stop.lon);
-        }
-      })
-      .catch((err) => {
-        if (!active) return;
-        console.error(err);
-        setError('Failed to load stop timetable');
+        setError(null);
+        setNow(Date.now());
+        publishDetails(data);
+      },
+      () => {
+        setError('Could not update departures. Retrying automatically.');
         setLoading(false);
-      });
+      },
+    );
 
     return () => {
-      active = false;
+      stopPolling();
+      clearInterval(clock);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- callbacks are stable enough; re-fetch only when the stop changes
   }, [stopId]);
-
-  const getDelayColor = (seconds: number) => {
-    if (seconds > 60) return 'text-rose-400';
-    if (seconds < -60) return 'text-sky-400';
-    return 'text-emerald-400';
-  };
-
-  const formatDelay = (seconds: number) => {
-    if (Math.abs(seconds) < 30) return 'On time';
-    const mins = Math.round(Math.abs(seconds) / 60);
-    return seconds < 0 ? `${mins}m early` : `${mins}m late`;
-  };
 
   return (
     <div
@@ -165,6 +157,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
           </div>
           <p className="panel-subtitle" style={{ fontFamily: 'monospace', marginTop: '4px', fontSize: '0.65rem' }}>
             {stopId}
+            {details?.stop.platformCode && ` · Platform ${details.stop.platformCode}`}
           </p>
         </div>
         {!isCollapsed && (
@@ -185,10 +178,22 @@ export const StopPopup: React.FC<StopPopupProps> = ({
             {isMobile ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           </button>
         )}
-        <button onClick={onClose} className="close-btn">
+        <button onClick={onClose} className="close-btn" aria-label="Close stop departures">
           <X size={18} />
         </button>
       </div>
+      <button
+        type="button"
+        className="save-stop-button"
+        aria-pressed={Boolean(savedStop)}
+        disabled={!savedStop && (!details || savedStops.length >= MAX_SAVED_STOPS)}
+        onClick={() => {
+          const stop = savedStop ?? details?.stop;
+          if (stop) toggleStop(stop);
+        }}
+      >
+        {savedStop ? 'Remove saved stop' : savedStops.length >= MAX_SAVED_STOPS ? '10 saved stops maximum' : 'Save stop'}
+      </button>
 
       {/* Service alerts — a one-line summary that expands into a scrollable
           list, so the timetable below always keeps its share of the panel. */}
@@ -266,16 +271,21 @@ export const StopPopup: React.FC<StopPopupProps> = ({
 
         {/* Error Fallback */}
         {error && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 0', gap: '8px', color: '#ef4444', textAlign: 'center' }}>
-            <AlertTriangle size={24} />
-            <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{error}</span>
+          <div className="departures-message" role="status">
+            {error}
           </div>
         )}
 
         {/* Departures List */}
-        {!loading && !error && details && (
+        {!loading && details && (
           <div>
             <div className="legend-title" style={{ marginBottom: '8px' }}>Upcoming Departures</div>
+            <p className={`departures-freshness ${stale ? 'is-stale' : ''}`} role="status">
+              {stale ? 'Stale · last known departures' : 'Updates every 18 seconds'}
+              {details.fetchedAt
+                ? ` · source ${Math.max(0, Math.floor((now - details.fetchedAt) / 1000))}s ago`
+                : ' · source time unavailable'}
+            </p>
 
             {details.departures.length === 0 ? (
               <div style={{ fontSize: '0.75rem', color: '#64748b', padding: '24px 0', textAlign: 'center' }}>
@@ -283,13 +293,17 @@ export const StopPopup: React.FC<StopPopupProps> = ({
               </div>
             ) : (
               <div className="departure-list">
-                {details.departures.map((dep, idx) => (
-                  <div
+                {details.departures.map((dep, idx) => {
+                  const view = departureView(dep, now, stale);
+                  return (
+                  <button
+                    type="button"
                     key={idx}
+                    disabled={!view.selectable}
                     onClick={() => {
-                      if (dep.tripId) onSelectTripId(dep.tripId, dep.line);
+                      if (view.selectable) onSelectTripId(dep.tripId, dep.line);
                     }}
-                    className="departure-item"
+                    className={`departure-item departure-button ${view.status === 'Cancelled' ? 'is-cancelled' : ''}`}
                   >
                     <div className="departure-left">
                       <div className="departure-badge" style={{ backgroundColor: getRouteColor(dep.line), color: '#ffffff' }}>
@@ -304,14 +318,15 @@ export const StopPopup: React.FC<StopPopupProps> = ({
                     <div className="departure-right">
                       <div className="departure-time">
                         <Clock size={12} style={{ color: '#64748b' }} />
-                        <span>{dep.realtimeArrival}</span>
+                        <span>{view.time}{view.countdown && ` · ${view.countdown}`}</span>
                       </div>
-                      <span className={`timeline-delay ${getDelayColor(dep.delay)}`} style={{ fontSize: '0.65rem', marginTop: '2px', display: 'block' }}>
-                        {formatDelay(dep.delay)}
+                      <span className={`departure-status ${stale ? 'is-stale' : ''}`}>
+                        {view.status}{view.delayText && ` · ${view.delayText}`}
                       </span>
                     </div>
-                  </div>
-                ))}
+                  </button>
+                  );
+                })}
               </div>
             )}
           </div>
