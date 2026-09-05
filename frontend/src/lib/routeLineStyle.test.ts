@@ -1,7 +1,57 @@
 import { describe, it, expect } from 'vitest';
 import { createPropertyExpression, v8 } from '@maplibre/maplibre-gl-style-spec';
 import type { StylePropertySpecification } from '@maplibre/maplibre-gl-style-spec';
-import { ROUTE_LINE_OFFSET, MAX_SLOT } from './routeLineStyle';
+import {
+  ROUTE_LINE_OFFSET, MAX_SLOT, ROUTE_LINE_WIDTH, ROUTE_CASING_WIDTH,
+  ROUTE_LINE_OPACITY, ROUTE_CASING_OPACITY,
+} from './routeLineStyle';
+
+describe('route visual hierarchy', () => {
+  const compile = (expression: unknown, property: 'line-width' | 'line-opacity') => {
+    const compiled = createPropertyExpression(
+      expression,
+      property,
+      v8.paint_line[property] as StylePropertySpecification
+    );
+    if (compiled.result === 'error') throw new Error(String(compiled.value));
+    return (zoom: number, selected: boolean, dim: boolean): number =>
+      compiled.value.evaluate({ zoom }, { properties: { selected, dim } } as never);
+  };
+  const width = compile(ROUTE_LINE_WIDTH, 'line-width');
+  const casing = compile(ROUTE_CASING_WIDTH, 'line-width');
+  const opacity = compile(ROUTE_LINE_OPACITY, 'line-opacity');
+  const casingOpacity = compile(ROUTE_CASING_OPACITY, 'line-opacity');
+
+  it('keeps context slimmer than ordinary routes and the selected route', () => {
+    for (const zoom of [8, 10, 11.5, 13, 14.5, 16, 20]) {
+      expect(width(zoom, false, true)).toBeGreaterThan(0);
+      expect(width(zoom, false, true)).toBeLessThan(width(zoom, false, false));
+      expect(width(zoom, false, false)).toBeLessThan(width(zoom, true, false));
+      expect(width(zoom, false, false)).toBeGreaterThanOrEqual(1.8);
+      expect(width(zoom, false, false)).toBeLessThanOrEqual(3);
+      expect(width(zoom, true, false)).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it('keeps outlines narrow in every selection state', () => {
+    for (const zoom of [8, 10, 11.5, 13, 14.5, 16, 20]) {
+      for (const [selected, dim] of [[false, false], [false, true], [true, false]]) {
+        const outline = casing(zoom, selected, dim) - width(zoom, selected, dim);
+        expect(outline).toBeGreaterThan(0);
+        expect(outline).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
+  it('fades context and its casing while keeping route colours distinct', () => {
+    expect(opacity(13, false, true)).toBeLessThanOrEqual(0.3);
+    expect(opacity(13, false, false)).toBeGreaterThanOrEqual(0.9);
+    expect(opacity(13, true, false)).toBe(1);
+    expect(casingOpacity(13, false, true)).toBeLessThan(opacity(13, false, true));
+    expect(casingOpacity(13, false, true)).toBeLessThan(casingOpacity(13, false, false));
+    expect(casingOpacity(13, false, false)).toBeLessThan(casingOpacity(13, true, false));
+  });
+});
 
 // `line-offset` is a pixel offset, so how far a fanned route sits from the
 // street it represents is fixed on screen and therefore *grows on the ground*
