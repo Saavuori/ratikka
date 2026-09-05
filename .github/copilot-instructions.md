@@ -1,6 +1,6 @@
-# CLAUDE.md
+# Copilot instructions
 
-Guidance for Claude Code (and humans) working in this repository.
+Guidance for GitHub Copilot (and humans) working in this repository.
 
 ## What this is
 
@@ -107,7 +107,7 @@ This means **Conventional Commits are load-bearing** — the prefix is not a
 style preference, it is the version number. A `feat:` that should have been a
 `fix:` ships a minor.
 
-Doc-only changes are skipped (`paths-ignore` for `README.md`, `CLAUDE.md`,
+Doc-only changes are skipped (`paths-ignore` for `README.md`, `.github/copilot-instructions.md`,
 `CHANGELOG.md`, `docs/**`, `monitoring/**`, `scripts/**`, `.claude/**`,
 `deploy.sh`, `.gitignore`) — they don't cut a release.
 
