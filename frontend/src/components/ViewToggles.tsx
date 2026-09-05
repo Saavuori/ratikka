@@ -1,11 +1,13 @@
 import React from 'react';
-import { Sun, Moon, Box, Route } from 'lucide-react';
+import { Sun, Moon, Box, Route, TramFront } from 'lucide-react';
 
 interface ViewTogglesProps {
   mapTheme: 'light' | 'dark';
   setMapTheme: (theme: 'light' | 'dark') => void;
   is3D: boolean;
   setIs3D: (is3D: boolean) => void;
+  always3DVehicles: boolean;
+  setAlways3DVehicles: (always: boolean) => void;
   showRoutes: boolean;
   setShowRoutes: (show: boolean) => void;
 }
@@ -16,8 +18,8 @@ const ICON_SIZE = 16;
 const VIEW_ACCENT = '#34d399';
 
 /**
- * Floating corner shortcut for the three map-view switches — light/dark
- * basemap, route lines on/off, and 2D/3D pitch. It mirrors ModeToggles on the
+ * Floating corner shortcut for the map-view switches — light/dark basemap,
+ * route lines, 2D/3D pitch, and pitch-independent vehicles. It mirrors ModeToggles on the
  * opposite corner, and together
  * the two rows carry everything the old settings section held, which is why
  * that section (and the mobile "Settings" sheet behind it) is gone.
@@ -27,6 +29,8 @@ export const ViewToggles: React.FC<ViewTogglesProps> = ({
   setMapTheme,
   is3D,
   setIs3D,
+  always3DVehicles,
+  setAlways3DVehicles,
   showRoutes,
   setShowRoutes,
 }) => {
@@ -54,6 +58,13 @@ export const ViewToggles: React.FC<ViewTogglesProps> = ({
       label: `${is3D ? 'Disable' : 'Enable'} 3D map`,
       active: is3D,
       toggle: () => setIs3D(!is3D),
+    },
+    {
+      key: '3d-vehicles',
+      icon: <TramFront size={ICON_SIZE} />,
+      label: 'Always show 3D vehicles, including on the flat map',
+      active: always3DVehicles,
+      toggle: () => setAlways3DVehicles(!always3DVehicles),
     },
   ];
 

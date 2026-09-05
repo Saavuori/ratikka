@@ -47,6 +47,9 @@ function App() {
   const [is3D, setIs3D] = useState<boolean>(() => {
     return readStorage('is3D') === 'true';
   });
+  const [always3DVehicles, setAlways3DVehicles] = useState<boolean>(() => {
+    return readStorage('always3DVehicles') === 'true';
+  });
   const [showTrams, setShowTrams] = useState<boolean>(() => {
     return readStorage('showTrams') !== 'false';
   });
@@ -91,6 +94,10 @@ function App() {
   useEffect(() => {
     writeStorage('is3D', String(is3D));
   }, [is3D]);
+
+  useEffect(() => {
+    writeStorage('always3DVehicles', String(always3DVehicles));
+  }, [always3DVehicles]);
 
   useEffect(() => {
     writeStorage('showTrams', String(showTrams));
@@ -567,6 +574,7 @@ function App() {
         selectedLine={selectedTram?.desi || null}
         mapTheme={mapTheme}
         is3D={is3D}
+        always3DVehicles={always3DVehicles}
         isFollowing={isFollowing}
         onDisableFollowing={() => setIsFollowing(false)}
         onMapBearingChange={setMapBearing}
@@ -682,6 +690,8 @@ function App() {
         setMapTheme={setMapTheme}
         is3D={is3D}
         setIs3D={setIs3D}
+        always3DVehicles={always3DVehicles}
+        setAlways3DVehicles={setAlways3DVehicles}
         showRoutes={showRoutes}
         setShowRoutes={setShowRoutes}
       />

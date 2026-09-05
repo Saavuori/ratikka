@@ -22,6 +22,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(ROOT, 'frontend', 'dist');
@@ -51,6 +52,21 @@ const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
 });
 const page = await browser.newPage();
+await page.addInitScript(() => { window.__mlProbe = true; });
+
+let stream;
+const vehicle = {
+  veh: 'test-tram', desi: '4', lat: 60.17, lng: 24.94, hdg: 90,
+  spd: 0, acc: 0, drst: 0, mode: 'tram', dl: 0, route: '', stop: null, tripId: '',
+};
+const sendVehicle = () => stream?.send(JSON.stringify({
+  type: 'positions', timestamp: new Date().toISOString(), count: 1,
+  vehicles: { [vehicle.veh]: { ...vehicle, ts: Math.floor(Date.now() / 1000) } },
+}));
+await page.routeWebSocket('**/api/v1/stream', (socket) => {
+  stream = socket;
+  socket.onMessage(sendVehicle);
+});
 
 const errors = [];
 const warnings = [];
@@ -84,6 +100,14 @@ await page.route('**/api/v1/config', (r) =>
 // Sprites must return parseable JSON / a real PNG or style.load never fires.
 const stubAsset = (r) => {
   const u = r.request().url();
+  if (u.includes('/dark-matter-gl-style/style.json')) {
+    return r.fulfill({ json: {
+      version: 8,
+      glyphs: `${base}/stub/{fontstack}/{range}.pbf`,
+      sources: { carto: { type: 'vector', tiles: [`${base}/stub/{z}/{x}/{y}.pbf`] } },
+      layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#15191e' } }],
+    } });
+  }
   if (u.includes('.png')) return r.fulfill({ contentType: 'image/png', body: PNG });
   // Sprite layout is a map of icon-name -> box; empty is valid.
   if (u.includes('sprite')) return r.fulfill({ json: {} });
@@ -111,6 +135,62 @@ await page.route('**/*', (r) => {
 await page.goto(base, { waitUntil: 'load' });
 await page.waitForTimeout(6000);
 
+// Exercise the actual App → Map path, not only static layer declarations.
+await page.waitForFunction(() => window.__mlMap?.getLayer('vehicles-3d'));
+await page.evaluate(() => window.__mlMap.jumpTo({ center: [24.94, 60.17], zoom: 14 }));
+const vehicleToggle = page.getByRole('button', { name: 'Always show 3D vehicles, including on the flat map', exact: true });
+assert.equal(await vehicleToggle.getAttribute('aria-pressed'), 'false');
+assert.equal(await page.evaluate(() => window.__mlMap.getLayoutProperty('vehicles-3d', 'visibility')), 'none');
+await vehicleToggle.click();
+await page.waitForFunction(async () => {
+  const map = window.__mlMap;
+  const source = map?.getSource('vehicles-3d');
+  return source && (await source.getData()).features.length > 0;
+});
+assert.equal(await page.evaluate(() => window.__mlMap.getPitch()), 0, 'vehicle toggle must not tilt the map');
+assert.equal(await page.evaluate(() => localStorage.getItem('always3DVehicles')), 'true');
+assert.equal(await page.evaluate(() => window.__mlMap.getLayoutProperty('vehicles-3d', 'visibility')), 'visible');
+
+vehicle.drst = 1;
+sendVehicle();
+await page.waitForFunction(async () => {
+  const data = await window.__mlMap.getSource('vehicles-3d').getData();
+  return data.features.some((f) => f.properties.part === 'doorway');
+});
+vehicle.drst = 0;
+sendVehicle();
+await page.waitForFunction(async () => {
+  const data = await window.__mlMap.getSource('vehicles-3d').getData();
+  return data.features.length && !data.features.some((f) => f.properties.part === 'doorway');
+});
+
+await page.getByRole('button', { name: 'Enable 3D map', exact: true }).click();
+await page.waitForFunction(() => window.__mlMap.getPitch() > 40);
+await page.getByRole('button', { name: 'Disable 3D map', exact: true }).click();
+await page.waitForFunction(() => window.__mlMap.getPitch() === 0);
+assert.equal(await page.evaluate(() => window.__mlMap.getLayoutProperty('vehicles-3d', 'visibility')), 'visible');
+
+await page.getByRole('button', { name: 'Switch to dark map', exact: true }).click();
+await page.waitForFunction(() =>
+  window.__mlMap.getLayer('vehicles-3d') &&
+  window.__mlMap.getLayoutProperty('vehicles-3d', 'visibility') === 'visible' &&
+  window.__mlMap.getSource('carto'));
+await page.reload({ waitUntil: 'load' });
+await page.waitForFunction(() => window.__mlMap?.getLayer('vehicles-3d'));
+assert.equal(await vehicleToggle.getAttribute('aria-pressed'), 'true', 'vehicle preference survives reload');
+assert.equal(await page.evaluate(() => window.__mlMap.getLayoutProperty('vehicles-3d', 'visibility')), 'visible');
+await page.evaluate(() => window.__mlMap.jumpTo({ center: [24.94, 60.17], zoom: 12 }));
+await page.waitForFunction(async () => {
+  const source = window.__mlMap.getSource('vehicles-3d');
+  return source && (await source.getData()).features.length === 0;
+});
+await vehicleToggle.click();
+assert.equal(await page.evaluate(() => window.__mlMap.getPaintProperty('trams-body', 'icon-opacity')), 1);
+await page.getByRole('button', { name: 'Enable 3D map', exact: true }).click();
+await page.waitForFunction(() =>
+  window.__mlMap.getLayoutProperty('vehicles-3d', 'visibility') === 'visible');
+console.log('3D vehicle toggle, live doors, pitch independence, zoom fallback and persistence: PASS');
+
 const canvas = await page.locator('canvas.maplibregl-canvas').count();
 const webgl2 = await page.evaluate(() => {
   const c = document.createElement('canvas');
@@ -135,7 +215,7 @@ const dedupe = (list) => {
 // The failure mode this check exists for: addLayer/addSource rejecting a spec
 // that style-spec v25+ now considers invalid.
 const layerErrors = errors.filter((e) =>
-  /addLayer|addSource|expected.*expression|Expected.*but found|is not a valid|layers\[|sources\[/i.test(e));
+  /addLayer|addSource|expected.*expression|Expected.*but found|is not a valid|layers\[|sources\[|PAGEERROR|Vehicle animation frame failed/i.test(e));
 
 console.log(`unique console errors: ${dedupe(errors).length} (raw ${errors.length})`);
 dedupe(errors).forEach(([e, n]) => console.log(`  ERR  x${n} ${e}`));

@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { createPropertyExpression, v8 } from '@maplibre/maplibre-gl-style-spec';
+import type { StylePropertySpecification } from '@maplibre/maplibre-gl-style-spec';
 import {
   offsetMeters,
   sectionRing,
@@ -12,6 +14,13 @@ import {
   DOORS_OPEN_COLOR,
   CAB_COLOR,
   SELECTED_COLOR,
+  HEADLIGHT_COLOR,
+  TAILLIGHT_COLOR,
+  BRAKE_LIGHT_COLOR,
+  VEHICLE_3D_MIN_ZOOM,
+  VEHICLE_3D_FULL_ZOOM,
+  VEHICLE_3D_FADE_IN,
+  VEHICLE_ICON_FADE_OUT,
 } from './vehicleModels';
 import { METRO_ORANGE, TRAIN_PURPLE, BUS_BLUE, TRAM_GREEN, ROUTE_COLORS } from './routeColors';
 
@@ -82,30 +91,34 @@ describe('sectionRing', () => {
 describe('vehicleExtrusions', () => {
   const base = { veh: 'v1', lng: HELSINKI[0], lat: HELSINKI[1], hdg: 0, desi: '4', doorsOpen: false };
 
-  it('gives the metro its two coupled units', () => {
+  it('gives the metro four cars and three visible gangways', () => {
     const parts = vehicleExtrusions({ ...base, mode: 'metro', desi: 'M1' });
-    // Two bodies, a window band around each, and the white band down each roof.
-    expect(parts.filter((p) => p.properties.part === 'body')).toHaveLength(2);
-    expect(parts.filter((p) => p.properties.part === 'glass')).toHaveLength(2);
-    expect(parts.filter((p) => p.properties.part === 'roof')).toHaveLength(2);
-    // Two door sets per unit, two leaves on each flank of each.
-    expect(parts.filter((p) => p.properties.part === 'door')).toHaveLength(16);
+    expect(parts.filter((p) => p.properties.part === 'body')).toHaveLength(4);
+    expect(parts.filter((p) => p.properties.part === 'glass')).toHaveLength(4);
+    expect(parts.filter((p) => p.properties.part === 'gangway')).toHaveLength(3);
+    expect(parts.filter((p) => p.properties.part === 'door')).toHaveLength(48);
   });
 
-  it('puts a pair of leaves on both flanks at every door position', () => {
+  it('puts doors on the right for road vehicles and both rail flanks', () => {
     for (const mode of ['tram', 'bus', 'train', 'metro']) {
       const parts = vehicleExtrusions({ ...base, mode });
       expect(parts.filter((p) => p.properties.part === 'door')).toHaveLength(
-        vehicleModel(mode).doors.length * 4
+        vehicleModel(mode).doors.length * vehicleModel(mode).doorSides.length * 2
       );
+      const doors = parts.filter((p) => p.properties.part === 'door');
+      if (mode === 'bus' || mode === 'tram') {
+        expect(doors.every((p) => p.geometry.coordinates[0].every(([lng]) => lng > base.lng))).toBe(true);
+      } else {
+        expect(doors.some((p) => p.geometry.coordinates[0].every(([lng]) => lng < base.lng))).toBe(true);
+      }
     }
   });
 
   it('lays a cab patch on the roof at each driving end', () => {
     const tram = vehicleExtrusions({ ...base, mode: 'tram' }).filter((p) => p.properties.part === 'cab');
     const bus = vehicleExtrusions({ ...base, mode: 'bus' }).filter((p) => p.properties.part === 'cab');
-    // A tram reverses at the terminus and has a cab at both ends; a bus turns.
-    expect(tram).toHaveLength(2);
+    // The representative Helsinki tram is single-ended, like the bus.
+    expect(tram).toHaveLength(1);
     expect(bus).toHaveLength(1);
     expect(tram[0].properties.color).toBe(CAB_COLOR);
     // On the roof, not inside the body.
@@ -114,7 +127,7 @@ describe('vehicleExtrusions', () => {
 
   it('gives the commuter train a pantograph above its roof', () => {
     const parts = vehicleExtrusions({ ...base, mode: 'train', desi: 'A' });
-    const roof = parts.find((p) => p.properties.part === 'roof');
+    const roof = parts.find((p) => p.properties.part === 'pantograph');
     expect(roof).toBeDefined();
     expect(roof!.properties.base).toBeGreaterThanOrEqual(VEHICLE_MODELS.train.height);
   });
@@ -151,7 +164,7 @@ describe('vehicleExtrusions', () => {
     // A doorway exists only while the doors are open, and it is the amber one.
     expect(shut.some((p) => p.properties.part === 'doorway')).toBe(false);
     const doorways = open.filter((p) => p.properties.part === 'doorway');
-    expect(doorways).toHaveLength(vehicleModel('tram').doors.length * 2);
+    expect(doorways).toHaveLength(vehicleModel('tram').doors.length);
     expect(doorways[0].properties.color).toBe(DOORS_OPEN_COLOR);
 
     // And the leaves really move: no leaf is where it was when shut.
@@ -162,18 +175,103 @@ describe('vehicleExtrusions', () => {
     expect(open.find((p) => p.properties.part === 'glass')!.properties.color).toBe(GLASS_COLOR);
   });
 
-  it('keeps the parted leaves inside the body', () => {
+  it('keeps parted leaves within their own straight body section, never in a joint or nose', () => {
     for (const mode of ['tram', 'bus', 'train', 'metro']) {
       const model = vehicleModel(mode);
-      const reach = Math.max(...model.doors.map((d) => Math.abs(d))) + model.doorWidth;
-      const front = Math.max(...model.sections.map((s) => s.front));
-      expect(reach).toBeLessThan(front);
+      for (const d of model.doors) {
+        const s = model.sections.find((s) => d >= s.back && d <= s.front)!;
+        expect(d - model.doorWidth).toBeGreaterThan(s.back + (s.tail ?? 0));
+        expect(d + model.doorWidth).toBeLessThan(s.front - (s.nose ?? 0));
+      }
     }
+  });
+
+  it('animates door leaves continuously and clamps progress with compatible fallback', () => {
+    for (const mode of Object.keys(VEHICLE_MODELS)) {
+      const state = { ...base, mode };
+      const shut = vehicleExtrusions(state);
+      const open = vehicleExtrusions({ ...state, doorsOpen: true });
+      expect(vehicleExtrusions({ ...state, doorProgress: -1 })).toEqual(shut);
+      expect(vehicleExtrusions({ ...state, doorProgress: 2 })).toEqual(open);
+      expect(vehicleExtrusions({ ...state, doorProgress: NaN })).toEqual(shut);
+      expect(vehicleExtrusions({ ...state, doorsOpen: true, doorProgress: Infinity })).toEqual(open);
+      expect(vehicleExtrusions({ ...state, doorsOpen: true, doorProgress: 0 })).toEqual(shut);
+      const doorLat = (parts: typeof shut) => parts.find((p) => p.properties.part === 'door')!.geometry.coordinates[0][0][1];
+      const halfway = vehicleExtrusions({ ...state, doorProgress: 0.5 });
+      expect(doorLat(halfway)).toBeCloseTo((doorLat(shut) + doorLat(open)) / 2, 10);
+    }
+  });
+
+  it('models articulated bodies, pillars, running gear and roof equipment at ground scale', () => {
+    const expected = { tram: [3, 27], bus: [1, 12.5], train: [4, 75], metro: [4, 89] };
+    for (const [mode, [sections, length]] of Object.entries(expected)) {
+      const model = vehicleModel(mode);
+      const parts = vehicleExtrusions({ ...base, mode, doorsOpen: true });
+      expect(model.sections).toHaveLength(sections);
+      expect(model.sections[0].front - model.sections.at(-1)!.back).toBe(length);
+      for (const part of ['pillar', 'bogie', 'wheel', 'hvac', 'headlight', 'taillight']) {
+        expect(parts.some((p) => p.properties.part === part)).toBe(true);
+      }
+      expect(parts.filter((p) => p.properties.part === 'gangway')).toHaveLength(sections - 1);
+      expect(parts.some((p) => p.properties.part === 'pantograph')).toBe(mode === 'tram' || mode === 'train');
+      for (const feature of parts) {
+        const ring = feature.geometry.coordinates[0];
+        expect(ring[0]).toEqual(ring.at(-1));
+        expect(ring.flat().every(Number.isFinite)).toBe(true);
+        expect(feature.properties.top).toBeGreaterThan(feature.properties.base);
+        expect(feature.properties.base).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  it('mounts head and tail lights outside the end faces and distinguishes inferred braking from rail tails', () => {
+    for (const mode of Object.keys(VEHICLE_MODELS)) {
+      const normal = vehicleExtrusions({ ...base, mode });
+      const braking = vehicleExtrusions({ ...base, mode, braking: true });
+      expect(vehicleExtrusions({ ...base, mode, braking: false })).toEqual(normal);
+      const headlights = normal.filter((p) => p.properties.part === 'headlight');
+      const tails = normal.filter((p) => p.properties.part === 'taillight');
+      expect(headlights).toHaveLength(2);
+      expect(tails).toHaveLength(2);
+      const model = vehicleModel(mode);
+      const front = offsetMeters(base.lng, base.lat, 0, model.sections[0].front, 0)[1];
+      const back = offsetMeters(base.lng, base.lat, 0, model.sections.at(-1)!.back, 0)[1];
+      expect(headlights.every((p) => p.geometry.coordinates[0].every(([, lat]) => lat > front))).toBe(true);
+      expect(tails.every((p) => p.geometry.coordinates[0].every(([, lat]) => lat < back))).toBe(true);
+      expect(headlights.every((p) => p.properties.color === HEADLIGHT_COLOR)).toBe(true);
+      expect(tails.every((p) => p.properties.color === TAILLIGHT_COLOR)).toBe(true);
+      expect(braking.filter((p) => p.properties.part === 'taillight')
+        .every((p) => p.properties.color === (mode === 'bus' || mode === 'tram' ? BRAKE_LIGHT_COLOR : TAILLIGHT_COLOR))).toBe(true);
+      expect(normal.some((p) => p.properties.part === 'brake-indicator')).toBe(false);
+      expect(braking.filter((p) => p.properties.part === 'brake-indicator')).toHaveLength(1);
+    }
+  });
+
+  it('uses a safe representative tram for unknown modes', () => {
+    expect(vehicleModel(undefined)).toBe(VEHICLE_MODELS.tram);
+    expect(vehicleModel('unknown')).toBe(VEHICLE_MODELS.tram);
+    expect(vehicleExtrusions({ ...base, mode: 'unknown' })).toEqual(vehicleExtrusions({ ...base, mode: 'tram' }));
   });
 
   it('turns a selected vehicle gold', () => {
     const parts = vehicleExtrusions({ ...base, mode: 'tram', selected: true });
     expect(parts.find((p) => p.properties.part === 'body')!.properties.color).toBe(SELECTED_COLOR);
+  });
+
+  describe('3D zoom fades', () => {
+    it('validates actual MapLibre paint expressions and swaps icons for bodies at zooms 13–14', () => {
+      const fade = createPropertyExpression(VEHICLE_3D_FADE_IN, 'fill-extrusion-opacity',
+        v8['paint_fill-extrusion']['fill-extrusion-opacity'] as StylePropertySpecification);
+      const icons = createPropertyExpression(VEHICLE_ICON_FADE_OUT, 'icon-opacity',
+        v8.paint_symbol['icon-opacity'] as StylePropertySpecification);
+      if (fade.result === 'error' || icons.result === 'error') throw new Error('Invalid fade expression');
+      expect(VEHICLE_3D_MIN_ZOOM).toBe(13);
+      expect(VEHICLE_3D_FULL_ZOOM).toBe(14);
+      for (const [zoom, expected] of [[12, 0], [13, 0], [13.5, 0.5], [14, 1], [18, 1]]) {
+        expect(fade.value.evaluate({ zoom })).toBe(expected);
+        expect(icons.value.evaluate({ zoom })).toBe(1 - expected);
+      }
+    });
   });
 
   it('rotates the body with the heading', () => {
@@ -195,5 +293,20 @@ describe('vehicleExtrusions', () => {
         vehicleExtrusions({ ...base, veh: 'v2', mode: 'metro', desi: 'M2' }).length
     );
     expect(new Set(fc.features.map((f) => f.properties.veh))).toEqual(new Set(['v1', 'v2']));
+  });
+
+  it('omits distant sub-pixel details without changing body scale, colour or live cues', () => {
+    for (const mode of Object.keys(VEHICLE_MODELS)) {
+      const v = { ...base, mode, braking: true, doorProgress: 0.5, selected: true };
+      const full = vehicleExtrusionCollection([v]).features;
+      const distant = vehicleExtrusionCollection([v], false).features;
+      expect(distant.length).toBeLessThan(full.length * 0.7);
+      const omitted = new Set(['pillar', 'bogie', 'wheel', 'wheel-hub', 'hvac', 'pantograph']);
+      expect(distant.some((p) => omitted.has(p.properties.part))).toBe(false);
+      for (const part of ['body', 'gangway', 'cab', 'door', 'doorway', 'headlight', 'taillight', 'brake-indicator']) {
+        expect(distant.filter((p) => p.properties.part === part))
+          .toEqual(full.filter((p) => p.properties.part === part));
+      }
+    }
   });
 });
