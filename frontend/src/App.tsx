@@ -450,6 +450,14 @@ function App() {
     }
   };
 
+  // A schedule can be selected just before its vehicle enters the live feed.
+  // Replace the temporary selection as soon as the matching vehicle appears.
+  useEffect(() => {
+    if (!selectedTram || selectedTram.veh !== '0' || !selectedTram.tripId) return;
+    const matchedTram = Object.values(trams).find((t) => areTripsEquivalent(t.tripId, selectedTram.tripId));
+    if (matchedTram) setSelectedTram(matchedTram);
+  }, [selectedTram, trams]);
+
   // Lines used by the currently selected journey's transit legs. When a route is
   // picked in the destination search, we filter the map down to just these lines —
   // the same way selecting a line filter does.
