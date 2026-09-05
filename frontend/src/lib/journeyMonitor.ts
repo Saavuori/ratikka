@@ -4,6 +4,23 @@ export const JOURNEY_TIME_ZONE = 'Europe/Helsinki';
 export const JOURNEY_REFRESH_MS = 20_000;
 export const JOURNEY_STALE_MS = 45_000;
 
+export function nextOriginLookupGeneration(
+  generation: number,
+  event: 'from' | 'to' | 'location' | 'swap' | 'close' | 'unmount' | 'plan',
+): number {
+  return event === 'to' || event === 'plan' ? generation : generation + 1;
+}
+
+export function journeyFetchedAt(fetchedAt: number | undefined, now: number): number | null {
+  return typeof fetchedAt === 'number' && Number.isFinite(fetchedAt) &&
+    fetchedAt > 0 && fetchedAt <= now + 5_000 ? fetchedAt : null;
+}
+
+export function isJourneySourceStale(fetchedAt: number | null, now: number): boolean {
+  const timestamp = journeyFetchedAt(fetchedAt ?? undefined, now);
+  return timestamp === null || now - timestamp > JOURNEY_STALE_MS;
+}
+
 /** Never infer a trip identity from its route number or a moving prediction. */
 export function itineraryIdentity(itinerary: JourneyItinerary): string | undefined {
   const legs = itinerary.legs.filter(leg => leg.transit);
@@ -21,6 +38,25 @@ export function findRefreshedItinerary(
 ): JourneyItinerary | undefined {
   const identity = itineraryIdentity(selected);
   return identity ? alternatives.find(it => itineraryIdentity(it) === identity) : undefined;
+}
+
+export interface MonitoredJourneySelection {
+  itinerary: JourneyItinerary;
+  updatedAt: number | null;
+  unavailable: boolean;
+  error: string | null;
+}
+
+export function chooseJourneyItinerary(
+  current: MonitoredJourneySelection | null,
+  candidate: JourneyItinerary,
+  updatedAt: number | null,
+  error: string | null,
+): MonitoredJourneySelection {
+  const identity = itineraryIdentity(candidate);
+  if (current && (current.itinerary === candidate ||
+    (identity && identity === itineraryIdentity(current.itinerary)))) return current;
+  return { itinerary: candidate, updatedAt, unavailable: false, error };
 }
 
 export function monitoredLegIds(itinerary: JourneyItinerary): string[] | undefined {

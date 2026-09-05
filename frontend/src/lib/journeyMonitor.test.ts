@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Alert, JourneyItinerary, JourneyLeg } from '../types';
-import { findRefreshedItinerary, helsinkiDateTime, itineraryIdentity, journeyLegStatus, mergeMonitoredLegs, monitoredLegIds, relevantJourneyAlerts, transferEstimates } from './journeyMonitor';
+import { chooseJourneyItinerary, findRefreshedItinerary, helsinkiDateTime, isJourneySourceStale, itineraryIdentity, journeyFetchedAt, journeyLegStatus, mergeMonitoredLegs, monitoredLegIds, nextOriginLookupGeneration, relevantJourneyAlerts, transferEstimates } from './journeyMonitor';
 
 const start = Date.parse('2026-09-05T09:00:00Z');
 const leg = (overrides: Partial<JourneyLeg> = {}): JourneyLeg => ({
@@ -21,6 +21,35 @@ const alert = (overrides: Partial<Alert> = {}): Alert => ({
   feed: 'HSL', severityLevel: 'WARNING', effect: '', cause: '',
   headerText: 'Disruption', descriptionText: '', url: '', startDate: 0, endDate: 0,
   entities: [{ type: 'Route', gtfsId: 'HSL:1001', shortName: '1' }], ...overrides,
+});
+
+describe('origin lookup generations', () => {
+  it('keeps a pending opening location valid while destination edits cancel plans', async () => {
+    let generation = 0;
+    const pendingGeneration = generation;
+    let finish!: (value: string) => void;
+    const request = new Promise<string>(resolve => { finish = resolve; })
+      .then(location => pendingGeneration === generation ? location : undefined);
+    generation = nextOriginLookupGeneration(generation, 'to');
+    generation = nextOriginLookupGeneration(generation, 'plan');
+    generation = nextOriginLookupGeneration(generation, 'to');
+    generation = nextOriginLookupGeneration(generation, 'plan');
+    finish('Current location');
+    expect(await request).toBe('Current location');
+  });
+
+  it.each(['from', 'location', 'swap', 'close', 'unmount'] as const)(
+    'discards pending origin lookup after %s', async event => {
+      let generation = 0;
+      const pendingGeneration = generation;
+      let finish!: (value: string) => void;
+      const request = new Promise<string>(resolve => { finish = resolve; })
+        .then(location => pendingGeneration === generation ? location : undefined);
+      generation = nextOriginLookupGeneration(generation, event);
+      finish('Old location');
+      expect(await request).toBeUndefined();
+    },
+  );
 });
 
 describe('itinerary identity', () => {
@@ -60,6 +89,43 @@ describe('itinerary identity', () => {
     const a = leg();
     const b = leg({ tripId: 'HSL:trip-2' });
     expect(itineraryIdentity(itinerary([a, b]))).not.toBe(itineraryIdentity(itinerary([b, a])));
+  });
+});
+
+describe('reselecting monitored itineraries', () => {
+  it('retains newer cancellation and delay predictions instead of restoring the original card', () => {
+    const original = itinerary();
+    const monitored = itinerary([leg({
+      realtime: true, realtimeState: 'CANCELED',
+      startTime: start + 60_000, endTime: start + 660_000,
+    })]);
+    const current = { itinerary: monitored, updatedAt: start + 20_000, unavailable: false, error: null };
+    const result = chooseJourneyItinerary(current, original, start, null);
+    expect(result).toBe(current);
+    expect(result.itinerary.legs[0].realtimeState).toBe('CANCELED');
+    expect(result.itinerary.startTime).toBe(start + 60_000);
+    expect(result.updatedAt).toBe(start + 20_000);
+  });
+
+  it('does not clear stale/unavailable/error state by reselecting the same identity', () => {
+    const current = {
+      itinerary: itinerary(), updatedAt: start,
+      unavailable: true, error: 'Some selected legs are unavailable',
+    };
+    expect(chooseJourneyItinerary(current, itinerary(), start + 20_000, null)).toBe(current);
+    expect(chooseJourneyItinerary(current, current.itinerary, start + 20_000, null)).toBe(current);
+    const networkError = { ...current, unavailable: false, error: 'Could not refresh' };
+    expect(chooseJourneyItinerary(networkError, itinerary(), start + 20_000, null)).toBe(networkError);
+  });
+
+  it('allows an explicit different alternative with its own timestamp and error status', () => {
+    const current = { itinerary: itinerary(), updatedAt: start, unavailable: true, error: 'Unavailable' };
+    const alternative = itinerary([leg({ tripId: 'HSL:different-trip' })]);
+    expect(chooseJourneyItinerary(current, alternative, start + 20_000, null)).toEqual({
+      itinerary: alternative, updatedAt: start + 20_000, unavailable: false, error: null,
+    });
+    expect(chooseJourneyItinerary(current, alternative, start, 'Alternatives unavailable').error)
+      .toBe('Alternatives unavailable');
   });
 });
 
@@ -176,6 +242,19 @@ describe('contextual alerts', () => {
 });
 
 describe('prediction labels and Helsinki dates', () => {
+  it('never upgrades unknown, nonfinite, or future source timestamps to fresh', () => {
+    for (const timestamp of [undefined, 0, -1, NaN, Infinity, start + 5001]) {
+      const fetchedAt = journeyFetchedAt(timestamp, start);
+      expect(fetchedAt).toBeNull();
+      expect(isJourneySourceStale(fetchedAt, start)).toBe(true);
+    }
+    expect(isJourneySourceStale(start - 45_001, start)).toBe(true);
+    expect(isJourneySourceStale(start - 20_000, start)).toBe(false);
+    expect(journeyFetchedAt(start - 20_000, start)).toBe(start - 20_000);
+    expect(isJourneySourceStale(start + 5001, start)).toBe(true);
+    expect(isJourneySourceStale(start + 5000, start)).toBe(false);
+  });
+
   it('does not call schedules or stale results live', () => {
     expect(journeyLegStatus(leg(), false)).toBe('Scheduled');
     expect(journeyLegStatus(leg({ realtime: false }), false)).toBe('Scheduled');

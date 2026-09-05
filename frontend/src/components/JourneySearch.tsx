@@ -5,7 +5,7 @@ import type { Alert, VehiclePosition, GeocodeResult, JourneyItinerary, JourneyLe
 import { fetchGeocode, fetchJourneyPlan, fetchJourneyMonitor } from '../lib/api';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { findJourneyVehicle } from '../lib/journeyVehicles';
-import { findRefreshedItinerary, helsinkiDateTime, itineraryIdentity, journeyLegStatus, mergeMonitoredLegs, monitoredLegIds, relevantJourneyAlerts, transferEstimates, JOURNEY_REFRESH_MS, JOURNEY_STALE_MS } from '../lib/journeyMonitor';
+import { chooseJourneyItinerary, findRefreshedItinerary, helsinkiDateTime, isJourneySourceStale, itineraryIdentity, journeyFetchedAt, journeyLegStatus, mergeMonitoredLegs, monitoredLegIds, nextOriginLookupGeneration, relevantJourneyAlerts, transferEstimates, JOURNEY_REFRESH_MS } from '../lib/journeyMonitor';
 import './JourneyMonitor.css';
 
 export interface JourneySelection {
@@ -113,7 +113,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const monitorAbortRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
   const monitorGenerationRef = useRef(0);
-  const endpointGenerationRef = useRef(0);
+  const originGenerationRef = useRef(0);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const geocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectionCallback = useRef(onSelectionChange);
@@ -124,7 +124,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const cancelPending = useCallback(() => {
     generationRef.current++;
     monitorGenerationRef.current++;
-    endpointGenerationRef.current++;
+    originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'plan');
     geocodeAbortRef.current?.abort();
     planAbortRef.current?.abort();
     monitorAbortRef.current?.abort();
@@ -135,7 +135,10 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     setMonitorLoading(false);
   }, []);
 
-  useEffect(() => cancelPending, [cancelPending]);
+  useEffect(() => () => {
+    originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'unmount');
+    cancelPending();
+  }, [cancelPending]);
 
   useEffect(() => {
     onOpenChange?.(open);
@@ -146,10 +149,10 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     if (!open) return;
     if (from) return;
     let active = true;
-    const generation = endpointGenerationRef.current;
+    const generation = originGenerationRef.current;
     requestGeo()
       .then((c) => {
-        if (!active || generation !== endpointGenerationRef.current) return;
+        if (!active || generation !== originGenerationRef.current) return;
         setFrom({ name: CURRENT_LOCATION_LABEL, lat: c.lat, lon: c.lon });
         setFromText(CURRENT_LOCATION_LABEL);
       })
@@ -211,7 +214,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         if (controller.signal.aborted || generation !== generationRef.current) return;
         const list = res.itineraries || [];
         setItineraries(list);
-        const fetchedAt = res.fetchedAt ?? Date.now();
+        const fetchedAt = journeyFetchedAt(res.fetchedAt, Date.now());
         setAlternativesUpdatedAt(fetchedAt);
         const previous = selectedRef.current;
         if (previous) {
@@ -253,14 +256,14 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     const request = legIds
       ? fetchJourneyMonitor(legIds, controller.signal).then(response => ({
         ...mergeMonitoredLegs(selected, response.legs),
-        fetchedAt: response.fetchedAt ?? Date.now(),
+        fetchedAt: response.fetchedAt,
       }))
       : fetchJourneyPlan(f, t, controller.signal, { ...searchTime, arriveBy }).then(response => {
         const match = findRefreshedItinerary(selected, response.itineraries);
         return {
           itinerary: match ?? selected,
           missingLegIndexes: match ? [] : selected.legs.map((_, index) => index),
-          fetchedAt: response.fetchedAt ?? Date.now(),
+          fetchedAt: response.fetchedAt,
         };
       });
     request.then(result => {
@@ -271,7 +274,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
       selectionCallback.current({ from: f, to: t, itinerary: result.itinerary });
       setUnavailable(missing);
       if (!missing) {
-        setUpdatedAt(result.fetchedAt);
+        setUpdatedAt(journeyFetchedAt(result.fetchedAt, Date.now()));
         setError(null);
       } else {
         setError(itineraryIdentity(selected)
@@ -297,8 +300,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     setAlternativesError(null);
     setPlanLoading(false);
     selectionCallback.current(null);
-    if (!open || !from || !to || !searchTime.date || !searchTime.time) return;
-    runPlan(from, to);
+    if (open && from && to && searchTime.date && searchTime.time) runPlan(from, to);
     return cancelPending;
   }, [from, to, open, runPlan, cancelPending, searchTime.date, searchTime.time]);
 
@@ -316,6 +318,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   }, [open, selectedItinerary, from, to, runMonitor]);
 
   const handlePickSuggestion = (field: 'from' | 'to', s: GeocodeResult) => {
+    originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, field);
     cancelPending();
     const endpoint: JourneyEndpoint = { name: s.name || s.label, lat: s.lat, lon: s.lon };
     if (field === 'from') {
@@ -330,10 +333,11 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   };
 
   const handleUseCurrentLocation = () => {
-    const generation = ++endpointGenerationRef.current;
+    const generation = nextOriginLookupGeneration(originGenerationRef.current, 'location');
+    originGenerationRef.current = generation;
     requestGeo()
       .then((c) => {
-        if (generation !== endpointGenerationRef.current) return;
+        if (generation !== originGenerationRef.current) return;
         cancelPending();
         setFrom({ name: CURRENT_LOCATION_LABEL, lat: c.lat, lon: c.lon });
         setFromText(CURRENT_LOCATION_LABEL);
@@ -341,12 +345,13 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         setSuggestions([]);
       })
       .catch(() => {
-        if (generation !== endpointGenerationRef.current) return;
+        if (generation !== originGenerationRef.current) return;
         setError('Location unavailable. Please type a starting point.');
       });
   };
 
   const handleSwap = () => {
+    originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'swap');
     cancelPending();
     setFrom(to);
     setTo(from);
@@ -355,26 +360,34 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   };
 
   const handleSelectItinerary = (idx: number) => {
+    const candidate = itineraries[idx];
+    if (!from || !to || !candidate) return;
+    const current = selectedRef.current
+      ? { itinerary: selectedRef.current, updatedAt, unavailable, error } : null;
+    const next = chooseJourneyItinerary(current, candidate, alternativesUpdatedAt, alternativesError);
+    if (next === current) {
+      if (isMobile) setCollapsed(true);
+      return;
+    }
     planAbortRef.current?.abort();
     monitorAbortRef.current?.abort();
     generationRef.current++;
     monitorGenerationRef.current++;
     setPlanLoading(false);
     setMonitorLoading(false);
-    if (from && to && itineraries[idx]) {
-      selectedRef.current = itineraries[idx];
-      setSelectedItinerary(itineraries[idx]);
-      setUpdatedAt(alternativesUpdatedAt);
-      setUnavailable(false);
-      setError(alternativesError ? 'Alternatives could not be refreshed. Showing last known values.' : null);
-      onSelectionChange({ from, to, itinerary: itineraries[idx] });
-    }
+    selectedRef.current = next.itinerary;
+    setSelectedItinerary(next.itinerary);
+    setUpdatedAt(next.updatedAt);
+    setUnavailable(next.unavailable);
+    setError(next.error);
+    onSelectionChange({ from, to, itinerary: next.itinerary });
     // On mobile the expanded panel covers the map, so collapse to a summary bar
     // once a route is chosen — the highlighted route on the map becomes visible.
     if (isMobile) setCollapsed(true);
   };
 
   const resetAll = () => {
+    originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'close');
     cancelPending();
     setFrom(null);
     setTo(null);
@@ -396,11 +409,11 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   };
 
   const ageSeconds = updatedAt === null ? null : Math.max(0, Math.floor((now - updatedAt) / 1000));
-  const stale = unavailable || !!error || updatedAt === null || now - updatedAt > JOURNEY_STALE_MS;
+  const stale = unavailable || !!error || isJourneySourceStale(updatedAt, now);
   const transfers = selectedItinerary ? transferEstimates(selectedItinerary) : [];
   const journeyAlerts = selectedItinerary ? relevantJourneyAlerts(selectedItinerary, alerts) : [];
   const cancelled = selectedItinerary?.legs.some(leg => journeyLegStatus(leg, false) === 'Cancelled');
-  const monitorSummary = `${stale ? 'Stale · ' : ''}${ageSeconds === null ? 'Not updated yet' : `Updated ${ageSeconds}s ago`}`;
+  const monitorSummary = `${stale ? 'Stale · ' : ''}${ageSeconds === null ? 'Update time unavailable' : `Updated ${ageSeconds}s ago`}`;
 
   // Compact row of mode/route chips shared by the results list and summary bar.
   const renderLegChips = (it: JourneyItinerary) => (
@@ -481,7 +494,11 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     const isFrom = field === 'from';
     const value = isFrom ? fromText : toText;
     const setValue = isFrom ? setFromText : setToText;
-    const clearEndpoint = isFrom ? () => setFrom(null) : () => setTo(null);
+    const clearEndpoint = () => {
+      originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, field);
+      if (isFrom) setFrom(null);
+      else setTo(null);
+    };
 
     return (
       <div className="journey-field">
