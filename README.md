@@ -218,7 +218,7 @@ curl -sSL -O https://raw.githubusercontent.com/Saavuori/ratikka/main/deploy.sh &
 
 ## 🔄 Dependency updates
 
-**Dependabot** opens one grouped minor/patch pull request per ecosystem every Monday morning, covering every place the repo pins a version — `backend/go.mod`, `frontend/package.json`, the GitHub Actions in `.github/workflows/`, the `Dockerfile` build and runtime stages, and the images in `docker-compose.yml`. Major updates come as their own PR; MapLibre majors are ignored entirely, because they need all three map checks run by hand (see `CLAUDE.md`). Config lives in [`.github/dependabot.yml`](.github/dependabot.yml).
+**Dependabot** opens one grouped minor/patch pull request per ecosystem every Monday morning, covering every place the repo pins a version — `backend/go.mod`, `frontend/package.json`, the GitHub Actions in `.github/workflows/`, the `Dockerfile` build and runtime stages, and the images in `docker-compose.yml`. Major updates come as their own PR; MapLibre majors are ignored entirely, because they need all three map checks run by hand (see `.github/copilot-instructions.md`). Config lives in [`.github/dependabot.yml`](.github/dependabot.yml).
 
 Dependabot needs no secrets, no GitHub App and no scheduled workflow of its own — GitHub runs it. That is the whole reason it replaced the self-hosted Renovate setup. Renovate was self-hosted only because it had to run a post-upgrade command to write a `CHANGELOG.md` entry, and that entry was required because the top changelog heading *was* the release tag. The version now comes from the commit messages instead, so nothing has to be written for a dependency merge to ship, and the App could go away.
 

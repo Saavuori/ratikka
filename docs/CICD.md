@@ -95,7 +95,7 @@ that touches something shippable releases; the commit prefixes decide how big a
 release it is.
 
 [`docker-build.yml`](../.github/workflows/docker-build.yml) runs on every push to
-`main` except doc/infra-only paths (`README.md`, `CLAUDE.md`, `CHANGELOG.md`,
+`main` except doc/infra-only paths (`README.md`, `.github/copilot-instructions.md`, `CHANGELOG.md`,
 `docs/**`, `monitoring/**`, `scripts/**`, `.claude/**`, `deploy.sh`, `.gitignore`
 are in `paths-ignore`). Its `tag` job runs
 [`paulhatch/semantic-version`](https://github.com/PaulHatch/semantic-version)
@@ -437,7 +437,7 @@ failed, not that a heading was forgotten.
 
 **"The workflow didn't even run."**
 Check `paths-ignore` in `docker-build.yml`. A push touching only `docs/**`,
-`README.md`, `CLAUDE.md`, `CHANGELOG.md`, `monitoring/**`, `scripts/**`,
+`README.md`, `.github/copilot-instructions.md`, `CHANGELOG.md`, `monitoring/**`, `scripts/**`,
 `.claude/**`, `deploy.sh`, or `.gitignore` does not trigger it. This is why a
 changelog edit republishes Pages without cutting a release.
 
