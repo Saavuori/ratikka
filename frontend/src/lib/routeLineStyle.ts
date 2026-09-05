@@ -16,14 +16,14 @@ const routeLineWidth = (selected: number, other: number, dim: number): Expressio
 
 export const ROUTE_LINE_WIDTH: DataDrivenPropertyValueSpecification<number> = [
   'interpolate', ['linear'], ['zoom'],
-  10, routeLineWidth(2.4, 1.2, 0.8),
+  10, routeLineWidth(2.4, 1.8, 0.8),
   13, routeLineWidth(3.6, 2, 1.2),
   16, routeLineWidth(5, 3, 1.8),
 ];
 
 export const ROUTE_CASING_WIDTH: DataDrivenPropertyValueSpecification<number> = [
   'interpolate', ['linear'], ['zoom'],
-  10, routeLineWidth(3.6, 1.8, 1.2),
+  10, routeLineWidth(3.6, 2.4, 1.2),
   13, routeLineWidth(5, 3, 1.8),
   16, routeLineWidth(6.8, 4.2, 2.6),
 ];

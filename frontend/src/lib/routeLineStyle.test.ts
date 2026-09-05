@@ -27,6 +27,7 @@ describe('route visual hierarchy', () => {
       expect(width(zoom, false, true)).toBeGreaterThan(0);
       expect(width(zoom, false, true)).toBeLessThan(width(zoom, false, false));
       expect(width(zoom, false, false)).toBeLessThan(width(zoom, true, false));
+      expect(width(zoom, false, false)).toBeGreaterThanOrEqual(1.8);
       expect(width(zoom, false, false)).toBeLessThanOrEqual(3);
       expect(width(zoom, true, false)).toBeLessThanOrEqual(5);
     }
