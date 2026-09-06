@@ -196,3 +196,63 @@ somebody happened to have them switched on. There are three honest options:
 - **Vehicle identity**: readings are keyed `{operator}-{vehicle}`, not driver or
   passenger data, so a 24 h archive raises no new privacy question beyond what
   HSL already publishes.
+
+---
+
+## 10. What the archive is actually for: location timelapse
+
+Full-network replay is the obvious use of a 24-hour archive, but it is the
+expensive one. The cheap one — and probably the more interesting one — is a
+**timelapse of a single place**: point at a junction, a terminus or your own
+street, and watch a day of service run through it in a minute.
+
+**It is small.** A 500 m stretch of busy tram street, at an average 15 km/h
+including stops, holds a vehicle for ~120 s. At 40 vehicles/hour that is
+115,000 readings a day: **39 MB of NDJSON, 4.3 MB gzipped**. A major junction
+with every mode running through it is perhaps five times that — **~20 MB for
+the whole day**. That is a single download. Everything §6 says about capping
+playback speed stops applying: once the extract is local, 600× (a day in two
+and a half minutes) is free, and so are trails, scrubbing and looping.
+
+**But the chunk layout in §4 cannot answer the query.** Chunks are partitioned
+by time alone, so extracting one junction's day means scanning all 1,440 of
+them — 56 M records and 2.1 GB of gzip — for a few megabytes of hits. That is
+tens of seconds of CPU per request and trivially abusable. Two fixes, and the
+second is the one to take:
+
+1. **Partition chunks spatially as well as temporally.** Correct, but the
+   file count explodes: a fine grid over the network is hundreds of thousands
+   of files a day. Only workable with coarse cells and longer chunk spans,
+   which then hurts sequential replay.
+2. **Keep NDJSON as the record of truth and write a fixed-width binary index
+   beside it** — vehicle ref, delta timestamp, two int32 coordinates, 18 B a
+   record. A bbox query scans 1.0 GB/day of packed coordinates at memory
+   bandwidth (~1–2 s, single core, no JSON parsing), and the surviving offsets
+   pull full records out of the NDJSON only for hits. Costs 1.0 GB/day for all
+   modes, **130 MB/day for trams**, and it is the same packed record §3
+   already priced.
+
+So the packed binary format returns — not as the storage format, but as the
+scan index that makes location queries possible. Worth building in from the
+start if timelapse is a goal, because retrofitting it means reprocessing the
+archive.
+
+**Rendering it.** The map already has the layer machinery: a timelapse view is
+the live map with a line layer accumulating each vehicle's path and fading it,
+which is close to what the route-highlight layers already do. Video export is
+further along than it looks — `scripts/verify-vehicle-3d.mjs` already drives a
+headless MapLibre through Playwright and captures PNGs, so frame capture plus
+`ffmpeg` is a short step, and it belongs in an offline script rather than in the
+browser.
+
+**It changes the retention question.** A day is the natural window for "what did
+I just miss"; a timelapse of a place wants a season. At trams-only rates the
+archive is cheap enough to reconsider: **1.9 GB a week, 8.2 GB a month, 100 GB a
+year**. Adding the other modes multiplies that by roughly eight and puts a year
+out of reach on this host, but a month of trams for 8 GB is the kind of number
+that makes "this junction, every Tuesday in October" a feature rather than a
+research project.
+
+**The caveat from §7 still binds.** A timelapse can only show modes that were
+being recorded, so a bus junction needs always-on bus ingestion. A tram junction
+does not.
