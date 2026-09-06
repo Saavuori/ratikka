@@ -257,6 +257,11 @@ body {
   display: none;
 }
 
+/* The part of a detail panel that stays put while its body scrolls. */
+.sheet-head {
+  flex-shrink: 0;
+}
+
 /* DetailPopup Specific (Shared between Tram and Stop popups) */
 .detail-popup {
   top: 80px;
@@ -924,6 +929,10 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+  /* Without this a long headsign refuses to shrink and shoves the time column
+     into a two-line wrap instead of simply eliding. */
+  min-width: 0;
+  flex: 1;
 }
 
 .departure-badge {
@@ -949,6 +958,7 @@ body {
 .departure-dest-container {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .departure-dest {
@@ -956,6 +966,9 @@ body {
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .departure-sub {
@@ -972,6 +985,8 @@ body {
   text-align: right;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
+  margin-left: 10px;
 }
 
 .departure-time {
@@ -982,6 +997,7 @@ body {
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
+  white-space: nowrap;
 }
 
 /* Animations */
@@ -1578,9 +1594,9 @@ body {
     bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom));
     width: 100%;
     height: auto;
-    max-height: 72vh;
-    max-height: 72dvh;
-    padding: 8px 18px calc(14px + env(safe-area-inset-bottom));
+    max-height: 62vh;
+    max-height: 62dvh;
+    padding: 8px 16px calc(10px + env(safe-area-inset-bottom));
     border-radius: 20px 20px 0 0;
     border: 1px solid var(--border-glow);
     border-bottom: none;
@@ -1598,6 +1614,46 @@ body {
     border-width: 0;
     opacity: 0;
     pointer-events: none;
+  }
+
+  /* The stop sheet keeps its own head fixed and scrolls only the timetable, so
+     the stop's name, its save button and the alert summary stay reachable
+     however far down the departures you are. */
+  .detail-popup.stop-popup {
+    overflow: hidden;
+  }
+
+  .stop-popup .timeline-container {
+    max-height: none;
+    margin-top: 10px !important;
+  }
+
+  .stop-popup .panel-header {
+    padding-bottom: 10px !important;
+  }
+
+  /* The drag handle, the toggle tab and the bottom bar's Details button all
+     collapse the sheet already — a fourth chevron in the header only costs
+     width next to a long stop name. */
+  .stop-popup .panel-collapse-btn {
+    display: none !important;
+  }
+
+  /* Full-width it reads as the panel's primary action, which it is not. */
+  .stop-popup .save-stop-button {
+    align-self: flex-start;
+    min-height: 34px;
+    padding: 6px 12px;
+    font-size: 0.7rem;
+  }
+
+  .stop-popup .departures-freshness {
+    margin: 4px 0 6px;
+    font-size: 0.68rem;
+  }
+
+  .stop-popup .routes-chips {
+    margin: 6px 0 10px 0;
   }
 
   .sheet-handle {
@@ -1699,6 +1755,16 @@ body {
 
 .corner-toggle:focus-visible {
   border-color: var(--accent-green);
+}
+
+/* A bottom sheet owns the screen on a phone; the chips would otherwise float
+   over its header. `visibility` (not just opacity) also takes them out of the
+   tab order while they are away. */
+.corner-toggles--hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
 }
 
 @media (max-width: 768px) {

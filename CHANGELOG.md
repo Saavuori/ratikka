@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.57.1] - 2026-09-06
+
+### Fixed
+- **The stop sheet fits the phone it is on**: on a narrow screen the stop's timetable opened as a bottom sheet tall enough to reach up into the two corner chip rows, which float above it — so the map-view and vehicle-mode chips sat on top of the sheet's own header, over the stop's name on one side and its close button on the other. The chips now step aside while a sheet is expanded and come back when it closes, and the sheet is shorter (62% of the viewport, down from 72%). Inside it, the stop's name, code, save button and any service alerts stay put while only the departures scroll, instead of the whole panel scrolling the stop's identity off the top; the redundant collapse chevron in the header is gone on mobile (the drag handle, the toggle tab and the bottom bar's Details button all do the same thing), and the save button is a compact chip rather than a full-width block that read as the panel's primary action. Departure rows no longer wrap: a long headsign elides and the departure time keeps its own column on one line.
+
+---
+
 ## [v0.57.0] - 2026-09-05
 
 ### Added

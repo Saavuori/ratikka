@@ -580,6 +580,11 @@ function App() {
     ? 'details'
     : null;
 
+  // A bottom sheet covers most of the screen on a phone, and the corner chips
+  // float above it — so they get out of the way while one is open rather than
+  // sitting on top of the sheet's own header.
+  const mobileSheetOpen = isMobile && activeMobileTab !== null;
+
   // Every bar button toggles: tapping the open sheet closes it back to the map.
   const handleMobileTabSelect = (tab: MobileTab) => {
     if (tab === 'details') {
@@ -721,6 +726,7 @@ function App() {
 
       {/* Quick vehicle-mode shortcuts (top-right corner) */}
       <ModeToggles
+        hidden={mobileSheetOpen}
         showTrams={showTrams}
         setShowTrams={setShowTrams}
         showBuses={showBuses}
@@ -733,6 +739,7 @@ function App() {
 
       {/* Map view shortcuts: light/dark and 3D (top-left corner) */}
       <ViewToggles
+        hidden={mobileSheetOpen}
         mapTheme={mapTheme}
         setMapTheme={setMapTheme}
         is3D={is3D}
