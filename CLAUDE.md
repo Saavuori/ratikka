@@ -269,6 +269,15 @@ Note that stops in the **dark** theme pull platform polygons from a second
 Digitransit source that the light theme gets for free from its own basemap — so
 a dark-theme change here is one of the cases where check 2 is not optional.
 
+The stop's **next-arrival label** (`stop-arrival-labels-layer`) is the other
+such case, for a different reason: it is a `symbol` layer with a `text-field`,
+and text needs glyphs. Checks 1, 3, 4 and 5 all draw on a blank style with no
+glyph endpoint, so none of them can render a character — they can prove the
+layer's spec is valid and that its source is fed, and no more. Whether the
+label actually appears above the sign board, in the right place and the right
+size, is check 2's claim to make. The label's own text is a pure function
+(`arrivalLabel` in `lib/stopArrivals.ts`) and is unit tested in CI.
+
 ## Conventions
 
 - Backend uses only the Go standard library plus a few pinned deps (`coder/websocket`,

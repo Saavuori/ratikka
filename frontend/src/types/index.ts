@@ -104,6 +104,18 @@ export interface StopDetailsResponse {
   fetchedAt?: number;
 }
 
+/** Next departures from one stop, as the batched arrivals endpoint returns them. */
+export interface StopArrivalsEntry {
+  gtfsId: string;
+  name: string;
+  departures: StopDepartureInfo[];
+}
+
+export interface StopsArrivalsResponse {
+  stops: Record<string, StopArrivalsEntry>;
+  fetchedAt?: number;
+}
+
 export interface NearbyStop extends StopInfo {
   distance: number;
 }

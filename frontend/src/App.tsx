@@ -15,11 +15,15 @@ import { ViewToggles } from './components/ViewToggles';
 import { BottomNav, type MobileTab } from './components/BottomNav';
 import { JourneySearch, type JourneySelection } from './components/JourneySearch';
 import { DeparturesPanel } from './components/DeparturesPanel';
-import { fetchRouteDetails, fetchAlerts, fetchTripDetails } from './lib/api';
+import { fetchRouteDetails, fetchAlerts, fetchTripDetails, fetchStopsArrivals } from './lib/api';
 import { readStorage, writeStorage } from './lib/storage';
 import { areTripsEquivalent } from './lib/trip';
 import { findJourneyVehicle, journeyVehicleModes } from './lib/journeyVehicles';
+import { arrivalLabel, nextArrivals } from './lib/stopArrivals';
 import type { ArrivalFocus } from './lib/stopArrivals';
+import { pollDepartures } from './lib/departures';
+import { getRouteColor } from './lib/routeColors';
+import type { StopsArrivalsResponse } from './types';
 import type { VehiclePosition, Alert, TripDetailsResponse } from './types';
 
 function App() {
@@ -32,12 +36,52 @@ function App() {
   const [now, setNow] = useState(() => Date.now());
   const hasJourney = journey !== null;
 
+  // Stops close enough to the middle of a zoomed-in map to carry a label, and
+  // the departures fetched for them. Reported by the map when the view
+  // settles, so panning around the city is not a request per frame.
+  const [labelStopIds, setLabelStopIds] = useState<string[]>([]);
+  const [stopArrivalData, setStopArrivalData] = useState<StopsArrivalsResponse | null>(null);
+  const labelStopKey = labelStopIds.join(',');
+  const hasLabelStops = labelStopIds.length > 0;
+
   useEffect(() => {
-    if (!hasJourney) return;
+    if (!hasJourney && !hasLabelStops) return;
     setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 5000);
+    // Once the map is labelling stops the clock has to tick at the resolution
+    // the labels are read at, not the journey panel's.
+    const timer = setInterval(() => setNow(Date.now()), hasLabelStops ? 1000 : 5000);
     return () => clearInterval(timer);
-  }, [hasJourney]);
+  }, [hasJourney, hasLabelStops]);
+
+  useEffect(() => {
+    if (!hasLabelStops) {
+      setStopArrivalData(null);
+      return;
+    }
+    const ids = labelStopKey.split(',');
+    return pollDepartures(
+      (signal) => fetchStopsArrivals(ids, signal),
+      (data) => setStopArrivalData(data),
+      () => setStopArrivalData(null),
+    );
+  }, [labelStopKey, hasLabelStops]);
+
+  /**
+   * What each labelled stop says: its soonest departure, in the line's own
+   * colour. Deliberately computed without the live vehicle feed — the
+   * countdown has always come from the prediction, so a label needs no vehicle
+   * located and turns on no extra feed just to be drawn.
+   */
+  const arrivalLabels = useMemo(() => {
+    const labels: Record<string, { label: string; color: string }> = {};
+    for (const [gtfsId, entry] of Object.entries(stopArrivalData?.stops ?? {})) {
+      const arrival = nextArrivals(entry.departures, [], now, { limit: 1 })[0];
+      const label = arrivalLabel(arrival);
+      if (!label) continue;
+      labels[gtfsId.replace(/^HSL:/, '')] = { label, color: getRouteColor(arrival.departure.line) };
+    }
+    return labels;
+  }, [stopArrivalData, now]);
 
   const journeyModes = journeyVehicleModes(journey?.itinerary.legs);
 
@@ -666,6 +710,8 @@ function App() {
         journeyEndpoints={journey ? { from: journey.from, to: journey.to } : null}
         arrivalFocus={arrivalFocus}
         arrivalTripDetails={arrivalTripDetails}
+        arrivalLabels={arrivalLabels}
+        onVisibleStopsChange={setLabelStopIds}
       />
 
       {/* Sidebar Filters Panel */}

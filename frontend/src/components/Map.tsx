@@ -16,6 +16,7 @@ import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint 
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
 import { approachSegment } from '../lib/approachPath';
+import { ARRIVAL_LABEL_MIN_ZOOM, ARRIVAL_LABEL_STOP_LIMIT } from '../lib/stopArrivals';
 import type { ArrivalFocus } from '../lib/stopArrivals';
 import {
   getRouteColor,
@@ -114,6 +115,12 @@ const STOP_MODE: maplibregl.ExpressionSpecification = [
   ['coalesce', ['get', 'mode'], ['get', 'type'], ''],
 ];
 
+// The stop next-arrival labels. Their own source and layer, because they are
+// the only stop annotation that is neither in the vector tiles nor a colour
+// swap on something already drawn.
+const ARRIVAL_LABEL_SOURCE = 'stop-arrival-labels';
+const ARRIVAL_LABEL_LAYER = 'stop-arrival-labels-layer';
+
 // Paint expressions for the highlighted route paths live in lib/routeLineStyle,
 // where the zoom stops of the offset fan are unit-tested against the style spec.
 
@@ -164,6 +171,17 @@ interface MapProps {
    */
   arrivalFocus?: ArrivalFocus | null;
   arrivalTripDetails?: TripDetailsResponse | null;
+  /**
+   * Stops whose next arrival should be labelled on the map, keyed by the
+   * unprefixed stop id. Zooming in on a stop is the whole gesture: the sign
+   * board appears and what is coming to it appears with it.
+   */
+  arrivalLabels?: Record<string, { label: string; color: string }>;
+  /**
+   * Which stops are close enough to the middle of a zoomed-in view to be
+   * worth a label. Reported when the view settles, never per frame.
+   */
+  onVisibleStopsChange?: (stopIds: string[]) => void;
 }
 
 // One vehicle in the GeoJSON collection the map's icon layers read. Named so
@@ -266,6 +284,8 @@ export const Map: React.FC<MapProps> = ({
   selectedStopCoords,
   arrivalFocus = null,
   arrivalTripDetails = null,
+  arrivalLabels,
+  onVisibleStopsChange,
   selectedStopMode,
   selectedStopIsTrunk,
   onSelectTram,
@@ -298,6 +318,9 @@ export const Map: React.FC<MapProps> = ({
     selectedTripDetailsRef.current = selectedTripDetails;
   }, [selectedTripDetails]);
 
+  const arrivalLabelsRef = useRef(arrivalLabels);
+  const arrivalLabelStopsRef = useRef<Array<{ stopId: string; lng: number; lat: number }>>([]);
+  const arrivalLabelSigRef = useRef<string>('');
   const arrivalFocusRef = useRef<ArrivalFocus | null>(arrivalFocus);
   const arrivalTripDetailsRef = useRef<TripDetailsResponse | null>(arrivalTripDetails);
   const arrivalStopCoordsRef = useRef<[number, number] | null>(selectedStopCoords ?? null);
@@ -305,6 +328,7 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     arrivalFocusRef.current = arrivalFocus;
   }, [arrivalFocus]);
+
 
   useEffect(() => {
     arrivalTripDetailsRef.current = arrivalTripDetails;
@@ -333,7 +357,7 @@ export const Map: React.FC<MapProps> = ({
 
   // References to keep state fresh in map event handlers and tick loop without closure issues
   const latestTramsRef = useRef<Record<string, VehiclePosition>>(trams);
-  const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing, onMapBearingChange });
+  const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing, onMapBearingChange, onVisibleStopsChange });
   const routeGeometriesRef = useRef<Record<string, { geometries: string[]; color?: string; stops?: string[] }>>(routeGeometries);
   const selectedTramIdRef = useRef<string | null>(selectedTramId);
   const journeyVehicleIdsRef = useRef<string[]>(journeyVehicleIds);
@@ -397,8 +421,8 @@ export const Map: React.FC<MapProps> = ({
   }, [trams]);
 
   useEffect(() => {
-    callbacksRef.current = { onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing, onMapBearingChange };
-  }, [onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing, onMapBearingChange]);
+    callbacksRef.current = { onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing, onMapBearingChange, onVisibleStopsChange };
+  }, [onSelectTram, onSelectStop, onSelectBikeStation, onDisableFollowing, onMapBearingChange, onVisibleStopsChange]);
 
   useEffect(() => {
     routeGeometriesRef.current = routeGeometries;
@@ -877,6 +901,76 @@ export const Map: React.FC<MapProps> = ({
    * Runs on view changes rather than per frame: the geometry only moves when
    * the map does, and querying rendered features is far too heavy for 60fps.
    */
+  /**
+   * Which stops are close enough to the middle of a zoomed-in view to earn a
+   * next-arrival label, reported up so their departures can be fetched.
+   *
+   * Below the sign-board zoom this reports nothing: a city-wide view holds
+   * hundreds of stops, every one of them a departure lookup, and a label on
+   * each would be unreadable even if it were free.
+   */
+  const updateArrivalLabelStops = (map: maplibregl.Map) => {
+    const gated = map.getZoom() < ARRIVAL_LABEL_MIN_ZOOM || !map.getLayer('stops_signs');
+    if (gated) {
+      if (arrivalLabelStopsRef.current.length > 0 || arrivalLabelSigRef.current !== '') {
+        arrivalLabelStopsRef.current = [];
+        arrivalLabelSigRef.current = '';
+        drawArrivalLabels(map);
+        callbacksRef.current.onVisibleStopsChange?.([]);
+      }
+      return;
+    }
+
+    const centre = map.getCenter();
+    const seen = new Set<string>();
+    const stops: Array<{ stopId: string; lng: number; lat: number; distance: number }> = [];
+    // Same source as the 3D furniture: whatever `stops_signs` is drawing, so
+    // labels inherit the mode toggles and route filters already applied to it.
+    for (const feature of map.queryRenderedFeatures({ layers: ['stops_signs'] })) {
+      if (feature.geometry.type !== 'Point') continue;
+      const properties = feature.properties ?? {};
+      const rawId = properties.gtfsId ?? properties.stopId ?? properties.id ?? feature.id;
+      if (rawId === undefined || rawId === null) continue;
+      const stopId = String(rawId).replace(/^HSL:/, '');
+      if (!stopId || seen.has(stopId)) continue;
+      seen.add(stopId);
+      const [lng, lat] = feature.geometry.coordinates as [number, number];
+      stops.push({ stopId, lng, lat, distance: Math.hypot(lng - centre.lng, lat - centre.lat) });
+    }
+    stops.sort((a, b) => a.distance - b.distance);
+    const nearest = stops.slice(0, ARRIVAL_LABEL_STOP_LIMIT);
+
+    // The positions move with every pan; the *set* of stops is what drives a
+    // refetch, so only that goes into the signature.
+    const signature = nearest.map((stop) => stop.stopId).join(',');
+    arrivalLabelStopsRef.current = nearest.map(({ stopId, lng, lat }) => ({ stopId, lng, lat }));
+    drawArrivalLabels(map);
+    if (signature !== arrivalLabelSigRef.current) {
+      arrivalLabelSigRef.current = signature;
+      callbacksRef.current.onVisibleStopsChange?.(nearest.map((stop) => stop.stopId));
+    }
+  };
+
+  /** Paint the labels for whichever visible stops have an arrival to show. */
+  const drawArrivalLabels = (map: maplibregl.Map) => {
+    const source = map.getSource(ARRIVAL_LABEL_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    if (!source) return;
+    const labels = arrivalLabelsRef.current ?? {};
+    const features: Feature[] = [];
+    for (const stop of arrivalLabelStopsRef.current) {
+      const entry = labels[stop.stopId];
+      // No arrival, no label. An empty badge over a stop reads as "nothing
+      // runs here", which is a different claim from "we do not know yet".
+      if (!entry) continue;
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [stop.lng, stop.lat] },
+        properties: { label: entry.label, color: entry.color },
+      });
+    }
+    source.setData({ type: 'FeatureCollection', features });
+  };
+
   const updateStopFurniture = (map: maplibregl.Map, theme: 'light' | 'dark') => {
     const source = map.getSource(STOP_FURNITURE_SOURCE) as maplibregl.GeoJSONSource | undefined;
     if (!source) return;
@@ -993,6 +1087,15 @@ export const Map: React.FC<MapProps> = ({
     source.setData(stopFurnitureCollection(states, theme));
     stopFurnitureDrawnRef.current = true;
   };
+
+  // New countdowns arrive every refresh and every second the clock ticks; the
+  // set of stops they belong to changes only when the view moves, so this
+  // repaints the text without re-querying anything.
+  useEffect(() => {
+    arrivalLabelsRef.current = arrivalLabels;
+    const map = mapRef.current;
+    if (map && map.getStyle()) drawArrivalLabels(map);
+  }, [arrivalLabels]);
 
   // Vehicle visibility is independent of pitch/buildings, including on style reload.
   const updateVehicle3DMode = (map: maplibregl.Map, active: boolean) => {
@@ -2572,6 +2675,40 @@ export const Map: React.FC<MapProps> = ({
       }, 'trams-circles');
     }
 
+    // 11a. Next-arrival labels above the sign boards. Anchored to its own
+    //      GeoJSON source rather than the stop tiles, because the text comes
+    //      from the departures feed, not from the tile.
+    if (!map.getSource(ARRIVAL_LABEL_SOURCE)) {
+      map.addSource(ARRIVAL_LABEL_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    if (!map.getLayer(ARRIVAL_LABEL_LAYER)) {
+      map.addLayer({
+        id: ARRIVAL_LABEL_LAYER,
+        type: 'symbol',
+        source: ARRIVAL_LABEL_SOURCE,
+        minzoom: ARRIVAL_LABEL_MIN_ZOOM,
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-font': ['Gotham Rounded Medium'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 15.5, 11, 20, 15],
+          // Above the sign board, which is itself bottom-anchored on the stop.
+          'text-anchor': 'bottom',
+          'text-offset': [0, -2.6],
+          'text-allow-overlap': false,
+          'text-padding': 3,
+          'text-max-width': 12,
+        },
+        paint: {
+          'text-color': ['get', 'color'],
+          'text-halo-color': mapThemeRef.current === 'dark' ? 'rgba(11,18,32,0.92)' : 'rgba(255,255,255,0.92)',
+          'text-halo-width': 1.6,
+        },
+      }, 'trams-circles');
+    }
+
     // 11b. Stop platforms lifted out of the basemap, and the 3D furniture that
     //      stands on them (lib/stopPlatforms, lib/stopModels). The platform
     //      layers need the route ribbons to already exist so they can be slid
@@ -3153,6 +3290,8 @@ export const Map: React.FC<MapProps> = ({
     // last built for no longer exists.
     stopFurnitureSigRef.current = '';
     updateStopFurniture(map, mapThemeRef.current);
+    arrivalLabelSigRef.current = '';
+    updateArrivalLabelStops(map);
 
     // Hide white casing layers
     const casingLayers = ['stops_case', 'stops_rail_case', 'stops_hub', 'stops_rail_hub'];
@@ -3301,7 +3440,10 @@ export const Map: React.FC<MapProps> = ({
     // Stop furniture is rebuilt when the view settles, not per frame. `idle`
     // rather than `moveend` because the platform polygons it orients itself
     // from arrive with the tiles, which land after the move has ended.
-    const rebuildFurniture = () => updateStopFurniture(map, mapThemeRef.current);
+    const rebuildFurniture = () => {
+      updateStopFurniture(map, mapThemeRef.current);
+      updateArrivalLabelStops(map);
+    };
     map.on('moveend', rebuildFurniture);
     map.on('idle', rebuildFurniture);
   };
