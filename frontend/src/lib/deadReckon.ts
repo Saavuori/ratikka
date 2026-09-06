@@ -51,7 +51,7 @@
 //
 // This module is the physics half of that — how far a vehicle travels in a
 // given window, given the speed and acceleration it last reported. The other
-// half is `metroTracks`, which turns "this far along" back into a coordinate.
+// half is `railTracks`, which turns "this far along" back into a coordinate.
 
 import { clamp, smoothstep } from './lerp';
 

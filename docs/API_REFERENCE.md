@@ -653,12 +653,22 @@ instead.
     "encoded_polyline_points_direction_1",
     "encoded_polyline_points_direction_2"
   ],
+  "patterns": [
+    { "points": "encoded_polyline_points_direction_1", "directionId": 0 },
+    { "points": "encoded_polyline_points_direction_2", "directionId": 1 }
+  ],
   "stops": [
     "HSL:1203420",
     "HSL:1203421"
   ]
 }
 ```
+
+`patterns` carries the same deduplicated polylines as `geometries`, in the same
+order, each with the GTFS `direction_id` of the pattern it came from. HFP
+reports the same two directions as `dir` `"1"` and `"2"` (0 and 1 respectively),
+which is what lets the map snap a vehicle to the track its journey actually runs
+on rather than to whichever rail is nearest.
 
 ---
 
