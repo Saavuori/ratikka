@@ -13,6 +13,12 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - **One next-stop resolver instead of three**: the vehicle card, the vehicle panel and the map each carried their own copy of the guessing logic, and they did not agree with each other — the map named the stop the vehicle was standing at while the card named the one after it. They now share `tripProgress`, which prefers what the vehicle reports and says where its answer came from (`reported`, `at-stop`, `timetable`, `end-of-line`), so a guess is never mistaken for the feed's own word.
 - **A stop can now tell you the tram is actually coming**: the next-arrival block distinguishes a vehicle that names this stop as the one it is running to (`Live · on its way here`) from one that is merely visible on the map with stops to make first, and a vehicle standing at the platform with its doors open (`Here now · doors open`) from either. The countdown is still the feed's own prediction and nothing else — locating a vehicle has never been allowed to become a second, competing estimate of the same number, and this does not change that. It changes what can be said about the vehicle behind it.
+---
+
+## [v0.59.1] - 2026-09-06
+
+### Changed
+- **The departures list looks like the stop panel it opens**: the saved and nearby lists showed their previews as plain text — a bold line number, the headsign, and the times run together in grey — while opening the same stop gave the coloured line badge and the two-column timetable row. Same departures, two visual languages, and the line number lost the one colour that identifies it. Each stop is now a card carrying its name and its code chip, and its previews reuse the stop panel's own departure row: the line's colour behind the badge, the headsign eliding rather than wrapping, and the time and status right-aligned in their own column. Nothing about the data changed; the list simply stops disagreeing with the panel it leads to.
 
 ---
 
