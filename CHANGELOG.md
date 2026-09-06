@@ -40,7 +40,7 @@ All notable changes to this project will be documented in this file.
 - **The stop a selected vehicle is heading for shows it**: pick a vehicle and its next stop takes the gold of the selection ring across its board, pole and pad, and pulses under it on the same clock the vehicles animate to. While the vehicle is standing there with its doors open, the platform edge lights amber — the boarding cue in the place a passenger would be standing.
 
 ### Changed
-- **A fifth map check**: `scripts/verify-stop-markers.mjs` joins the four existing ones (see CLAUDE.md). A stop now fails invisibly in three separate ways — a kerb drawn from drifted geometry still renders, a shelter at the wrong size or heading is still a box, and the live cues are colour swaps that render either way — so the script draws a synthetic stop with the app's own models and paint and measures the pixels: kerb against polygon, pad length against the model, walls above the footprint, zoom gates honoured, cues visible. It needs no Digitransit key.
+- **A fifth map check**: `scripts/verify-stop-markers.mjs` joins the four existing ones (see `.github/copilot-instructions.md`). A stop now fails invisibly in three separate ways — a kerb drawn from drifted geometry still renders, a shelter at the wrong size or heading is still a box, and the live cues are colour swaps that render either way — so the script draws a synthetic stop with the app's own models and paint and measures the pixels: kerb against polygon, pad length against the model, walls above the footprint, zoom gates honoured, cues visible. It needs no Digitransit key.
 
 ---
 
