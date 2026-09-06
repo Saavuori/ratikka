@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Clock, Footprints, LocateFixed, X, Zap } from 'lucide-react';
+import { getRouteColor } from '../lib/routeColors';
 import type { NearbyStop, StopDetailsResponse, StopInfo } from '../types';
 import { fetchNearbyStops, fetchStopDetails } from '../lib/api';
 import { departureView, isDepartureSourceStale, MAX_SAVED_STOPS, pollDepartures } from '../lib/departures';
@@ -258,29 +259,59 @@ export function DeparturesPanel({ onSelectStop, hidden = false, isMobile, onOpen
                   onSelectStop(stop, { distance });
                 }}
               >
-                <strong>{stop.name}</strong>
-                <span className="departures-stop-meta">
-                  {stop.code || stop.gtfsId}
-                  {stop.platformCode && ` · Platform ${stop.platformCode}`}
-                  {typeof distance === 'number' && ` · ${Math.round(distance)} m away`}
+                <span className="departures-stop-head">
+                  <strong className="departures-stop-name">{stop.name}</strong>
+                  <span className="departures-stop-code">{stop.code || stop.gtfsId}</span>
                 </span>
+                {(stop.platformCode || typeof distance === 'number') && (
+                  <span className="departures-stop-meta">
+                    {stop.platformCode && `Platform ${stop.platformCode}`}
+                    {stop.platformCode && typeof distance === 'number' && ' · '}
+                    {typeof distance === 'number' && `${Math.round(distance)} m away`}
+                  </span>
+                )}
                 {verdict && (
                   <span className={`arrival-chip outcome-${verdict.outcome}`}>
                     <Footprints size={11} aria-hidden="true" /> {walkVerdictLabel(verdict)}
                   </span>
                 )}
-                {!preview && <span>Loading departures…</span>}
-                {preview?.failed && <span className="is-stale">Stale · update failed; retrying</span>}
-                {preview?.details && departures.length === 0 && <span>{stale ? 'Stale · ' : ''}No upcoming departures</span>}
-                {departures.slice(0, 2).map((departure, index) => {
-                  const view = departureView(departure, now, stale);
-                  return (
-                    <span className="departures-preview" key={`${departure.tripId}-${index}`}>
-                      <b>{departure.line}</b> {departure.headsign || 'Unknown destination'}
-                      <span>{view.time}{view.countdown && ` · ${view.countdown}`} · <span className={stale ? 'is-stale' : ''}>{view.status}</span></span>
-                    </span>
-                  );
-                })}
+                {!preview && <span className="departures-note">Loading departures…</span>}
+                {preview?.failed && <span className="departures-note is-stale">Stale · update failed; retrying</span>}
+                {preview?.details && departures.length === 0 && (
+                  <span className="departures-note">{stale ? 'Stale · ' : ''}No upcoming departures</span>
+                )}
+                {departures.length > 0 && (
+                  <span className="departure-list departures-preview-list">
+                    {departures.slice(0, 2).map((departure, index) => {
+                      const view = departureView(departure, now, stale);
+                      return (
+                        <span
+                          className={`departure-item departures-preview ${view.status === 'Cancelled' ? 'is-cancelled' : ''}`}
+                          key={`${departure.tripId}-${index}`}
+                        >
+                          <span className="departure-left">
+                            <span
+                              className="departure-badge"
+                              style={{ backgroundColor: getRouteColor(departure.line), color: '#ffffff' }}
+                            >
+                              {departure.line}
+                            </span>
+                            <span className="departure-dest-container">
+                              <span className="departure-dest">{departure.headsign || 'Unknown destination'}</span>
+                            </span>
+                          </span>
+                          <span className="departure-right">
+                            <span className="departure-time">
+                              <Clock size={11} aria-hidden="true" />
+                              <span>{view.time}{view.countdown && ` · ${view.countdown}`}</span>
+                            </span>
+                            <span className={`departure-status ${stale ? 'is-stale' : ''}`}>{view.status}</span>
+                          </span>
+                        </span>
+                      );
+                    })}
+                  </span>
+                )}
               </button>
               <button
                 type="button"
