@@ -149,6 +149,10 @@ func (h *Handlers) Version(w http.ResponseWriter, r *http.Request) {
 // Config Response
 type ConfigResponse struct {
 	DigitransitMapKey string `json:"digitransit_map_key"`
+	// Key for the National Land Survey's open map image service, which serves
+	// the orthophoto basemap behind the map's satellite mode. Empty when none
+	// is configured, and the frontend then leaves that mode out entirely.
+	MMLApiKey string `json:"mml_api_key"`
 }
 
 func (h *Handlers) Config(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +165,10 @@ func (h *Handlers) Config(w http.ResponseWriter, r *http.Request) {
 	}
 	res := ConfigResponse{
 		DigitransitMapKey: mapKey,
+		// Same story: MML's open interface authenticates on the query string,
+		// so a browser-side key is necessarily public. It is a free,
+		// rate-limited open data key, not a billing credential.
+		MMLApiKey: os.Getenv("MML_API_KEY"),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)

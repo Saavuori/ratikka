@@ -153,6 +153,18 @@ export interface VersionResponse {
   git_sha: string;
 }
 
+/**
+ * Browser-side map keys from `GET /api/v1/config`. Both are public by
+ * necessity -- the tile requests are made by the browser -- and both are
+ * rate-limited keys rather than billing credentials. `mml_api_key` is empty
+ * when the deployment has no National Land Survey key, and the satellite
+ * basemap is then not offered at all.
+ */
+export interface MapConfigResponse {
+  digitransit_map_key: string;
+  mml_api_key?: string;
+}
+
 export interface BikeStationDetailsResponse {
   stationId: string;
   name: string;

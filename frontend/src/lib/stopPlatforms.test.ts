@@ -19,8 +19,9 @@ import {
   platformExtrusionPaint,
   platformSourceSpec,
 } from './stopPlatforms';
+import type { MapTheme } from './stopPlatforms';
 
-const THEMES = ['light', 'dark'] as const;
+const THEMES = ['light', 'dark', 'satellite'] as const;
 
 describe('PLATFORM_FILTER', () => {
   // The stop area we are restyling is a polygon in the basemap's own
@@ -58,13 +59,13 @@ describe('platform paint', () => {
     return compiled.value.evaluate({ zoom }, {} as never) as number;
   };
 
-  const fillOpacityAt = (theme: 'light' | 'dark', zoom: number) =>
+  const fillOpacityAt = (theme: MapTheme, zoom: number) =>
     evaluate(platformFillPaint(theme)['fill-opacity'], 'fill-opacity',
       v8.paint_fill['fill-opacity'] as StylePropertySpecification, zoom);
-  const kerbWidthAt = (theme: 'light' | 'dark', zoom: number) =>
+  const kerbWidthAt = (theme: MapTheme, zoom: number) =>
     evaluate(platformKerbPaint(theme)['line-width'], 'line-width',
       v8.paint_line['line-width'] as StylePropertySpecification, zoom);
-  const tactileOpacityAt = (theme: 'light' | 'dark', zoom: number) =>
+  const tactileOpacityAt = (theme: MapTheme, zoom: number) =>
     evaluate(platformTactilePaint(theme)['line-opacity'], 'line-opacity',
       v8.paint_line['line-opacity'] as StylePropertySpecification, zoom);
 
@@ -104,6 +105,8 @@ describe('platform paint', () => {
       expect(new Set(Object.values(palette)).size).toBe(4);
     }
     expect(platformColors('light').surface).not.toBe(platformColors('dark').surface);
+    // Satellite is the dark style with a photo under it, so it paves the same way.
+    expect(platformColors('satellite')).toEqual(platformColors('dark'));
   });
 
   it('extrudes to a kerb height, not a building', () => {
@@ -133,6 +136,10 @@ describe('platformSourceSpec', () => {
     expect(spec.add?.url).toBe(PLATFORM_TILE_URL);
     expect(spec.add?.id).toBe(spec.source);
     expect(spec.add?.minzoom).toBeGreaterThanOrEqual(13);
+  });
+
+  it('attaches them for satellite too, which is that same dark style', () => {
+    expect(platformSourceSpec('satellite')).toEqual(platformSourceSpec('dark'));
   });
 
   it('reads the same source layer either way', () => {

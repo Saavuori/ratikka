@@ -15,7 +15,12 @@
 // tram 4), so the surface stays mode-neutral and colour is left to the sign
 // and the furniture standing on it.
 
-export type MapTheme = 'light' | 'dark';
+/**
+ * The three basemaps. `satellite` is MML's orthophoto over the same dark
+ * vector labels (see lib/satelliteBasemap), so everything the app draws on
+ * top of it is styled exactly as it is in the dark theme.
+ */
+export type MapTheme = 'light' | 'dark' | 'satellite';
 
 /** A MapLibre expression; cast at the call site so this module needs no renderer. */
 export type Expression = unknown[];
@@ -55,9 +60,9 @@ interface PlatformPalette {
 }
 
 export function platformColors(theme: MapTheme): PlatformPalette {
-  return theme === 'dark'
-    ? { surface: '#333b45', kerb: '#5b6774', tactile: '#b08a2e', extrusion: '#39424d' }
-    : { surface: '#e6e0d4', kerb: '#b4a893', tactile: '#c9a227', extrusion: '#ded7c9' };
+  return theme === 'light'
+    ? { surface: '#e6e0d4', kerb: '#b4a893', tactile: '#c9a227', extrusion: '#ded7c9' }
+    : { surface: '#333b45', kerb: '#5b6774', tactile: '#b08a2e', extrusion: '#39424d' };
 }
 
 /** Opacity ramp shared by the surface and its kerb, so they arrive together. */
@@ -142,7 +147,8 @@ export function platformExtrusionPaint(theme: MapTheme) {
  * and a stop area that appears in one theme and not the other is worse than
  * either. So dark mode attaches the same Digitransit source the light theme
  * uses, gated to zoom 14 up: one extra tile request, only when zoomed in, in
- * exchange for both themes drawing identical ground truth.
+ * exchange for both themes drawing identical ground truth. Satellite mode is
+ * the dark style underneath, so it takes the same path.
  */
 export interface PlatformSourceSpec {
   /** Source id to draw from. */
