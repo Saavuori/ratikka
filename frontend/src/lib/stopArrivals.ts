@@ -117,6 +117,39 @@ export function arrivalVehicleModes(departures: StopDepartureInfo[] | undefined)
   };
 }
 
+/**
+ * The zoom at which a stop stops being a dot and becomes a place: the same
+ * zoom `stops_signs` puts up the sign boards. Zooming in on a stop therefore
+ * brings up its sign and what is coming to it in one move.
+ */
+export const ARRIVAL_LABEL_MIN_ZOOM = 15.5;
+
+/**
+ * How many stops around the middle of the screen get a label. A dense view
+ * holds hundreds of stops and each one is a departure lookup, so the eye's
+ * own area wins — the same rule the 3D stop furniture is capped by.
+ */
+export const ARRIVAL_LABEL_STOP_LIMIT = 12;
+
+/** An arrival older than this has left; its label would be a lie. */
+const LABEL_DUE_FLOOR_MS = -30_000;
+
+/**
+ * One stop's label: the line and how long you have, short enough to sit above
+ * a sign board without covering the street. Undefined when there is nothing
+ * honest to say, which is the signal to draw no label at all rather than an
+ * empty one.
+ */
+export function arrivalLabel(arrival: StopArrival | undefined): string | undefined {
+  if (!arrival || arrival.etaMs < LABEL_DUE_FLOOR_MS) return undefined;
+  const line = arrival.departure.line?.trim();
+  if (!line) return undefined;
+  const minutes = arrival.etaMs <= 0 ? 'now'
+    : arrival.etaMs < 60_000 ? '<1 min'
+      : `${Math.ceil(arrival.etaMs / 60_000)} min`;
+  return `${line} · ${minutes}`;
+}
+
 export type WalkOutcome = 'comfortable' | 'brisk' | 'run' | 'missed';
 
 export interface WalkVerdict {

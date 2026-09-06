@@ -92,46 +92,74 @@ type rawRouteInfo struct {
 	Color     string `json:"color"`
 }
 
-type rawStopResponse struct {
-	Stop *struct {
-		GtfsId       string  `json:"gtfsId"`
-		Name         string  `json:"name"`
-		Code         string  `json:"code"`
-		PlatformCode string  `json:"platformCode"`
-		Lat          float64 `json:"lat"`
-		Lon          float64 `json:"lon"`
-		Routes       []struct {
+// rawStoptime is one upcoming departure as the timetable query returns it.
+// Named so the single-stop and batched arrivals queries share one shape.
+type rawStoptime struct {
+	ScheduledDeparture *int   `json:"scheduledDeparture"`
+	RealtimeDeparture  *int   `json:"realtimeDeparture"`
+	ServiceDay         *int64 `json:"serviceDay"`
+	DepartureDelay     int    `json:"departureDelay"`
+	ScheduledArrival   int    `json:"scheduledArrival"`
+	RealtimeArrival    int    `json:"realtimeArrival"`
+	ArrivalDelay       int    `json:"arrivalDelay"`
+	Realtime           bool   `json:"realtime"`
+	RealtimeState      string `json:"realtimeState"`
+	Headsign           string `json:"headsign"`
+	Trip               struct {
+		GtfsId            string          `json:"gtfsId"`
+		DirectionId       json.RawMessage `json:"directionId"`
+		DepartureStoptime *struct {
+			ScheduledDeparture *int `json:"scheduledDeparture"`
+		} `json:"departureStoptime"`
+		Route struct {
+			GtfsId    string `json:"gtfsId"`
 			ShortName string `json:"shortName"`
-			LongName  string `json:"longName"`
+			Color     string `json:"color"`
 			Mode      string `json:"mode"`
-		} `json:"routes"`
-		StoptimesWithoutPatterns []struct {
-			ScheduledDeparture *int   `json:"scheduledDeparture"`
-			RealtimeDeparture  *int   `json:"realtimeDeparture"`
-			ServiceDay         *int64 `json:"serviceDay"`
-			DepartureDelay     int    `json:"departureDelay"`
-			ScheduledArrival   int    `json:"scheduledArrival"`
-			RealtimeArrival    int    `json:"realtimeArrival"`
-			ArrivalDelay       int    `json:"arrivalDelay"`
-			Realtime           bool   `json:"realtime"`
-			RealtimeState      string `json:"realtimeState"`
-			Headsign           string `json:"headsign"`
-			Trip               struct {
-				GtfsId            string          `json:"gtfsId"`
-				DirectionId       json.RawMessage `json:"directionId"`
-				DepartureStoptime *struct {
-					ScheduledDeparture *int `json:"scheduledDeparture"`
-				} `json:"departureStoptime"`
-				Route struct {
-					GtfsId    string `json:"gtfsId"`
-					ShortName string `json:"shortName"`
-					Color     string `json:"color"`
-					Mode      string `json:"mode"`
-				} `json:"route"`
-			} `json:"trip"`
-		} `json:"stoptimesWithoutPatterns"`
-	} `json:"stop"`
+		} `json:"route"`
+	} `json:"trip"`
 }
+
+type rawStop struct {
+	GtfsId       string  `json:"gtfsId"`
+	Name         string  `json:"name"`
+	Code         string  `json:"code"`
+	PlatformCode string  `json:"platformCode"`
+	Lat          float64 `json:"lat"`
+	Lon          float64 `json:"lon"`
+	Routes       []struct {
+		ShortName string `json:"shortName"`
+		LongName  string `json:"longName"`
+		Mode      string `json:"mode"`
+	} `json:"routes"`
+	StoptimesWithoutPatterns []rawStoptime `json:"stoptimesWithoutPatterns"`
+}
+
+type rawStopResponse struct {
+	Stop *rawStop `json:"stop"`
+}
+
+// stoptimeFields is the departure selection both stop queries send. Keeping it
+// in one place is what stops the batched arrivals drifting from the timetable
+// panel's own idea of a departure.
+const stoptimeFields = `
+	scheduledDeparture
+	realtimeDeparture
+	serviceDay
+	departureDelay
+	scheduledArrival
+	realtimeArrival
+	arrivalDelay
+	realtime
+	realtimeState
+	headsign
+	trip {
+		gtfsId
+		directionId
+		departureStoptime { scheduledDeparture }
+		route { gtfsId shortName color mode }
+	}
+`
 
 type rawAlertResponse struct {
 	Alerts []rawAlert `json:"alerts"`

@@ -424,6 +424,61 @@ The `vehicles` map is keyed by vehicle ID. The frontend replaces its entire stat
 
 ---
 
+
+### REST — Batched Stop Arrivals
+
+| | |
+|---|---|
+| **Path** | `/api/v1/stops/arrivals` |
+| **Method** | `GET` |
+| **Query** | `id` (repeatable, required) — stop GTFS IDs; a bare ID is prefixed with `HSL:` |
+| **Auth** | None (backend adds Digitransit key) |
+
+The map labels every stop in view once it is zoomed past the sign-board zoom, and
+a request per stop would be a request per stop on every refresh. This answers for
+several stops in one upstream round trip.
+
+IDs are de-duplicated, sorted (so the same set is one cache entry however it was
+asked for) and capped at 12; anything past the cap is dropped. Each stop
+contributes up to 3 departures — the map draws one label, and the spares exist so
+a cancelled or already-departed row does not leave it empty. Stop IDs travel to
+the upstream API as GraphQL variables, never interpolated into the query
+document. A stop the upstream API does not know is omitted from `stops` rather
+than returned empty. Cached for 10 seconds.
+
+**Response** `200 OK`:
+
+```json
+{
+  "stops": {
+    "HSL:1203420": {
+      "gtfsId": "HSL:1203420",
+      "name": "Välimerenkatu",
+      "departures": [
+        {
+          "line": "9",
+          "headsign": "Pasila",
+          "realtime": true,
+          "realtimeDepartureTime": 1781504640000,
+          "tripId": "HSL:1009_20260615_Su_2_0910",
+          "routeId": "HSL:1009",
+          "serviceDate": "2026-06-15",
+          "directionId": 1,
+          "startTimeSeconds": 33000,
+          "mode": "TRAM"
+        }
+      ]
+    }
+  },
+  "fetchedAt": 1781504400000
+}
+```
+
+Departures carry the same fields as `/api/v1/stop/{id}`. `400` when no `id` is
+given; `502` on an upstream failure.
+
+---
+
 ### REST — Trip Details
 
 Get route and ETA info for a specific vehicle trip (supporting both trams and buses).

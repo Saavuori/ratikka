@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.59.0] - 2026-09-06
+
+### Added
+- **Zoom into a stop and the next tram is written on it**: the arrival tracking added in v0.58 answered the question, but only once you had opened the stop's panel and pressed a button — which is a lot of asking for something you wanted at a glance. From zoom 15.5, the same zoom at which a stop stops being a dot and puts up its sign board, every stop near the middle of the view now carries its next departure above the sign: the line number and the minutes, in that line's own colour. Zooming in on a stop is the whole gesture. Nothing to open, nothing to press.
+  The countdown is the departures feed's own prediction, exactly as in the panel, so a label needs no vehicle located and turns on no extra live feed to be drawn — a bus stop labels itself without the bus feed being subscribed. A stop with nothing honest to say gets no label at all rather than an empty badge, because an empty badge over a stop reads as “nothing runs here”, which is a different claim from “we don't know yet”. A departure more than thirty seconds gone stops being a label before it stops being a timetable row.
+
+### Changed
+- **Stops are asked about in one request, not one each**: a zoomed-in view can hold hundreds of stops and each label is a departure lookup, so `GET /api/v1/stops/arrivals` takes up to twelve stop IDs and answers for all of them in a single upstream round trip. The map asks only when the view settles — never per frame — and only for the stops nearest the middle of the screen, which is where the eye is and the same rule the 3D stop furniture is already capped by. IDs are de-duplicated and sorted so the same set of stops is one cache entry however it was asked for, and they travel to the upstream API as GraphQL variables rather than being pasted into the query document: an ID arrives from a query string, and a request that interpolates caller input into a query is a request that lets the caller write the query.
+- **One definition of a departure**: the departure selection and its mapping were about to exist twice, once per endpoint. Both stop queries now share a single GraphQL fragment and a single mapping function, so the batched arrivals cannot drift from what the timetable panel means by a departure.
+- **A sixth thing the map checks cannot see**: the label is a `symbol` layer with a `text-field`, and text needs glyphs. Four of the five map checks draw on a blank style with no glyph endpoint, so they can prove the layer's spec is valid and its source is fed, and nothing more — whether the label actually appears above the board is check 2's claim to make. Recorded in CLAUDE.md alongside the dark-theme platform case. The label's text is a pure function and is unit tested in CI.
+
+---
+
 ## [v0.58.1] - 2026-09-06
 
 ### Fixed
