@@ -253,6 +253,103 @@ describe('vehicleExtrusions', () => {
     expect(vehicleExtrusions({ ...base, mode: 'unknown' })).toEqual(vehicleExtrusions({ ...base, mode: 'tram' }));
   });
 
+  describe('articulation', () => {
+    // A right-angle corner, the way a tram takes one: the rails run east up to
+    // the junction and north out of it. `trackSpine` in lib/railTracks builds
+    // the real thing off the route geometry; this is the same contract.
+    const corner = (along: number) => {
+      if (along >= 0) {
+        // Ahead of the centre: up the northbound leg.
+        return { ...offsetAt(0, along), hdg: 0 };
+      }
+      // Behind it: back down the eastbound one.
+      return { ...offsetAt(90, -along), hdg: 90 };
+    };
+    function offsetAt(hdg: number, distance: number) {
+      const [lng, lat] = offsetMeters(HELSINKI[0], HELSINKI[1], hdg, distance, 0);
+      return { lng, lat };
+    }
+
+    it('leaves a vehicle with no path a single rigid body', () => {
+      const rigid = vehicleExtrusions({ ...base, mode: 'tram', hdg: 90 });
+      const bodies = rigid.filter((p) => p.properties.part === 'body');
+      // Every section on one heading: the flanks are all on the same line.
+      const lats = bodies.flatMap((b) => b.geometry.coordinates[0].map(([, lat]) => lat));
+      expect(Math.max(...lats) - Math.min(...lats)).toBeLessThan(0.00006); // ~6 m, the body's width
+    });
+
+    it('bends the sections round a corner instead of ploughing across it', () => {
+      const bent = vehicleExtrusions({ ...base, mode: 'tram', hdg: 45, spine: corner });
+      const bodies = bent.filter((p) => p.properties.part === 'body');
+      expect(bodies).toHaveLength(3);
+
+      // The leading section is up the northbound leg, north and no further
+      // east than the corner; the trailing one is back down the eastbound leg.
+      const centre = (index: number) => {
+        const ring = bodies[index].geometry.coordinates[0];
+        const lng = ring.reduce((a, [x]) => a + x, 0) / ring.length;
+        const lat = ring.reduce((a, [, y]) => a + y, 0) / ring.length;
+        return [lng, lat] as [number, number];
+      };
+      const [frontLng, frontLat] = centre(0);
+      const [backLng, backLat] = centre(2);
+      expect(frontLat).toBeGreaterThan(HELSINKI[1]);
+      expect(frontLng).toBeCloseTo(HELSINKI[0], 5);
+      expect(backLng).toBeGreaterThan(HELSINKI[0]);
+      expect(backLat).toBeCloseTo(HELSINKI[1], 5);
+
+      // Bent round the corner the body occupies less ground than its 27 m
+      // length — exactly what a rigid box cannot do.
+      expect(metersBetween(centre(0), centre(2))).toBeLessThan(24);
+      expect(metersBetween(centre(0), centre(2))).toBeGreaterThan(12);
+    });
+
+    it('keeps each section its own true length along the path', () => {
+      const bent = vehicleExtrusions({ ...base, mode: 'tram', hdg: 45, spine: corner });
+      const rigid = vehicleExtrusions({ ...base, mode: 'tram', hdg: 0 });
+      const spanOf = (parts: typeof bent, index: number) => {
+        const ring = parts.filter((p) => p.properties.part === 'body')[index].geometry.coordinates[0];
+        let longest = 0;
+        for (const a of ring) for (const b of ring) longest = Math.max(longest, metersBetween(a, b));
+        return longest;
+      };
+      // The leading section runs straight up the northbound leg in both, so
+      // articulation must not have stretched or shrunk it.
+      expect(spanOf(bent, 0)).toBeCloseTo(spanOf(rigid, 0), 1);
+    });
+
+    it('bridges the joint with a gangway that reaches both sections', () => {
+      const bent = vehicleExtrusions({ ...base, mode: 'tram', hdg: 45, spine: corner });
+      const bodies = bent.filter((p) => p.properties.part === 'body');
+      const gangways = bent.filter((p) => p.properties.part === 'gangway');
+      expect(gangways).toHaveLength(2);
+      // Every gangway corner has to sit against one of the sections it joins.
+      // Laid out in a single section's frame instead — which is what a rigid
+      // body can get away with — the far end hangs in the air on the outside
+      // of the bend, and the tram comes apart at its joints.
+      for (const gangway of gangways) {
+        for (const corner of gangway.geometry.coordinates[0]) {
+          const nearest = Math.min(
+            ...bodies.flatMap((b) => b.geometry.coordinates[0].map((p) => metersBetween(p, corner)))
+          );
+          expect(nearest).toBeLessThan(1.5);
+        }
+      }
+    });
+
+    it('rides the running gear and doors with the section they belong to', () => {
+      const bent = vehicleExtrusions({ ...base, mode: 'tram', hdg: 45, spine: corner });
+      // The tram's leading bogie sits at +10 m, on the northbound leg; the
+      // trailing one at -10 m, on the eastbound leg. Each must be where its own
+      // section is, not strung along one rigid heading through the buildings.
+      const bogies = bent.filter((p) => p.properties.part === 'bogie');
+      const lats = bogies.map((b) => b.geometry.coordinates[0][0][1]);
+      const lngs = bogies.map((b) => b.geometry.coordinates[0][0][0]);
+      expect(Math.max(...lats)).toBeGreaterThan(HELSINKI[1] + 0.00005);
+      expect(Math.max(...lngs)).toBeGreaterThan(HELSINKI[0] + 0.0001);
+    });
+  });
+
   it('turns a selected vehicle gold', () => {
     const parts = vehicleExtrusions({ ...base, mode: 'tram', selected: true });
     expect(parts.find((p) => p.properties.part === 'body')!.properties.color).toBe(SELECTED_COLOR);

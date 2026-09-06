@@ -33,12 +33,15 @@ import {
   TRAIN_PURPLE,
 } from '../lib/routeColors';
 import {
-  buildTracks,
+  buildPatternTracks,
   distanceBetween,
-  metroLinesInFeed,
+  hfpDirectionId,
+  isSnappedMode,
   placeOnTracks,
   pointOnTrack,
-} from '../lib/metroTracks';
+  snappedLinesInFeed,
+  trackSpine,
+} from '../lib/railTracks';
 import {
   advanceAlongHeading,
   glideFraction,
@@ -47,7 +50,7 @@ import {
   reckonLimits,
 } from '../lib/deadReckon';
 import type { ReckonLimits } from '../lib/deadReckon';
-import type { MetroTrack, TrackPlacement } from '../lib/metroTracks';
+import type { PlaceOptions, RailTrack, TrackPlacement } from '../lib/railTracks';
 import { assignCorridorSlots, directionalPaths } from '../lib/routeSlots';
 import type { RoutePath } from '../lib/routeSlots';
 import {
@@ -65,7 +68,7 @@ import {
   VEHICLE_3D_FADE_IN,
   VEHICLE_ICON_FADE_OUT,
 } from '../lib/vehicleModels';
-import type { VehicleState } from '../lib/vehicleModels';
+import type { BodySpine, VehicleState } from '../lib/vehicleModels';
 import {
   PLATFORM_FILTER,
   PLATFORM_FILL_LAYER,
@@ -123,7 +126,7 @@ import type { DoorAnimation } from '../lib/vehicleAnimation';
 import { fetchBikeStations } from '../lib/api';
 import type { BikeStationsFeatureCollection, TrafficLightFeature } from '../types';
 import { useTrafficLights } from '../hooks/useTrafficLights';
-import { useMetroGeometry } from '../hooks/useMetroGeometry';
+import { useRoutePatterns } from '../hooks/useRoutePatterns';
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -234,9 +237,10 @@ interface RenderPosition {
   lat: number;
   lng: number;
   hdg: number;
-  // Metro only: where this position sits on the line's own track geometry, so
-  // the animation can slide a train *along* its tunnel between two snapshots
-  // instead of cutting across the ground between them. See lib/metroTracks.
+  // Rail modes only: where this position sits on the line's own track
+  // geometry, so the animation can slide a vehicle *along* its rails between
+  // two snapshots instead of cutting across the ground between them, and so an
+  // articulated body can be bent along them. See lib/railTracks.
   track?: TrackPlacement;
 }
 
@@ -245,6 +249,28 @@ interface RenderPosition {
 // hundred metres; past that the message is more likely stale or bogus than a
 // train, and snapping it would invent a confident-looking position.
 const METRO_SNAP_MAX_OFFSET = 400;
+
+// A tram is pulled onto its rails only from this close. Its GPS is ordinary
+// street-level GPS — good to some tens of metres, worse between tall buildings
+// — so this has to cover the error without covering the next street: past 35 m
+// the nearest rail is as likely to be a different line's as this tram's own,
+// and a tram genuinely off its route (a diversion, a depot run, a replacement
+// working) should be drawn where it says it is rather than dragged onto rails
+// it is not using.
+const TRAM_SNAP_MAX_OFFSET = 35;
+
+// How much closer another pattern has to be before a tram is moved onto it.
+// The two directions of a tram line are one carriageway apart, so the margin
+// that keeps a metro train on its (all but coincident) pattern would instead
+// pin a tram to whichever rail it first snapped to. Metres.
+const TRAM_TRACK_SWITCH_MARGIN = 4;
+
+// How much slack the junction test allows around where a tram is expected to
+// have got to, on top of the distance its own reported speed accounts for.
+// Wide enough that ordinary running, a late snapshot and a stretch of standing
+// still all stay inside it; far narrower than the distance between two passes
+// of the same junction, which is what it exists to tell apart. Metres.
+const TRAM_CONTINUITY_SLACK = 40;
 
 // The last position report from a vehicle that actually said something new,
 // kept so the animation can carry it forward until the next one.
@@ -1439,47 +1465,87 @@ export const Map: React.FC<MapProps> = ({
     }
   };
 
-  // Track geometry for every metro line currently in the feed. This is fetched
+  // Track geometry for every rail line currently in the feed. This is fetched
   // independently of `routeGeometries` (which only covers lines the user has
-  // highlighted, because its job is drawing route ribbons): a train is snapped
-  // and dead-reckoned along its rails whether or not its line is highlighted,
-  // and hanging that off the highlight state meant the ordinary view — metro
-  // on, nothing selected — had no tracks and therefore no dead reckoning at
-  // all. See hooks/useMetroGeometry.
-  const metroLines = useMemo(() => metroLinesInFeed(trams), [trams]);
-  const metroGeometries = useMetroGeometry(metroLines);
+  // highlighted, because its job is drawing route ribbons): a vehicle is
+  // snapped to its rails — and a metro dead-reckoned along them — whether or
+  // not its line is highlighted, and hanging that off the highlight state meant
+  // the ordinary view with nothing selected had no tracks and therefore no
+  // snapping at all. See hooks/useRoutePatterns.
+  const snappedLines = useMemo(() => snappedLinesInFeed(trams), [trams]);
+  const routePatterns = useRoutePatterns(snappedLines);
 
-  // Indexed metro track geometry, per line. Rebuilt only when a line's
-  // polylines actually change: indexing walks every point of every pattern.
-  const metroTracksRef = useRef<Record<string, MetroTrack[]>>({});
-  const metroGeometrySourceRef = useRef<Record<string, string[]>>({});
+  // Indexed track geometry, per line. Rebuilt only when a line's polylines
+  // actually change: indexing walks every point of every pattern.
+  const tracksRef = useRef<Record<string, RailTrack[]>>({});
+  const patternSourceRef = useRef<Record<string, unknown>>({});
 
   useEffect(() => {
-    const tracks: Record<string, MetroTrack[]> = {};
-    Object.entries(metroGeometries).forEach(([line, geometries]) => {
-      if (!geometries || geometries.length === 0) return;
-      if (metroGeometrySourceRef.current[line] === geometries) {
-        tracks[line] = metroTracksRef.current[line];
+    const tracks: Record<string, RailTrack[]> = {};
+    Object.entries(routePatterns).forEach(([line, patterns]) => {
+      if (!patterns || patterns.length === 0) return;
+      if (patternSourceRef.current[line] === patterns) {
+        tracks[line] = tracksRef.current[line];
         return;
       }
-      metroGeometrySourceRef.current[line] = geometries;
-      tracks[line] = buildTracks(geometries);
+      patternSourceRef.current[line] = patterns;
+      tracks[line] = buildPatternTracks(patterns);
     });
-    metroTracksRef.current = tracks;
-  }, [metroGeometries]);
+    tracksRef.current = tracks;
+  }, [routePatterns]);
 
   /**
-   * Pull a reported metro position onto its line's tracks. Returns null when
-   * the line's geometry has not loaded yet, or the position is too far off the
-   * network to trust — in both cases the caller draws the raw position,
-   * exactly as before.
+   * Pull a reported position onto its line's rails. Returns null when the line
+   * has no geometry yet, the mode is not one that runs on known geometry, or
+   * the position is too far off the network to trust — in all three cases the
+   * caller draws the raw position, exactly as before.
+   *
+   * The two snapped modes are snapped for opposite reasons, so they are given
+   * different licence. A metro is underground and its position is odometry
+   * rather than GPS, so it is dragged as much as 400 m and its own reported
+   * heading is not evidence of anything. A tram's position is ordinary
+   * street-level GPS, only tens of metres out — but its two directions run on
+   * their own rails a few metres apart, so the question is not *where* it is
+   * but *which* of a pair of tracks it is on. That is answered by the journey's
+   * direction from the feed, and where the feed omits it, by whether the rails
+   * run the way the tram is heading.
    */
-  const placeOnMetroTrack = (tram: VehiclePosition, previous: TrackPlacement | undefined) => {
-    const tracks = metroTracksRef.current[tram.desi];
+  const placeOnRails = (
+    tram: VehiclePosition,
+    previous: TrackPlacement | undefined,
+    // How long the previous placement has had to go stale, in seconds. It sets
+    // how far along the route the vehicle may have got since, which is what the
+    // junction test is measured against.
+    age: number,
+  ) => {
+    if (!isSnappedMode(tram.mode)) return null;
+    const tracks = tracksRef.current[tram.desi];
     if (!tracks || tracks.length === 0) return null;
-    return placeOnTracks(tram.desi, tracks, tram, previous, {
-      maxOffset: METRO_SNAP_MAX_OFFSET,
-    });
+
+    if (tram.mode === 'metro') {
+      return placeOnTracks(tram.desi, tracks, tram, previous, {
+        maxOffset: METRO_SNAP_MAX_OFFSET,
+      });
+    }
+
+    // How far the tram can have gone since it was last placed, from the speed
+    // it reported. The window is that plus a fixed allowance, so a tram running
+    // normally always finds itself inside it and only a fix somewhere else on
+    // the route falls out.
+    const travelled = Math.abs(tram.spd ?? 0) * Math.max(age, 0);
+    const options: PlaceOptions = {
+      maxOffset: TRAM_SNAP_MAX_OFFSET,
+      direction: hfpDirectionId(tram.dir),
+      heading: tram.hdg,
+      // The pair of tracks is only metres apart, so the hysteresis that holds a
+      // metro on its pattern would instead pin a tram to the wrong rail of the
+      // two. Just wide enough to absorb GPS jitter along one track, not wide
+      // enough to hold it on the other.
+      switchMargin: TRAM_TRACK_SWITCH_MARGIN,
+      expectedAdvance: travelled,
+      continuityWindow: TRAM_CONTINUITY_SLACK + travelled,
+    };
+    return placeOnTracks(tram.desi, tracks, tram, previous, options);
   };
 
   // Dead-reckoning state, per vehicle: the last real report, and the speed
@@ -1531,7 +1597,7 @@ export const Map: React.FC<MapProps> = ({
     if (advance <= 0) return null;
 
     if (fix.track) {
-      const track = metroTracksRef.current[fix.track.line]?.[fix.track.index];
+      const track = tracksRef.current[fix.track.line]?.[fix.track.index];
       if (!track) return null;
       // `distance` is arc length along the pattern polyline; a train running
       // against that polyline's own direction covers it backwards.
@@ -1642,6 +1708,13 @@ export const Map: React.FC<MapProps> = ({
       let visible = 0;
 
       const features: VehicleFeature[] = [];
+      // The path each vehicle's body follows this frame, for the ones being
+      // drawn along their rails. Filled here rather than in the 3D block below
+      // because it is only honest on the frames where the drawn position came
+      // off the track itself: on the one frame after a vehicle changes pattern
+      // the position is a plain interpolation, and bending the body to a track
+      // the vehicle is not being drawn on would tear it away from its own icon.
+      const spines: Record<string, BodySpine> = {};
       Object.entries(targetPositionsRef.current).forEach(([id, target]) => {
         const prev = prevPositionsRef.current[id] || target;
 
@@ -1678,31 +1751,33 @@ export const Map: React.FC<MapProps> = ({
         let hdg = lerpAngle(prev.hdg, target.hdg, smoothstep(t));
         let renderTrack: TrackPlacement | undefined;
 
-        // A metro train that stayed on the same track between two snapshots is
+        // A rail vehicle that stayed on the same track between two snapshots is
         // moved *along* it: interpolating arc length and reading the position
-        // back off the geometry keeps the train in its tunnel through curves,
-        // where interpolating the endpoints would cut straight across them.
+        // back off the geometry keeps a train in its tunnel and a tram on its
+        // rails through curves, where interpolating the endpoints would cut
+        // straight across them.
         if (
           target.track &&
           prev.track &&
           prev.track.line === target.track.line &&
           prev.track.index === target.track.index
         ) {
-          const track = metroTracksRef.current[target.track.line]?.[target.track.index];
+          const track = tracksRef.current[target.track.line]?.[target.track.index];
           if (track) {
             const distance = lerp(prev.track.distance, target.track.distance, tPos);
             const point = pointOnTrack(track, distance);
             lat = point.lat;
             lng = point.lng;
-            // Face along the track. A standing train keeps the heading it had:
-            // the tangent alone cannot say which end is the front.
+            // Face along the track. A standing vehicle keeps the heading it
+            // had: the tangent alone cannot say which end is the front.
             hdg = target.track.forward ? point.bearing : (point.bearing + 180) % 360;
             renderTrack = { ...target.track, distance };
+            spines[id] = trackSpine(track, distance, target.track.forward);
           }
         } else if (target.track) {
-          // No shared track to slide along — the train has only just appeared,
-          // or it changed pattern — so this frame falls back to the straight
-          // interpolation above. The placement is still carried forward so the
+          // No shared track to slide along — the vehicle has only just
+          // appeared, or it changed pattern — so this frame falls back to the
+          // straight interpolation above. The placement is still carried forward so the
           // next snapshot can resume along-track motion immediately; a line's
           // patterns run within a few metres of each other, so the distance is
           // at most that far out for the one frame it is used.
@@ -1794,6 +1869,13 @@ export const Map: React.FC<MapProps> = ({
                     doorProgress: doors.progress,
                     braking: isVehicleBraking(telemetry?.spd, telemetry?.acc, f.properties.doorsOpen),
                     selected: f.properties.veh === selectedTramIdRef.current,
+                    // A vehicle being drawn along its rails is *built* along
+                    // them too: each rigid section of the body sits at its own
+                    // point on the track, so an articulated tram bends through
+                    // a corner instead of ploughing across it. One with no path
+                    // (a bus, or a tram off its route) stays a rigid box on its
+                    // single heading, exactly as before.
+                    spine: spines[id],
                   };
                 })
             : [];
@@ -2007,10 +2089,16 @@ export const Map: React.FC<MapProps> = ({
       // until the following report turns it round again.
       const previousPlacement: TrackPlacement | undefined = fix?.track ?? previous?.track;
 
-      // Metro trains are drawn on their tracks, not where the (largely
-      // underground, therefore dead-reckoned) feed claims they are.
-      const snapped =
-        tram.mode === 'metro' ? placeOnMetroTrack(tram, previousPlacement) : null;
+      // Rail vehicles are drawn on their rails, not where the feed claims they
+      // are: a metro because its underground position is dead-reckoned and
+      // drifts out of its tunnel, a tram because its position cannot tell the
+      // two tracks of a street apart and its journey's direction can.
+      //
+      // How stale the placement being continued from is — the age of the anchor
+      // it came from, or one snapshot when the vehicle has only a target — sets
+      // how far along its route the vehicle may have got since.
+      const placementAge = fix ? (now - fix.seenAt) / 1000 : windowSecRef.current;
+      const snapped = placeOnRails(tram, previousPlacement, placementAge);
       let target: RenderPosition = snapped
         ? { lat: snapped.lat, lng: snapped.lng, hdg: snapped.hdg, track: snapped.track }
         : { lat: tram.lat, lng: tram.lng, hdg: tram.hdg };
@@ -2025,7 +2113,9 @@ export const Map: React.FC<MapProps> = ({
       const moved = hasMoved(fix, tram);
       // A metro that could not be snapped — no geometry yet, or too far off the
       // network to trust — carries no anchor: its raw reported position is
-      // drawn, and the next successful snap starts a fresh one.
+      // drawn, and the next successful snap starts a fresh one. A tram is
+      // anchored either way: unlike the metro its raw position is a real GPS
+      // fix, so it is worth dead-reckoning from whether or not it snapped.
       const anchorable = tram.mode !== 'metro' || !!snapped;
 
       if (anchorable && moved) {

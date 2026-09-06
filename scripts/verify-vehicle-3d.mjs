@@ -12,7 +12,8 @@
 //
 // This one measures the pixels: how long each body is on the ground, that the
 // modes keep their size order, that the box has walls standing above its
-// footprint, and that nothing is drawn below the zoom where the bodies fade in.
+// footprint, that an articulated body actually bends where its rails do, and
+// that nothing is drawn below the zoom where the bodies fade in.
 // It needs no Digitransit key — the basemap is blank and the vehicles are
 // synthetic.
 //
@@ -55,6 +56,18 @@ const { VEHICLE_MODELS, VEHICLE_3D_MIN_ZOOM, VEHICLE_3D_FULL_ZOOM, vehicleExtrus
   pathToFileURL(path.join(outDir, 'vehicleModels.mjs')).href
 );
 
+// The articulation check drives the bodies from real track geometry rather
+// than a hand-written path, so what is measured is the two modules working
+// together — which is where a bent body can go wrong without either of them
+// being wrong on its own.
+const trackBundle = await rolldown({
+  input: path.join(FRONTEND, 'src', 'lib', 'railTracks.ts'),
+  logLevel: 'silent',
+});
+await trackBundle.write({ dir: outDir, format: 'esm', entryFileNames: 'railTracks.mjs' });
+await trackBundle.close();
+const trackSource = fs.readFileSync(path.join(outDir, 'railTracks.mjs'), 'utf8');
+
 // MapLibre 6 ships ESM only and spawns its worker from a URL relative to its own
 // module, so it has to be served rather than inlined.
 const server = http.createServer((req, res) => {
@@ -74,6 +87,11 @@ const server = http.createServer((req, res) => {
     res.end(libSource);
     return;
   }
+  if (urlPath === '/railTracks.mjs') {
+    res.writeHead(200, { 'Content-Type': 'text/javascript' });
+    res.end(trackSource);
+    return;
+  }
   res.writeHead(200, { 'Content-Type': 'text/html' });
   res.end(
     '<!doctype html><meta charset="utf-8">' +
@@ -82,7 +100,8 @@ const server = http.createServer((req, res) => {
     '<script type="module">' +
     "import * as maplibregl from '/dist/maplibre-gl.mjs';" +
     "import * as vehicleModels from '/vehicleModels.mjs';" +
-    'window.maplibregl = maplibregl; window.vehicleModels = vehicleModels;' +
+    "import * as railTracks from '/railTracks.mjs';" +
+    'window.maplibregl = maplibregl; window.vehicleModels = vehicleModels; window.railTracks = railTracks;' +
     '</script>'
   );
 });
@@ -97,7 +116,11 @@ const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
 const pageErrors = [];
 page.on('pageerror', (e) => pageErrors.push(e.message));
 await page.goto(base, { waitUntil: 'load' });
-await page.waitForFunction(() => !!window.maplibregl && !!window.vehicleModels, null, { timeout: 20000 });
+await page.waitForFunction(
+  () => !!window.maplibregl && !!window.vehicleModels && !!window.railTracks,
+  null,
+  { timeout: 20000 }
+);
 
 const CENTER = [24.94, 60.17];
 
@@ -106,9 +129,9 @@ const CENTER = [24.94, 60.17];
  * bounding box of them, and — for the height check — the topmost row of the
  * projected ground footprint. All in CSS pixels.
  */
-const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorProgress, braking = false, flat = false, focus, capture = false }) =>
+const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorProgress, braking = false, flat = false, focus, capture = false, onCorner = false }) =>
   page.evaluate(
-    async ({ mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, capture, center, minZoom }) => {
+    async ({ mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, capture, center, minZoom, onCorner }) => {
       const { vehicleExtrusionCollection, VEHICLE_3D_FADE_IN, vehicleModel, offsetMeters } = window.vehicleModels;
       const model = vehicleModel(mode);
       const cameraCenter = focus
@@ -131,8 +154,22 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorP
       });
       await new Promise((r) => map.on('load', r));
 
+      // A right-angle corner in the rails, with the vehicle's centre on it:
+      // rails running east into the junction and north out of it, exactly what
+      // a tram meets at a Helsinki street corner.
+      let spine;
+      if (onCorner) {
+        const { buildTrack, trackSpine } = window.railTracks;
+        const track = buildTrack([
+          [center[0] - 0.002, center[1]],
+          [center[0], center[1]],
+          [center[0], center[1] + 0.002],
+        ]);
+        spine = trackSpine(track, track.cum[1], true);
+      }
+
       const data = vehicleExtrusionCollection([
-        { veh: 'v', lng: center[0], lat: center[1], hdg, mode, desi: '', doorsOpen, doorProgress, braking },
+        { veh: 'v', lng: center[0], lat: center[1], hdg, mode, desi: '', doorsOpen, doorProgress, braking, spine },
       ], zoom >= 16);
       map.addSource('vehicles-3d', { type: 'geojson', data });
       map.addLayer({
@@ -205,7 +242,7 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorP
       map.remove();
       return { painted, amber, cab, red, head, redStrength, minX, maxX, minY, maxY, groundTop, metersPerPixel, image };
     },
-    { mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, capture, center: CENTER, minZoom: VEHICLE_3D_MIN_ZOOM }
+    { mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, capture, center: CENTER, minZoom: VEHICLE_3D_MIN_ZOOM, onCorner }
   );
 
 const failures = [];
@@ -255,6 +292,38 @@ check(
     east.maxX - east.minX > east.maxY - east.minY && north.maxY - north.minY > north.maxX - north.minX,
     `east ${(east.maxX - east.minX).toFixed(0)}x${(east.maxY - east.minY).toFixed(0)} px, ` +
     `north ${(north.maxX - north.minX).toFixed(0)}x${(north.maxY - north.minY).toFixed(0)} px`
+  );
+}
+
+// 3b. A tram is three rigid sections on joints, and where its rails turn inside
+//     its own length it has to turn with them. Rigid, a 27 m body taking a
+//     right-angle corner drives its nose through the building on the outside of
+//     the curve; bent, it occupies the corner itself. Both drawings are a
+//     perfectly good-looking tram, which is why this is measured rather than
+//     eyeballed: the bent one has to be shorter end-to-end than the rigid one
+//     while painting the same amount of tram.
+{
+  const rigid = await render({ mode: 'tram', hdg: 45, zoom: 18 });
+  const bent = await render({ mode: 'tram', hdg: 45, zoom: 18, onCorner: true });
+  const span = (r) => Math.hypot(r.maxX - r.minX, r.maxY - r.minY) * r.metersPerPixel;
+  check(
+    'an articulated tram bends through a corner instead of ploughing across it',
+    bent.painted > 0 && span(bent) < span(rigid) * 0.85,
+    `rigid spans ${span(rigid).toFixed(1)} m, bent ${span(bent).toFixed(1)} m`
+  );
+  check(
+    'bending the body does not tear it apart or shrink it',
+    Math.abs(bent.painted - rigid.painted) < rigid.painted * 0.35,
+    `${rigid.painted} px rigid vs ${bent.painted} px bent`
+  );
+  // Each section follows its own leg of the corner: the body reaches north up
+  // one and east back down the other, rather than lying along one diagonal.
+  const bentW = (bent.maxX - bent.minX) * bent.metersPerPixel;
+  const bentH = (bent.maxY - bent.minY) * bent.metersPerPixel;
+  check(
+    'the bent body occupies both legs of the corner',
+    bentW > 8 && bentH > 8,
+    `${bentW.toFixed(1)} m east-west by ${bentH.toFixed(1)} m north-south`
   );
 }
 

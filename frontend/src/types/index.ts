@@ -69,10 +69,19 @@ export interface TripDetailsResponse {
   geometry?: string;
 }
 
+/** One directional variant of a route: its polyline and which way it runs. */
+export interface RoutePatternResponse {
+  points: string;
+  /** GTFS direction_id (0 or 1); HFP reports the same thing as `dir` "1"/"2". */
+  directionId: number;
+}
+
 export interface RouteDetailsResponse {
   shortName: string;
   color: string;
   geometries: string[];
+  /** The same polylines as `geometries`, carrying their direction. */
+  patterns?: RoutePatternResponse[];
   stops: string[];
 }
 

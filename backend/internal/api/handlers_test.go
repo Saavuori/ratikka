@@ -387,8 +387,15 @@ func TestHandlers_RouteDetails(t *testing.T) {
 					"color": "007AC9",
 					"patterns": [
 						{
+							"directionId": 0,
 							"patternGeometry": {
 								"points": "polyline_points_9"
+							}
+						},
+						{
+							"directionId": 1,
+							"patternGeometry": {
+								"points": "polyline_points_9_return"
 							}
 						}
 					]
@@ -430,8 +437,20 @@ func TestHandlers_RouteDetails(t *testing.T) {
 	if resp.ShortName != "9" {
 		t.Errorf("expected shortName 9, got %s", resp.ShortName)
 	}
-	if len(resp.Geometries) != 1 || resp.Geometries[0] != "polyline_points_9" {
+	if len(resp.Geometries) != 2 || resp.Geometries[0] != "polyline_points_9" {
 		t.Errorf("unexpected geometries: %v", resp.Geometries)
+	}
+	// The direction each polyline runs in is what puts a tram on its own side of
+	// the street rather than on whichever rail happens to be nearest, so it has
+	// to survive the trip through the handler alongside the geometry.
+	if len(resp.Patterns) != 2 {
+		t.Fatalf("expected 2 patterns, got %d", len(resp.Patterns))
+	}
+	if resp.Patterns[0].DirectionID != 0 || resp.Patterns[1].DirectionID != 1 {
+		t.Errorf("unexpected pattern directions: %+v", resp.Patterns)
+	}
+	if resp.Patterns[0].Points != "polyline_points_9" || resp.Patterns[1].Points != "polyline_points_9_return" {
+		t.Errorf("patterns and geometries disagree: %+v vs %v", resp.Patterns, resp.Geometries)
 	}
 }
 

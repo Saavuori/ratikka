@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.62.3] - 2026-09-06
+
+### Fixed
+- **Trams now run on the right rails**: the map draws both tracks of a tram street, because each direction is its own pattern polyline — and the tram was drawn where its GPS said it was, which is between them, on the wrong one, or on the pavement. That is not a bug in the positions: Helsinki's tram tracks run as a pair some 5–8 m apart, and street-level GPS error is several times that, so the coordinate simply cannot say which of the two rails a tram is on. The feed can. HFP reports the journey's direction as `dir`, Digitransit reports which direction each pattern polyline belongs to, and the vehicle is now snapped within its own direction's polylines alone. Where the feed omits the direction, the tram's heading picks the rail that runs the way it is going instead.
+  A junction needed one thing more. A line's own polyline can pass through the same few metres of street twice — a loop, a turn-back, two arms of a crossing — and position and heading both say the same thing about all of them. So the placement is now measured for continuity as well: a tram is expected to be found within its own speed's travel of where it was last placed, and a fix somewhere else on the route is charged 60 m before it can win. Only the arm that continues the run the tram is already making passes that test.
+  Being on the rails also means being carried along them: a snapped tram now slides *along* its track between two position reports, through curves a straight interpolation used to cut across. A tram that is genuinely off its route — a diversion, a depot run, a replacement working — is still drawn where it says it is; past 35 m from any of its own rails nothing is snapped at all.
+
+### Changed
+- **A tram bends at its joints**: a 27 m Artic tram was one rigid box, and a rigid 27 m box cannot take a street corner — it either drives its nose through the building on the outside of the curve or swings its tail through the one inside it. The body is three sections on articulation joints, and it is now drawn as three: each rigid section is placed at its own point on the rails at the bearing the rails have *there*, with the gangway stretched between the two frames it joins rather than laid out in one section's space. The running gear, doors, pillars and lamps ride with the section they belong to, which is both the truthful drawing and the cheap one — one path lookup per section per frame, not one per polygon. A vehicle with no track under it (a bus, or a tram off its route) is still drawn rigid, exactly as before. `scripts/verify-vehicle-3d.mjs` measures the difference in rendered pixels: through a right-angle corner the bent body spans 23.6 m against the rigid body's 28.8 m, occupies both legs of the corner, and stays in one piece.
+- **`lib/metroTracks` is now `lib/railTracks`**, because the geometry it holds is no longer the metro's alone. The metro's own snapping is unchanged — it keeps its 400 m reach, its pattern hysteresis and its refusal to read direction from movement — and the tram is given its own, much tighter, licence beside it: 35 m of reach, a 4 m switching margin narrower than the gap between the two rails, and the direction and continuity tests above.
+
+### Added
+- **`patterns` on `GET /api/v1/route/{shortName}`**: the same deduplicated polylines as `geometries`, each carrying the GTFS `direction_id` of the pattern it came from. `geometries` is unchanged, so the route ribbons — which do not care which way a polyline runs — read exactly what they always did.
+
+---
+
 ## [v0.62.2] - 2026-09-06
 
 ### Fixed

@@ -237,6 +237,30 @@ export function sectionRing(
   return ringOf(lng, lat, hdg, pts);
 }
 
+/**
+ * A quad spanning two frames: the ends are measured in each frame's own space,
+ * so the shape stretches and skews to join them. This is what a gangway between
+ * two articulated sections has to be — on a bend the two ends it connects are
+ * neither parallel nor the same distance apart on the two sides, which is
+ * exactly the job the bellows does on the real vehicle.
+ */
+export function bridgeRing(
+  from: { lng: number; lat: number; hdg: number },
+  fromAlong: number,
+  to: { lng: number; lat: number; hdg: number },
+  toAlong: number,
+  halfWidth: number,
+): [number, number][] {
+  const ring: [number, number][] = [
+    offsetMeters(from.lng, from.lat, from.hdg, fromAlong, halfWidth),
+    offsetMeters(from.lng, from.lat, from.hdg, fromAlong, -halfWidth),
+    offsetMeters(to.lng, to.lat, to.hdg, toAlong, -halfWidth),
+    offsetMeters(to.lng, to.lat, to.hdg, toAlong, halfWidth),
+  ];
+  ring.push(ring[0]);
+  return ring;
+}
+
 /** An axis-aligned patch of the body: `along` and `across` spans in metres. */
 export function patchRing(
   lng: number,
@@ -253,6 +277,13 @@ export function patchRing(
   ]);
 }
 
+/**
+ * A frame on the vehicle's own path: where the point `along` metres ahead of
+ * its centre sits, and which way the path faces there. `lib/railTracks` builds
+ * one of these from the rails a vehicle is snapped to.
+ */
+export type BodySpine = (along: number) => { lng: number; lat: number; hdg: number };
+
 export interface VehicleState {
   veh: string;
   lng: number;
@@ -266,6 +297,19 @@ export interface VehicleState {
   /** Animated opening fraction; omitted/non-finite values use doorsOpen. */
   doorProgress?: number;
   selected?: boolean;
+  /**
+   * The path the body follows, if it is known. An articulated vehicle is not
+   * one rigid box: a 27 m tram is three sections on joints that bend, and
+   * through a street corner the rails turn well inside that length. Given a
+   * spine, each section is placed at its own point on the path at the bearing
+   * the path has there — so the tram bends round the corner the way it does in
+   * the street, instead of cutting the nose through the building outside the
+   * curve or swinging the tail through the one inside it.
+   *
+   * Without one (a bus, or a vehicle not on its route) the body is drawn rigid
+   * about `lng`/`lat`/`hdg`, exactly as before.
+   */
+  spine?: BodySpine;
 }
 
 export type VehiclePart = 'body' | 'glass' | 'pillar' | 'doorway' | 'door' | 'cab' | 'roof'
@@ -308,8 +352,45 @@ export function vehicleExtrusions(v: VehicleState, detailed = true): ExtrusionFe
       properties: { veh: v.veh, part, color, base, top },
     });
   };
-  const section = (part: VehiclePart, s: BodySection, color: string, base: number, top: number, widen = 0) =>
-    push(part, sectionRing(v.lng, v.lat, v.hdg, s, widen), color, base, top);
+
+  // Where each rigid section sits. With a spine the sections are placed
+  // independently along the path, each at its own centre and its own bearing —
+  // that is the articulation. Without one they all share the vehicle's single
+  // frame, which is the rigid body drawn before and is still what a bus is.
+  //
+  // The granularity is the section, not the polygon: a section *is* rigid, so
+  // its windows, doors, bogies and lamps ride with it rather than being bent
+  // individually. That is both the truthful drawing and the cheap one — one
+  // path lookup per section per frame, not one per polygon.
+  const frames = model.sections.map((s) => {
+    if (!v.spine) return { lng: v.lng, lat: v.lat, hdg: v.hdg, pivot: 0 };
+    const pivot = (s.front + s.back) / 2;
+    return { ...v.spine(pivot), pivot };
+  });
+
+  // The frame a feature at `along` metres from the centre rides on: its own
+  // section's, or the nearest section's for anything in the gap between two
+  // (a gangway, a joint bogie).
+  const frameAt = (along: number) => {
+    let best = frames[0];
+    let bestGap = Infinity;
+    model.sections.forEach((s, index) => {
+      const gap = along > s.front ? along - s.front : along < s.back ? s.back - along : 0;
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = frames[index];
+      }
+    });
+    return best;
+  };
+
+  const section = (part: VehiclePart, s: BodySection, color: string, base: number, top: number, widen = 0) => {
+    const frame = frameAt((s.front + s.back) / 2);
+    // Measured from the frame's own origin, so a section drawn on its own
+    // anchor keeps its true length along the path.
+    const local = { ...s, front: s.front - frame.pivot, back: s.back - frame.pivot };
+    push(part, sectionRing(frame.lng, frame.lat, frame.hdg, local, widen), color, base, top);
+  };
   const patch = (
     part: VehiclePart,
     along: [number, number],
@@ -317,7 +398,15 @@ export function vehicleExtrusions(v: VehicleState, detailed = true): ExtrusionFe
     color: string,
     base: number,
     top: number,
-  ) => push(part, patchRing(v.lng, v.lat, v.hdg, along, across), color, base, top);
+  ) => {
+    const frame = frameAt((along[0] + along[1]) / 2);
+    push(
+      part,
+      patchRing(frame.lng, frame.lat, frame.hdg,
+        [along[0] - frame.pivot, along[1] - frame.pivot], across),
+      color, base, top,
+    );
+  };
 
   const halfWidth = model.sections[0].halfWidth;
   model.sections.forEach((s, index) => {
@@ -336,8 +425,21 @@ export function vehicleExtrusions(v: VehicleState, detailed = true): ExtrusionFe
     }
     if (index > 0) {
       const previous = model.sections[index - 1];
-      patch('gangway', [s.front - 0.08, previous.back + 0.08],
-        [-halfWidth * 0.82, halfWidth * 0.82], '#39414b', 0.8, model.height - 0.15);
+      // Drawn between the two sections' own frames rather than in either one's:
+      // articulated, the joint is where they stop being parallel, and a patch
+      // laid out in one section's space leaves the other end of it hanging in
+      // the air on the outside of a bend.
+      const ahead = frames[index - 1];
+      const behind = frames[index];
+      push(
+        'gangway',
+        bridgeRing(
+          ahead, previous.back + 0.08 - ahead.pivot,
+          behind, s.front - 0.08 - behind.pivot,
+          halfWidth * 0.82,
+        ),
+        '#39414b', 0.8, model.height - 0.15,
+      );
     }
   });
 

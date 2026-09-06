@@ -732,11 +732,28 @@ func formatSeconds(sec int) string {
 	return fmt.Sprintf("%02d:%02d", h, m)
 }
 
+// RoutePattern is one directional variant of a line: the polyline it runs
+// along, and which of the route's two directions it belongs to. The frontend
+// snaps vehicles onto these, and a tram's two directions run on their own two
+// sets of rails — so which direction a polyline belongs to is what decides
+// which of them a vehicle is placed on.
+type RoutePattern struct {
+	Points string `json:"points"`
+	// GTFS direction_id (0 or 1). HFP reports the same thing as `dir` "1"/"2".
+	DirectionID int `json:"directionId"`
+}
+
 type RouteDetailsResponse struct {
-	ShortName  string   `json:"shortName"`
-	Color      string   `json:"color"`
+	ShortName string `json:"shortName"`
+	Color     string `json:"color"`
+	// Every pattern polyline, deduplicated, in the order Digitransit returned
+	// them. Kept for the route ribbons the map draws, which do not care which
+	// direction a polyline belongs to.
 	Geometries []string `json:"geometries"`
-	Stops      []string `json:"stops"`
+	// The same polylines carrying their direction. Drawn from the same patterns
+	// as `geometries`, so the two stay in step.
+	Patterns []RoutePattern `json:"patterns"`
+	Stops    []string       `json:"stops"`
 }
 
 type rawRouteResponse struct {
@@ -746,6 +763,7 @@ type rawRouteResponse struct {
 		Mode      string `json:"mode"`
 		Color     string `json:"color"`
 		Patterns  []struct {
+			DirectionId     int `json:"directionId"`
 			PatternGeometry struct {
 				Points string `json:"points"`
 			} `json:"patternGeometry"`
@@ -790,6 +808,7 @@ func (h *Handlers) RouteDetails(w http.ResponseWriter, r *http.Request) {
 					mode
 					color
 					patterns {
+						directionId
 						patternGeometry {
 							points
 						}
@@ -820,6 +839,7 @@ func (h *Handlers) RouteDetails(w http.ResponseWriter, r *http.Request) {
 			Mode      string `json:"mode"`
 			Color     string `json:"color"`
 			Patterns  []struct {
+				DirectionId     int `json:"directionId"`
 				PatternGeometry struct {
 					Points string `json:"points"`
 				} `json:"patternGeometry"`
@@ -842,6 +862,7 @@ func (h *Handlers) RouteDetails(w http.ResponseWriter, r *http.Request) {
 
 		// Extract unique geometries and stops
 		geometries := make([]string, 0, len(matchedRoute.Patterns))
+		patterns := make([]RoutePattern, 0, len(matchedRoute.Patterns))
 		seenGeom := make(map[string]bool)
 		stops := make([]string, 0)
 		seenStops := make(map[string]bool)
@@ -850,6 +871,7 @@ func (h *Handlers) RouteDetails(w http.ResponseWriter, r *http.Request) {
 			if pts != "" && !seenGeom[pts] {
 				seenGeom[pts] = true
 				geometries = append(geometries, pts)
+				patterns = append(patterns, RoutePattern{Points: pts, DirectionID: pattern.DirectionId})
 			}
 			for _, stop := range pattern.Stops {
 				id := stop.GtfsId
@@ -864,6 +886,7 @@ func (h *Handlers) RouteDetails(w http.ResponseWriter, r *http.Request) {
 			ShortName:  matchedRoute.ShortName,
 			Color:      matchedRoute.Color,
 			Geometries: geometries,
+			Patterns:   patterns,
 			Stops:      stops,
 		}
 
