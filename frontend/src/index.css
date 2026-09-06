@@ -117,6 +117,29 @@ body {
   color: var(--text-primary);
 }
 
+/* The basemap credit. Only the satellite mode carries one -- MML's orthophotos
+   are open data under CC BY, and the credit is the licence's one condition.
+   Tucked under the view chips in the same top-left corner as the switch that
+   turns the imagery on. */
+.map-attribution {
+  position: absolute;
+  top: 58px;
+  left: 16px;
+  z-index: 103;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  background: var(--bg-panel);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border-button);
+  color: var(--text-secondary);
+  font-size: 10px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0.72;
+}
+
 /* Glassmorphic Panel Base styling */
 .glass-panel {
   position: absolute;

@@ -35,7 +35,7 @@ A premium, high-performance web application mapping **all active Helsinki trams,
 * **Interactive Route Network & Highlights**: Toggle the background route network on the map. Click a stop to see all routes serving it highlighted, or click a vehicle to highlight its specific path plus a gold segment running to its next stop.
 * **Live City Bike Station Capacity**: City Bike stations render as a bicycle in a disc, ringed by an availability gauge whose arc and colour show how full the station is — grey empty, red almost gone, amber middling, green plenty — with the bikes-available count beneath it. Click one to fetch full availability (bikes available vs. empty spaces) from Digitransit.
 * **3D City Bike Racks**: From zoom 16.2, in 3D view, a station becomes the rack it actually is: an apron, a dock post per dock, a yellow bike standing in every dock that has one, and the payment terminal at the end — all at real metre scale, alongside the 3D vehicles and stop shelters. The flat gauge fades out as the rack arrives, so availability stops being a number and becomes something you can simply see.
-* **Light / Dark Themes & 3D Buildings**: Switch between the Digitransit HSL light basemap and a dark basemap, and toggle pitched 3D building extrusions. Both preferences persist in `localStorage`.
+* **Light / Dark / Satellite Basemaps & 3D Buildings**: Switch between the Digitransit HSL light basemap, a dark basemap, and the National Land Survey's aerial orthophotos (`MML_API_KEY` required — without it the satellite chip is not shown), and toggle pitched 3D building extrusions. Both preferences persist in `localStorage`.
 * **Detailed 3D Vehicles**: Distinct tram, bus, metro and commuter-train bodies have articulated sections, windows, running gear and roof equipment. A vehicle running on rails **bends at its joints**: each rigid section is placed at its own point on the track at the bearing the rails have there, with the gangway stretching between them, so a 27 m tram takes a street corner instead of ploughing its nose through the building outside the curve. Models fade in between zoom 13 and 14 (previously 15–16), retaining real-world dimensions. The vehicle button in the map-view controls enables **Always show 3D vehicles**, including on the flat map, independently of map tilt; this preference persists. Below zoom 13, icons remain visible for readability.
 * **Live Doors & Lights**: At close zooms, door leaves slide open and closed from reported `drst` changes, with a locally animated transition. Head/tail lamps mark direction; bus/tram rear lamps brighten while braking, and an amber roof indicator shows inferred braking for every mode. Braking is inferred from acceleration, standstill or open doors—not a directly reported lamp signal. Missing door telemetry leaves doors closed; rail door-side information is unavailable, so both sides are illustrated.
 * **Self-Location (GPS)**: A geolocate control tracks and centres on your own position, styled to match the glassmorphic theme.
@@ -82,7 +82,7 @@ All endpoints are served by the Go backend under `/api/v1`. See [docs/API_REFERE
 |---|---|---|
 | `GET` | `/api/v1/health` | Liveness plus `mqtt_connected`, `redis_connected`, `active_vehicles`, `uptime_seconds` |
 | `GET` | `/api/v1/version` | Build `version`, `build_date`, and `git_sha` (injected via ldflags) |
-| `GET` | `/api/v1/config` | Digitransit map subscription key for the frontend tile requests |
+| `GET` | `/api/v1/config` | Browser-side map keys: the Digitransit map subscription key, and the National Land Survey key for the satellite basemap (empty when unconfigured) |
 | `GET` | `/api/v1/alerts` | Active HSL service disruptions |
 | `GET` | `/api/v1/trip/{tripId}` | Trip route, headsign, stop timeline, and geometry |
 | `GET` | `/api/v1/stop/{stopId}` | Stop details and upcoming departures (`?departures=N`) |
@@ -151,6 +151,7 @@ Set the following in `.env` or in your environment. The backend auto-loads a `.e
 |---|---|---|
 | `DIGITRANSIT_API_KEY` | Subscription key for the Digitransit GraphQL and Map APIs | *(Required)* |
 | `DIGITRANSIT_MAP_API_KEY` | Optional separate key served to browsers for map tiles (`/api/v1/config`). Use a dedicated rate-limited key here so the server-side routing key stays private | Falls back to `DIGITRANSIT_API_KEY` |
+| `MML_API_KEY` | Key for the National Land Survey's open map image service, served to browsers alongside the map key. It signs the orthophoto tiles behind the map's satellite view; without it that view is not offered. Free from [MML's OmaTili](https://www.maanmittauslaitos.fi/rajapinnat/api-avaimen-ohje) | *(Optional)* |
 | `REDIS_URL` | Redis cache connection string | `redis://ratikka-cache:6379` |
 | `MQTT_BROKER` | HSL public MQTT endpoint | `tls://mqtt.hsl.fi:8883` |
 | `PORT` | Go backend server port | `8080` |

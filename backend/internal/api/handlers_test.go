@@ -951,3 +951,50 @@ func TestStopServiceDate(t *testing.T) {
 		}
 	}
 }
+
+func TestHandlers_Config(t *testing.T) {
+	handlers := NewHandlers(cache.NewMemoryCache(), NewGraphQLClient(""), &mockMqttWorker{})
+
+	t.Run("serves the configured keys", func(t *testing.T) {
+		t.Setenv("DIGITRANSIT_MAP_API_KEY", "map-key")
+		t.Setenv("DIGITRANSIT_API_KEY", "routing-key")
+		t.Setenv("MML_API_KEY", "mml-key")
+
+		resp := configResponse(t, handlers)
+		if resp.DigitransitMapKey != "map-key" {
+			t.Errorf("expected the dedicated map key, got %q", resp.DigitransitMapKey)
+		}
+		if resp.MMLApiKey != "mml-key" {
+			t.Errorf("expected the MML key, got %q", resp.MMLApiKey)
+		}
+	})
+
+	// The orthophoto basemap is optional; without a key the frontend drops the
+	// satellite mode rather than requesting tiles that come back 401.
+	t.Run("leaves the MML key empty when none is set", func(t *testing.T) {
+		t.Setenv("DIGITRANSIT_API_KEY", "routing-key")
+		t.Setenv("MML_API_KEY", "")
+
+		resp := configResponse(t, handlers)
+		if resp.DigitransitMapKey != "routing-key" {
+			t.Errorf("expected the fallback routing key, got %q", resp.DigitransitMapKey)
+		}
+		if resp.MMLApiKey != "" {
+			t.Errorf("expected no MML key, got %q", resp.MMLApiKey)
+		}
+	})
+}
+
+func configResponse(t *testing.T, handlers *Handlers) ConfigResponse {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	handlers.Config(rr, httptest.NewRequest("GET", "/api/v1/config", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	var resp ConfigResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	return resp
+}

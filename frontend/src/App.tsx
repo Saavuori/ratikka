@@ -17,7 +17,8 @@ import { ViewToggles } from './components/ViewToggles';
 import { BottomNav, type MobileTab } from './components/BottomNav';
 import { JourneySearch, type JourneySelection } from './components/JourneySearch';
 import { DeparturesPanel } from './components/DeparturesPanel';
-import { fetchRouteDetails, fetchAlerts, fetchTripDetails, fetchStopsArrivals } from './lib/api';
+import { fetchRouteDetails, fetchAlerts, fetchTripDetails, fetchStopsArrivals, fetchMapConfig } from './lib/api';
+import type { MapTheme } from './lib/stopPlatforms';
 import { readStorage, writeStorage } from './lib/storage';
 import { areTripsEquivalent } from './lib/trip';
 import { findJourneyVehicle, journeyVehicleModes } from './lib/journeyVehicles';
@@ -117,9 +118,22 @@ function App() {
   }, []);
 
   // Map settings states with localStorage persistence
-  const [mapTheme, setMapTheme] = useState<'light' | 'dark'>(() => {
-    return readStorage('mapTheme') === 'dark' ? 'dark' : 'light';
+  const [mapTheme, setMapTheme] = useState<MapTheme>(() => {
+    const stored = readStorage('mapTheme');
+    return stored === 'dark' || stored === 'satellite' ? stored : 'light';
   });
+  // The satellite basemap needs a National Land Survey key, which the
+  // deployment may not have. Without one the mode is not offered at all --
+  // better than a chip that switches the map to a grid of 401s. A stored
+  // preference for it is honoured only once the key is known to exist.
+  const [satelliteAvailable, setSatelliteAvailable] = useState(false);
+  useEffect(() => {
+    fetchMapConfig().then((config) => {
+      const available = Boolean(config.mml_api_key);
+      setSatelliteAvailable(available);
+      if (!available) setMapTheme((theme) => (theme === 'satellite' ? 'dark' : theme));
+    });
+  }, []);
   const [is3D, setIs3D] = useState<boolean>(() => {
     return readStorage('is3D') === 'true';
   });
@@ -169,7 +183,9 @@ function App() {
 
   useEffect(() => {
     writeStorage('mapTheme', mapTheme);
-    document.documentElement.setAttribute('data-theme', mapTheme);
+    // The app's own chrome has two skins, not three: over the orthophotos the
+    // dark one is the readable pairing.
+    document.documentElement.setAttribute('data-theme', mapTheme === 'light' ? 'light' : 'dark');
   }, [mapTheme]);
 
   useEffect(() => {
@@ -858,6 +874,7 @@ function App() {
         hidden={mobileSheetOpen}
         mapTheme={mapTheme}
         setMapTheme={setMapTheme}
+        satelliteAvailable={satelliteAvailable}
         is3D={is3D}
         setIs3D={setIs3D}
         always3DVehicles={always3DVehicles}

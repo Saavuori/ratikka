@@ -83,6 +83,15 @@ import {
   platformExtrusionPaint,
   platformSourceSpec,
 } from '../lib/stopPlatforms';
+import type { MapTheme } from '../lib/stopPlatforms';
+import {
+  SATELLITE_ATTRIBUTION,
+  SATELLITE_LAYER_ID,
+  SATELLITE_SOURCE_ID,
+  satelliteSourceSpec,
+  firstLabelLayerId,
+  nonLabelLayersAboveSatellite,
+} from '../lib/satelliteBasemap';
 import {
   stopFurnitureCollection,
   longestEdgeBearing,
@@ -123,12 +132,23 @@ import {
 import type { BikeStationState } from '../lib/bikeStationModels';
 import { advanceDoors, isVehicleBraking, vehicles3DEnabled } from '../lib/vehicleAnimation';
 import type { DoorAnimation } from '../lib/vehicleAnimation';
-import { fetchBikeStations } from '../lib/api';
+import { fetchBikeStations, fetchMapConfig } from '../lib/api';
 import type { BikeStationsFeatureCollection, TrafficLightFeature } from '../types';
 import { useTrafficLights } from '../hooks/useTrafficLights';
 import { useRoutePatterns } from '../hooks/useRoutePatterns';
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
+
+/** Carto's dark-matter: the dark theme's basemap, and the labels satellite keeps. */
+const DARK_STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+
+/**
+ * Which vector style a map mode loads. Satellite is the dark style too — the
+ * orthophoto is a raster layer added under its labels once it has loaded (see
+ * `ensureSatelliteBasemap`), not a style of its own.
+ */
+const basemapStyleUrl = (theme: MapTheme): string =>
+  theme === 'light' ? `${window.location.origin}/style.json` : DARK_STYLE_URL;
 
 // The gold route segment drawn from a selected vehicle to its next stop relies
 // on closest-point matching against the trip polyline, which produced unreliable
@@ -179,7 +199,7 @@ interface MapProps {
   // Line number (`desi`) of the currently selected vehicle, if any. Its route
   // path is drawn emphasised while every other highlighted route is dimmed.
   selectedLine?: string | null;
-  mapTheme: 'light' | 'dark';
+  mapTheme: MapTheme;
   is3D: boolean;
   always3DVehicles: boolean;
   isFollowing: boolean;
@@ -410,16 +430,17 @@ export const Map: React.FC<MapProps> = ({
   // map would just be a blank rectangle on a device that cannot provide it.
   const [webglFailed, setWebglFailed] = React.useState(false);
 
+  // The MML key only signs orthophoto tile requests, so it is kept in a ref:
+  // the satellite layer is built inside a `style.load` handler bound once, and
+  // the key is known before the map is created either way (the Digitransit key
+  // it arrives with is what gates that).
+  const mmlKeyRef = useRef<string>('');
+
   useEffect(() => {
-    fetch('/api/v1/config')
-      .then((res) => res.json())
-      .then((data) => {
-        setApiKey(data.digitransit_map_key || '');
-      })
-      .catch((err) => {
-        console.error('Failed to fetch map key config:', err);
-        setApiKey('');
-      });
+    fetchMapConfig().then((data) => {
+      mmlKeyRef.current = data.mml_api_key || '';
+      setApiKey(data.digitransit_map_key || '');
+    });
   }, []);
 
   // References to keep state fresh in map event handlers and tick loop without closure issues
@@ -459,7 +480,7 @@ export const Map: React.FC<MapProps> = ({
     boarding: boolean;
     coords: [number, number] | null;
   }>({ key: '', stopId: null, boarding: false, coords: null });
-  const mapThemeRef = useRef<'light' | 'dark'>(mapTheme);
+  const mapThemeRef = useRef<MapTheme>(mapTheme);
   const isFollowingRef = useRef<boolean>(isFollowing);
   const isInteractingRef = useRef<boolean>(false);
   // Latest live city-bike station GeoJSON, refreshed on an interval. Kept in a
@@ -861,7 +882,7 @@ export const Map: React.FC<MapProps> = ({
   };
 
   // Helper to toggle 3D tilt and buildings extrusion
-  const update3DMode = (map: maplibregl.Map, active: boolean, theme: 'light' | 'dark') => {
+  const update3DMode = (map: maplibregl.Map, active: boolean, theme: MapTheme) => {
     // 1. Set pitch
     map.easeTo({
       pitch: active ? 45 : 0,
@@ -888,7 +909,9 @@ export const Map: React.FC<MapProps> = ({
     // 3. Toggle dark-mode programmatic 3D buildings
     const custom3DId = 'custom-3d-buildings';
     if (active) {
-      if (theme === 'dark') {
+      // Satellite rides on the same dark vector style, so it needs the same
+      // programmatic buildings -- neither style ships `building_3d`.
+      if (theme !== 'light') {
         if (!map.getLayer(custom3DId)) {
           if (map.getSource('carto')) {
             map.addLayer({
@@ -924,10 +947,36 @@ export const Map: React.FC<MapProps> = ({
     }
   };
 
+  // The orthophoto basemap, slid under the dark style's labels (see
+  // lib/satelliteBasemap). Every other mode is a no-op here; the style itself
+  // is recreated on a theme change, so nothing has to be torn down.
+  const ensureSatelliteBasemap = (map: maplibregl.Map, theme: MapTheme) => {
+    if (theme !== 'satellite') return;
+    if (!map.getSource(SATELLITE_SOURCE_ID)) {
+      map.addSource(
+        SATELLITE_SOURCE_ID,
+        satelliteSourceSpec(mmlKeyRef.current) as maplibregl.RasterSourceSpecification,
+      );
+    }
+    const layers = map.getStyle()?.layers;
+    if (!map.getLayer(SATELLITE_LAYER_ID)) {
+      map.addLayer(
+        { id: SATELLITE_LAYER_ID, type: 'raster', source: SATELLITE_SOURCE_ID },
+        firstLabelLayerId(layers),
+      );
+    }
+    // Whatever the vector style would still draw over the photo -- late road
+    // casings, building fills -- is the map's guess at what the photo shows.
+    nonLabelLayersAboveSatellite(layers).forEach((layerId) => {
+      if (layerId === SATELLITE_LAYER_ID) return;
+      if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', 'none');
+    });
+  };
+
   // Stop platforms: the OSM footprint the basemap already carries, restyled as
   // a paved island with a kerb (see lib/stopPlatforms). Added under the route
   // ribbons so a highlighted line still reads across the platform it serves.
-  const ensureStopPlatformLayers = (map: maplibregl.Map, theme: 'light' | 'dark') => {
+  const ensureStopPlatformLayers = (map: maplibregl.Map, theme: MapTheme) => {
     const spec = platformSourceSpec(theme);
     if (spec.add && !map.getSource(spec.add.id)) {
       // The dark basemap is Carto's, which carries no guaranteed platform
@@ -1065,7 +1114,7 @@ export const Map: React.FC<MapProps> = ({
     source.setData({ type: 'FeatureCollection', features });
   };
 
-  const updateStopFurniture = (map: maplibregl.Map, theme: 'light' | 'dark') => {
+  const updateStopFurniture = (map: maplibregl.Map, theme: MapTheme) => {
     const source = map.getSource(STOP_FURNITURE_SOURCE) as maplibregl.GeoJSONSource | undefined;
     if (!source) return;
     const empty = { type: 'FeatureCollection' as const, features: [] };
@@ -1186,7 +1235,7 @@ export const Map: React.FC<MapProps> = ({
   // gauge layer is drawing into racks of real-metre boxes. Same bookkeeping —
   // built from what is on screen, capped, and skipped entirely when nothing
   // that matters has moved.
-  const updateBikeFurniture = (map: maplibregl.Map, theme: 'light' | 'dark') => {
+  const updateBikeFurniture = (map: maplibregl.Map, theme: MapTheme) => {
     const source = map.getSource(BIKE_STATION_SOURCE) as maplibregl.GeoJSONSource | undefined;
     if (!source) return;
     const empty = { type: 'FeatureCollection' as const, features: [] };
@@ -2231,6 +2280,10 @@ export const Map: React.FC<MapProps> = ({
   const setupCustomMapElements = (map: maplibregl.Map) => {
     if (!apiKey) return;
 
+    // 0. The photo basemap, before anything else is added: it goes *under* the
+    //    base style's labels, and everything below is added on top of both.
+    ensureSatelliteBasemap(map, mapThemeRef.current);
+
     // 1. Directional vehicle-body markers. Instead of a bare dot + arrow, each
     //    vehicle is a little top-down carriage: a rounded body with a windshield
     //    and a nose nub so heading reads at a glance (the icon rotates to `hdg`).
@@ -2643,7 +2696,7 @@ export const Map: React.FC<MapProps> = ({
           'line-sort-key': ROUTE_LINE_SORT_KEY,
         },
         paint: {
-          'line-color': mapThemeRef.current === 'dark' ? '#0b1220' : '#ffffff',
+          'line-color': mapThemeRef.current === 'light' ? '#ffffff' : '#0b1220',
           'line-width': ROUTE_CASING_WIDTH,
           'line-offset': ROUTE_LINE_OFFSET,
           'line-opacity': ROUTE_CASING_OPACITY,
@@ -2893,8 +2946,8 @@ export const Map: React.FC<MapProps> = ({
           'text-max-width': 9,
         },
         paint: {
-          'text-color': mapThemeRef.current === 'dark' ? '#e5e7eb' : '#1f2937',
-          'text-halo-color': mapThemeRef.current === 'dark' ? 'rgba(11,18,32,0.9)' : 'rgba(255,255,255,0.9)',
+          'text-color': mapThemeRef.current === 'light' ? '#1f2937' : '#e5e7eb',
+          'text-halo-color': mapThemeRef.current === 'light' ? 'rgba(255,255,255,0.9)' : 'rgba(11,18,32,0.9)',
           'text-halo-width': 1.4,
         }
       }, 'trams-circles');
@@ -2928,7 +2981,7 @@ export const Map: React.FC<MapProps> = ({
         },
         paint: {
           'text-color': ['get', 'color'],
-          'text-halo-color': mapThemeRef.current === 'dark' ? 'rgba(11,18,32,0.92)' : 'rgba(255,255,255,0.92)',
+          'text-halo-color': mapThemeRef.current === 'light' ? 'rgba(255,255,255,0.92)' : 'rgba(11,18,32,0.92)',
           'text-halo-width': 1.6,
         },
       }, 'trams-circles');
@@ -3710,10 +3763,7 @@ export const Map: React.FC<MapProps> = ({
     if (apiKey === null) return;
     if (!mapContainerRef.current) return;
 
-    const initialTheme = mapThemeRef.current;
-    const initialStyleUrl = initialTheme === 'light'
-      ? `${window.location.origin}/style.json`
-      : 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+    const initialStyleUrl = basemapStyleUrl(mapThemeRef.current);
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
@@ -3834,10 +3884,7 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const styleUrl = mapTheme === 'light'
-      ? `${window.location.origin}/style.json`
-      : 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
-    map.setStyle(styleUrl);
+    map.setStyle(basemapStyleUrl(mapTheme));
   }, [mapTheme]);
 
   // Poll live city-bike availability and feed it into the 'citybike' source.
@@ -4221,6 +4268,10 @@ export const Map: React.FC<MapProps> = ({
   return (
     <div className="map-wrapper">
       <div ref={mapContainerRef} className="map-container" />
+      {/* The orthophotos are open data, and open data comes with a credit. */}
+      {mapTheme === 'satellite' && (
+        <div className="map-attribution">{SATELLITE_ATTRIBUTION}</div>
+      )}
       {webglFailed && (
         <div className="map-unsupported" role="alert">
           <p>This map needs WebGL2, which this browser or device does not support.</p>
