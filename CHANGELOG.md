@@ -2,10 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.60.1] - 2026-09-06
+## [v0.61.1] - 2026-09-06
 
 ### Fixed
 - **Stops stay visible when you zoom out**: zoom back from street level and the stops vanished while the city-bike gauges stayed put, which made it look as though the map only knew about bikes. The stops were there the whole time — as dots of about one pixel. They inherit the HSL vector style's own radius ramp, which grows a stop from 1 px at zoom 12 to 24 px at zoom 22, but the discs are only ever drawn between zoom 13 and 15.5, where the sign boards take over. Almost the entire ramp sits above the band it is used in, so every disc came out at the very bottom of it. The ramp is now scoped to that band (3.2 px at zoom 13 rising to 5 px, stations a size up), the discs carry their own thin white ring for contrast now that the style's casing layers are switched off, and the threshold at which they appear is pinned to the same constant as the city-bike gauges so the two kinds of marker keep arriving together.
+
+---
+
+## [v0.61.0] - 2026-09-06
+
+### Changed
+- **City-bike stations look like city-bike stations**: a station was a circle with a number in it. Correct, and it said "data point" — the one thing on a map full of trams, buses and shelters that never said what it was. It is now a bicycle: the availability gauge is kept, because how full a station is is the reason to look at it at all, but the ring is drawn around a bicycle rather than around a numeral, and the count moves underneath where it stays readable as the marker shrinks. The scarcity colours are unchanged — grey when the last bike has gone, red when one more rider empties it, amber in the middle, green when there is no question.
+
+### Added
+- **City-bike racks in 3D**: zoom past 16.2 in 3D view and the marker hands over to the station itself — an apron, a dock post for every dock, a yellow bike standing in every dock that has one, and the payment terminal at the end, built from the same `fill-extrusion` boxes in ground metres as the 3D vehicles and the stop shelters, so a station beside a tram stop belongs to the same scene. Because a dock is drawn per dock and a bike per bike, the number the gauge summarises is, up close, simply the thing you see: a full rack looks full and an empty one looks empty. The rack takes its orientation from the route line running past it, turns gold when the station is selected, and clicking it opens the same panel its marker does.
+- **A sixth map verification script** (`scripts/verify-bike-stations.mjs`): the marker is an SVG rasterised through an `Image`, which draws nothing at all when it is malformed, and the rack is geometry in metres, which is still a row of boxes at the wrong size or heading. Eighteen checks measure the rendered pixels — every bucket's art decodes and paints, a fuller station paints a longer arc, the apron matches its modelled length, the rack turns with its bearing and stands above its footprint, nothing is extruded below the fade-in zoom, a fuller rack shows more bikes and an empty one none, and the selection gold reaches the screen.
 
 ---
 

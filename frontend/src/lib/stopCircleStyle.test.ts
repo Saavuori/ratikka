@@ -9,8 +9,8 @@ import {
   STOP_CIRCLE_MIN_ZOOM,
   STATION_CIRCLE_MIN_ZOOM,
   STOP_CIRCLE_FADE_ZOOM,
-  BIKE_STATION_MIN_ZOOM,
 } from './stopCircleStyle';
+import { BIKE_STATION_MIN_ZOOM } from './bikeStationModels';
 
 const compile = (
   expression: unknown,

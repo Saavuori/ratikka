@@ -93,7 +93,6 @@ import {
 } from '../lib/stopModels';
 import type { StopFurnitureState } from '../lib/stopModels';
 import {
-  BIKE_STATION_MIN_ZOOM,
   STOP_CIRCLE_MIN_ZOOM,
   STATION_CIRCLE_MIN_ZOOM,
   STOP_CIRCLE_FADE_ZOOM,
@@ -105,6 +104,20 @@ import {
   STOP_CIRCLE_LAYERS,
   STATION_CIRCLE_LAYERS,
 } from '../lib/stopCircleStyle';
+import {
+  BIKE_STATION_MIN_ZOOM,
+  BIKE_GAUGE_BUCKETS,
+  BIKE_GAUGE_ICON_SIZE,
+  bikeGaugeIconSvg,
+  bikeStationCollection,
+  BIKE_3D_MIN_ZOOM,
+  BIKE_3D_FADE_IN,
+  BIKE_ICON_FADE_OUT,
+  BIKE_STATION_LIMIT,
+  BIKE_STATION_SOURCE,
+  BIKE_STATION_LAYER,
+} from '../lib/bikeStationModels';
+import type { BikeStationState } from '../lib/bikeStationModels';
 import { advanceDoors, isVehicleBraking, vehicles3DEnabled } from '../lib/vehicleAnimation';
 import type { DoorAnimation } from '../lib/vehicleAnimation';
 import { fetchBikeStations } from '../lib/api';
@@ -413,6 +426,13 @@ export const Map: React.FC<MapProps> = ({
   // ref so a theme/style reload can re-seed the recreated source without
   // waiting for the next fetch.
   const bikeStationsDataRef = useRef<BikeStationsFeatureCollection | null>(null);
+  // The 3D racks, tracked the same way as the stop furniture: drawn-or-not, and
+  // a signature of what they were last built for.
+  const bikeFurnitureDrawnRef = useRef<boolean>(false);
+  const bikeFurnitureSigRef = useRef<string>('');
+  // Bumped on every availability refresh, so the rack signature notices new
+  // counts arriving under an unmoved view.
+  const bikeAvailabilityStampRef = useRef<number>(0);
   // Latest signalized-junction features (static reference data, shared with
   // the tram popup via useTrafficLights). Kept in a ref for the same reason
   // as bikeStationsDataRef: re-seed the source immediately after a
@@ -1102,6 +1122,90 @@ export const Map: React.FC<MapProps> = ({
     stopFurnitureDrawnRef.current = true;
   };
 
+  // The city-bike counterpart to `updateStopFurniture`: turn the stations the
+  // gauge layer is drawing into racks of real-metre boxes. Same bookkeeping —
+  // built from what is on screen, capped, and skipped entirely when nothing
+  // that matters has moved.
+  const updateBikeFurniture = (map: maplibregl.Map, theme: 'light' | 'dark') => {
+    const source = map.getSource(BIKE_STATION_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    if (!source) return;
+    const empty = { type: 'FeatureCollection' as const, features: [] };
+
+    const active =
+      vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current) &&
+      map.getZoom() >= BIKE_3D_MIN_ZOOM &&
+      map.getLayer('citybike_gauge') !== undefined;
+    if (!active) {
+      if (bikeFurnitureDrawnRef.current) {
+        source.setData(empty);
+        bikeFurnitureDrawnRef.current = false;
+        bikeFurnitureSigRef.current = '';
+      }
+      return;
+    }
+
+    const centre = map.getCenter();
+    const signature = [
+      theme,
+      centre.lng.toFixed(4),
+      centre.lat.toFixed(4),
+      map.getZoom().toFixed(2),
+      selectedBikeStationIdRef.current ?? '',
+      // Availability is what the rack is made of, so a refresh has to rebuild
+      // it even when the view has not moved.
+      String(bikeStationsDataRef.current?.features.length ?? 0),
+      bikeAvailabilityStampRef.current,
+    ].join('|');
+    if (signature === bikeFurnitureSigRef.current) return;
+    bikeFurnitureSigRef.current = signature;
+
+    // Route lines give the rack its orientation where one runs past: stations
+    // sit along streets, and the tram or bus line in the street is the only
+    // thing on this map that knows which way the street goes.
+    const routeLines: [number, number][][] = [];
+    if (map.getLayer('route-lines-layer')) {
+      for (const feature of map.queryRenderedFeatures({ layers: ['route-lines-layer'] })) {
+        const geometry = feature.geometry;
+        if (geometry.type === 'LineString') {
+          routeLines.push(geometry.coordinates as [number, number][]);
+        } else if (geometry.type === 'MultiLineString') {
+          for (const line of geometry.coordinates) routeLines.push(line as [number, number][]);
+        }
+      }
+    }
+
+    const selectedId = selectedBikeStationIdRef.current ?? null;
+    const seen = new Set<string>();
+    const stations: Array<{ state: BikeStationState; distance: number }> = [];
+    for (const feature of map.queryRenderedFeatures({ layers: ['citybike_gauge'] })) {
+      if (feature.geometry.type !== 'Point') continue;
+      const properties = feature.properties ?? {};
+      const stationId = String(properties.stationId ?? properties.id ?? '');
+      if (!stationId || seen.has(stationId)) continue;
+      seen.add(stationId);
+      const [lng, lat] = feature.geometry.coordinates as [number, number];
+      stations.push({
+        state: {
+          stationId,
+          lng,
+          lat,
+          bikesAvailable: Number(properties.bikesAvailable ?? 0),
+          spacesAvailable: Number(properties.spacesAvailable ?? 0),
+          bearing: nearestLineBearing([lng, lat], routeLines, 40),
+          highlighted: selectedId !== null && stationId === selectedId,
+        },
+        distance: Math.hypot(lng - centre.lng, lat - centre.lat),
+      });
+    }
+
+    stations.sort((a, b) => a.distance - b.distance);
+    source.setData(bikeStationCollection(
+      stations.slice(0, BIKE_STATION_LIMIT).map((s) => s.state),
+      theme,
+    ));
+    bikeFurnitureDrawnRef.current = true;
+  };
+
   // New countdowns arrive every refresh and every second the clock ticks; the
   // set of stops they belong to changes only when the view moves, so this
   // repaints the text without re-querying anything.
@@ -1120,6 +1224,15 @@ export const Map: React.FC<MapProps> = ({
     // shelter without a tram beside it (or the reverse) reads as a mistake.
     if (map.getLayer(STOP_FURNITURE_LAYER)) {
       map.setLayoutProperty(STOP_FURNITURE_LAYER, 'visibility', active ? 'visible' : 'none');
+    }
+    // City-bike racks are furniture too, and the flat gauge only hands over to
+    // one when there is a rack under it to hand over to.
+    if (map.getLayer(BIKE_STATION_LAYER)) {
+      map.setLayoutProperty(BIKE_STATION_LAYER, 'visibility', active ? 'visible' : 'none');
+    }
+    if (map.getLayer('citybike_gauge')) {
+      map.setPaintProperty('citybike_gauge', 'icon-opacity',
+        (active ? BIKE_ICON_FADE_OUT : 1) as maplibregl.DataDrivenPropertyValueSpecification<number>);
     }
     if (map.getLayer('trams-body')) {
       map.setPaintProperty('trams-body', 'icon-opacity', (active ? VEHICLE_ICON_FADE_OUT : 1) as maplibregl.DataDrivenPropertyValueSpecification<number>);
@@ -1787,6 +1900,7 @@ export const Map: React.FC<MapProps> = ({
           });
         }
         updateStopFurniture(map, mapThemeRef.current);
+        updateBikeFurniture(map, mapThemeRef.current);
       }
       // The pulse itself, driven off the same clock as the vehicles so the two
       // beat together rather than drifting apart.
@@ -2747,40 +2861,20 @@ export const Map: React.FC<MapProps> = ({
       });
     }
 
-    // 13. Availability gauge images: a donut whose coloured arc shows how full
-    // the station is (bikes / total docks) and whose colour flags scarcity —
-    // grey empty, red almost gone, amber middling, green plenty. Rendered once
-    // per fill bucket and picked per-station via a data expression below, so the
-    // marker reads as an at-a-glance gauge rather than a bare number.
-    const gaugeBuckets: Array<{ name: string; fill: number; color: string }> = [
-      { name: 'bike-gauge-0', fill: 0, color: '#9ca3af' },   // no bikes left
-      { name: 'bike-gauge-1', fill: 0.2, color: '#ef4444' }, // critically low
-      { name: 'bike-gauge-2', fill: 0.4, color: '#fcbc19' }, // getting low
-      { name: 'bike-gauge-3', fill: 0.6, color: '#fcbc19' }, // moderate
-      { name: 'bike-gauge-4', fill: 0.8, color: '#20bf6b' }, // healthy
-      { name: 'bike-gauge-5', fill: 1, color: '#20bf6b' },   // plenty / full
-    ];
-    const gaugeR = 15;
-    const gaugeC = 2 * Math.PI * gaugeR;
-    for (const b of gaugeBuckets) {
-      if (map.hasImage(b.name)) continue;
-      const arc = b.fill > 0
-        ? `<circle cx="22" cy="22" r="${gaugeR}" fill="none" stroke="${b.color}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${b.fill * gaugeC} ${gaugeC}" transform="rotate(-90 22 22)"/>`
-        : '';
-      const gaugeSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44" fill="none">
-          <circle cx="22" cy="22" r="${gaugeR}" fill="none" stroke="#e5e7eb" stroke-width="5"/>
-          ${arc}
-          <circle cx="22" cy="22" r="11" fill="#ffffff" stroke="${b.color}" stroke-width="1.5"/>
-        </svg>
-      `;
-      const gaugeImg = new Image(44, 44);
-      gaugeImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(gaugeSvg);
-      // pixelRatio 2 keeps the donut crisp; the 44px art displays at ~22 CSS px.
+    // 13. Availability gauge images: a bicycle in a disc, ringed by an arc
+    // showing how full the station is and coloured for scarcity — grey empty,
+    // red almost gone, amber middling, green plenty. The bicycle is what makes
+    // the marker name itself; the ring is what makes it worth reading. Rendered
+    // once per fill bucket and picked per-station by the expression below.
+    for (const bucket of BIKE_GAUGE_BUCKETS) {
+      if (map.hasImage(bucket.name)) continue;
+      const gaugeImg = new Image(BIKE_GAUGE_ICON_SIZE, BIKE_GAUGE_ICON_SIZE);
+      gaugeImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(bikeGaugeIconSvg(bucket));
+      // pixelRatio 2 keeps the wheels crisp; the 48px art displays at ~24 CSS px.
       gaugeImg.onload = ((name: string, img: HTMLImageElement) => () => {
         if (mapRef.current !== map) return;
         if (!map.hasImage(name)) map.addImage(name, img, { pixelRatio: 2 });
-      })(b.name, gaugeImg);
+      })(bucket.name, gaugeImg);
     }
 
     // 14. Citybike gauge layer — one marker per station across all zooms, with
@@ -2817,27 +2911,33 @@ export const Map: React.FC<MapProps> = ({
             'interpolate',
             ['linear'],
             ['zoom'],
-            13, 0.45,
-            14, 0.6,
-            15.5, 0.85,
-            17, 1.05
+            13, 0.42,
+            14, 0.58,
+            15.5, 0.82,
+            17, 1.0
           ],
+          // The count sits under the marker now that the bicycle has the
+          // middle of the disc. Below the icon it also keeps its size as the
+          // icon shrinks, which is where a numeral inside the ring used to go.
           'text-field': ['to-string', ['coalesce', ['get', 'bikesAvailable'], 0]],
+          'text-anchor': 'top',
+          'text-offset': [0, 0.75],
           'text-font': ['Gotham Rounded Medium'],
           'text-size': [
             'interpolate',
             ['linear'],
             ['zoom'],
             13, 0,
-            13.8, 9,
-            16, 12.5
+            13.8, 10,
+            16, 13
           ],
           'text-allow-overlap': ['step', ['zoom'], false, 15, true],
         },
         paint: {
           'text-color': '#1e293b',
           'text-halo-color': '#ffffff',
-          'text-halo-width': 1.2,
+          'text-halo-width': 1.6,
+          'icon-opacity': BIKE_ICON_FADE_OUT as maplibregl.DataDrivenPropertyValueSpecification<number>,
           // Fade the numbers in so the wide overview stays clean.
           'text-opacity': [
             'interpolate',
@@ -2848,6 +2948,34 @@ export const Map: React.FC<MapProps> = ({
           ]
         }
       });
+    }
+
+    // 14b. City-bike racks in 3D. The gauge above summarises a station in one
+    // ring; this draws it — an apron, a dock per dock, a bike per bike and the
+    // terminal at the end — in the same real metres as the vehicles and the
+    // stop shelters, so up close the availability is simply the thing you see.
+    if (!map.getSource(BIKE_STATION_SOURCE)) {
+      map.addSource(BIKE_STATION_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    if (!map.getLayer(BIKE_STATION_LAYER)) {
+      map.addLayer({
+        id: BIKE_STATION_LAYER,
+        type: 'fill-extrusion',
+        source: BIKE_STATION_SOURCE,
+        minzoom: BIKE_3D_MIN_ZOOM,
+        layout: {
+          visibility: vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current) ? 'visible' : 'none',
+        },
+        paint: {
+          'fill-extrusion-color': ['get', 'color'],
+          'fill-extrusion-height': ['get', 'top'],
+          'fill-extrusion-base': ['get', 'base'],
+          'fill-extrusion-opacity': BIKE_3D_FADE_IN as maplibregl.PropertyValueSpecification<number>,
+        },
+      }, map.getLayer('vehicles-3d') ? 'vehicles-3d' : undefined);
     }
 
     // 15. Traffic-light junction markers (Helsinki open data, CC BY 4.0 — see
@@ -3261,6 +3389,8 @@ export const Map: React.FC<MapProps> = ({
     // last built for no longer exists.
     stopFurnitureSigRef.current = '';
     updateStopFurniture(map, mapThemeRef.current);
+    bikeFurnitureSigRef.current = '';
+    updateBikeFurniture(map, mapThemeRef.current);
     arrivalLabelSigRef.current = '';
     updateArrivalLabelStops(map);
 
@@ -3380,6 +3510,19 @@ export const Map: React.FC<MapProps> = ({
 
     map.on('click', 'citybike_gauge', handleBikeClick);
 
+    // Up close the rack is the station, so clicking one opens the same panel.
+    // The name lives in the availability payload rather than in the extrusion
+    // properties, which carry only what the geometry needs.
+    map.on('click', BIKE_STATION_LAYER, (e: maplibregl.MapLayerMouseEvent) => {
+      if (!e.features || e.features.length === 0) return;
+      const stationId = e.features[0].properties?.stationId;
+      if (!stationId) return;
+      const id = String(stationId);
+      const known = bikeStationsDataRef.current?.features
+        .find((f) => f.properties.stationId === id);
+      callbacksRef.current.onSelectBikeStation({ id, name: known?.properties.name || 'Bike Station' });
+    });
+
     // Mouse Hover Effects
     const setCursorPointer = () => (map.getCanvas().style.cursor = 'pointer');
     const resetCursor = () => (map.getCanvas().style.cursor = '');
@@ -3406,12 +3549,15 @@ export const Map: React.FC<MapProps> = ({
     map.on('mouseleave', STOP_FURNITURE_LAYER, resetCursor);
     map.on('mouseenter', 'citybike_gauge', setCursorPointer);
     map.on('mouseleave', 'citybike_gauge', resetCursor);
+    map.on('mouseenter', BIKE_STATION_LAYER, setCursorPointer);
+    map.on('mouseleave', BIKE_STATION_LAYER, resetCursor);
 
     // Stop furniture is rebuilt when the view settles, not per frame. `idle`
     // rather than `moveend` because the platform polygons it orients itself
     // from arrive with the tiles, which land after the move has ended.
     const rebuildFurniture = () => {
       updateStopFurniture(map, mapThemeRef.current);
+      updateBikeFurniture(map, mapThemeRef.current);
       updateArrivalLabelStops(map);
     };
     map.on('moveend', rebuildFurniture);
@@ -3570,6 +3716,9 @@ export const Map: React.FC<MapProps> = ({
         if (src && typeof src.setData === 'function') {
           src.setData(data as unknown as FeatureCollection);
         }
+        // New counts mean new racks, even if nobody has touched the map.
+        bikeAvailabilityStampRef.current += 1;
+        if (map && map.getStyle()) updateBikeFurniture(map, mapThemeRef.current);
       } catch (err) {
         // Transient upstream/network failures just leave the last good data in
         // place; the next tick retries.
@@ -3685,6 +3834,10 @@ export const Map: React.FC<MapProps> = ({
         ]);
       }
     }
+    // The selected station's rack is drawn in the highlight colour, so it has
+    // to be rebuilt when the selection moves.
+    bikeFurnitureSigRef.current = '';
+    updateBikeFurniture(map, mapThemeRef.current);
   }, [selectedBikeStationId]);
 
 
@@ -3751,6 +3904,8 @@ export const Map: React.FC<MapProps> = ({
       updateVehicle3DMode(map, vehicles3DEnabled(is3D, always3DVehicles));
       stopFurnitureSigRef.current = '';
       updateStopFurniture(map, mapTheme);
+      bikeFurnitureSigRef.current = '';
+      updateBikeFurniture(map, mapTheme);
     }
   }, [is3D, always3DVehicles, mapTheme]);
 

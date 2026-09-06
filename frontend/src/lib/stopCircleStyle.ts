@@ -14,12 +14,6 @@ import type { DataDrivenPropertyValueSpecification } from 'maplibre-gl';
 // band. The ramp below is scoped to the band the discs live in instead, so a
 // stop is a real dot the moment its layer switches on.
 
-// Where the city-bike gauge markers switch on. Not a stop-disc constant as
-// such, but the yardstick for one: the gauges are what a rider compares the
-// stops against on the way out of a zoomed-in view, so the two thresholds are
-// declared together and held level by a test.
-export const BIKE_STATION_MIN_ZOOM = 13;
-
 // Where the discs switch on. Kept level with the city-bike gauge layer so the
 // two kinds of marker appear together on the way out of a zoomed-in view.
 export const STOP_CIRCLE_MIN_ZOOM = 13;
