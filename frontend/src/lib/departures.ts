@@ -13,20 +13,30 @@ export function isCancelledDeparture(departure: StopDepartureInfo): boolean {
   return ['CANCELED', 'CANCELLED', 'DELETED'].includes(departure.realtimeState?.toUpperCase() ?? '');
 }
 
-export function departureView(departure: StopDepartureInfo, now: number, stale = false) {
-  const cancelled = isCancelledDeparture(departure);
+/**
+ * When this departure actually leaves, as an epoch in ms — the realtime
+ * prediction when there is one, otherwise the timetable. Undefined when the
+ * feed carried no usable time at all.
+ */
+export function departureEpoch(departure: StopDepartureInfo): number | undefined {
   const epoch = departure.realtime
     ? departure.realtimeDepartureTime ?? departure.scheduledDepartureTime
     : departure.scheduledDepartureTime;
-  const validEpoch = typeof epoch === 'number' && Number.isFinite(epoch) && epoch > 0;
+  return typeof epoch === 'number' && Number.isFinite(epoch) && epoch > 0 ? epoch : undefined;
+}
+
+export function departureView(departure: StopDepartureInfo, now: number, stale = false) {
+  const cancelled = isCancelledDeparture(departure);
+  const epoch = departureEpoch(departure);
+  const validEpoch = epoch !== undefined;
   const time = (departure.realtime ? departure.realtimeDeparture : undefined)
     || departure.scheduledDeparture
-    || (validEpoch ? new Date(epoch).toLocaleTimeString('en-GB', {
+    || (validEpoch ? new Date(epoch!).toLocaleTimeString('en-GB', {
       timeZone: 'Europe/Helsinki', hour: '2-digit', minute: '2-digit',
     }) : 'Time unavailable');
   let countdown: string | null = null;
   if (validEpoch && !cancelled) {
-    const remaining = epoch - now;
+    const remaining = epoch! - now;
     countdown = remaining < -60_000 ? 'Departed'
       : remaining <= 0 ? 'Due'
         : remaining < 60_000 ? '<1 min'

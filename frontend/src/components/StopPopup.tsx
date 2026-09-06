@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import React, { useEffect, useEffectEvent, useState } from 'react';
-import type { StopDetailsResponse, Alert } from '../types';
+import React, { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
+import type { StopDetailsResponse, Alert, VehiclePosition } from '../types';
 import { fetchStopDetails } from '../lib/api';
 import { getRouteColor } from '../lib/routeColors';
 import { relevantStopAlerts } from '../lib/stopAlerts';
@@ -8,6 +8,9 @@ import { X, Clock, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDow
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useSavedStops } from '../hooks/useSavedStops';
 import { departureView, isCancelledDeparture, isDepartureSourceStale, MAX_SAVED_STOPS, pollDepartures } from '../lib/departures';
+import { arrivalVehicleModes, focusedArrival, nextArrivals, walkVerdict } from '../lib/stopArrivals';
+import type { ArrivalFocus } from '../lib/stopArrivals';
+import { ArrivalHeadline } from './ArrivalHeadline';
 import './departures.css';
 
 interface StopPopupProps {
@@ -22,6 +25,16 @@ interface StopPopupProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   alerts: Alert[];
+  /** Live positions, used to name the vehicle behind the next departure. */
+  vehicles: VehiclePosition[];
+  /** Which live feeds this stop's departures need streaming to be trackable. */
+  onArrivalModesLoaded?: (modes: { bus: boolean; metro: boolean; train: boolean; tram: boolean }) => void;
+  /** The arrival the map should follow, or null when tracking is off. */
+  onArrivalFocusChange?: (focus: ArrivalFocus | null) => void;
+  /** Walking distance to this stop in metres, when it is known. */
+  walkDistance?: number;
+  /** True while the map is already following this stop's next arrival. */
+  autoTrack?: boolean;
 }
 
 export const StopPopup: React.FC<StopPopupProps> = ({
@@ -36,6 +49,11 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   isCollapsed,
   onToggleCollapse,
   alerts = [],
+  vehicles,
+  onArrivalModesLoaded,
+  onArrivalFocusChange,
+  walkDistance,
+  autoTrack = false,
 }) => {
   const [response, setResponse] = useState<{ stopId: string; data: StopDetailsResponse } | null>(null);
   const details = response?.stopId === stopId ? response.data : null;
@@ -51,6 +69,50 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   // them to fill the panel on its own.
   const [alertsExpanded, setAlertsExpanded] = useState<boolean>(false);
   const isMobile = useIsMobile();
+
+  // The next arrivals, recomputed as positions stream in. `now` also ticks
+  // every second, so a countdown never goes stale between feed updates.
+  const arrivals = useMemo(
+    () => nextArrivals(details?.departures ?? [], vehicles, now),
+    [details, vehicles, now],
+  );
+  const [trackedTripId, setTrackedTripId] = useState<string | null>(null);
+  const arrival = focusedArrival(arrivals, trackedTripId ?? undefined);
+  const tracking = trackedTripId !== null;
+  const verdict = walkVerdict(walkDistance, arrival?.etaMs);
+
+  // A tracked departure eventually leaves. Rather than stranding the map on a
+  // vehicle that has gone, follow whatever is next through the same pin.
+  useEffect(() => {
+    if (tracking && arrival && arrival.departure.tripId !== trackedTripId) {
+      setTrackedTripId(arrival.departure.tripId);
+    }
+  }, [tracking, arrival, trackedTripId]);
+
+  // Opened from "Catch the next one": start following as soon as there is
+  // something locatable to follow, without a second tap. It fires once — a
+  // reader who then presses "Stop tracking" means it.
+  const autoTracked = useRef(false);
+  useEffect(() => {
+    autoTracked.current = false;
+  }, [stopId]);
+  useEffect(() => {
+    if (autoTrack && !autoTracked.current && arrival?.vehicle) {
+      autoTracked.current = true;
+      setTrackedTripId(arrival.departure.tripId);
+    }
+  }, [autoTrack, arrival]);
+
+  const publishFocus = useEffectEvent((focus: ArrivalFocus | null) => onArrivalFocusChange?.(focus));
+  const focusVehicleId = arrival?.vehicle?.veh;
+  const focusTripId = arrival?.departure.tripId;
+  const focusLine = arrival?.departure.line;
+  useEffect(() => {
+    publishFocus(tracking && focusVehicleId && focusTripId
+      ? { stopId, tripId: focusTripId, vehicleId: focusVehicleId, line: focusLine ?? '' }
+      : null);
+  }, [tracking, stopId, focusVehicleId, focusTripId, focusLine]);
+  useEffect(() => () => publishFocus(null), []);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.touches[0].clientX);
@@ -84,6 +146,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   const publishDetails = useEffectEvent((data: StopDetailsResponse) => {
     onStopDeparturesLoaded?.(data.departures.filter((d) => !isCancelledDeparture(d)).map((d) => d.tripId).filter(Boolean));
     onStopRoutesLoaded?.(data.routes || []);
+    onArrivalModesLoaded?.(arrivalVehicleModes(data.departures));
     if (data.stop) onStopCoordsLoaded?.(data.stop.lat, data.stop.lon);
   });
 
@@ -92,6 +155,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
     setLoading(true);
     setError(null);
     setAlertsExpanded(false);
+    setTrackedTripId(null);
     setNow(Date.now());
     const clock = setInterval(() => setNow(Date.now()), 1000);
     const stopPolling = pollDepartures(
@@ -286,7 +350,16 @@ export const StopPopup: React.FC<StopPopupProps> = ({
         {/* Departures List */}
         {!loading && details && (
           <div>
-            <div className="legend-title" style={{ marginBottom: '8px' }}>Upcoming Departures</div>
+            <div className="legend-title" style={{ marginBottom: '8px' }}>Next arrival</div>
+            <ArrivalHeadline
+              arrival={arrival}
+              now={now}
+              stale={stale}
+              verdict={verdict}
+              tracking={tracking}
+              onToggleTracking={() => setTrackedTripId(tracking ? null : arrival?.departure.tripId ?? null)}
+            />
+            <div className="legend-title" style={{ margin: '16px 0 8px' }}>Upcoming Departures</div>
             <p className={`departures-freshness ${stale ? 'is-stale' : ''}`} role="status">
               {stale ? 'Stale · last known departures' : 'Updates every 18 seconds'}
               {details.fetchedAt

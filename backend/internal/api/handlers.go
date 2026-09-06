@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -562,6 +563,13 @@ type StopDepartureInfo struct {
 	Delay                  int    `json:"delay"`
 	Realtime               bool   `json:"realtime"`
 	TripId                 string `json:"tripId"`
+	// Trip identity, carried so the frontend can match a departure to the
+	// live vehicle actually serving it without guessing from the line number.
+	RouteId          string `json:"routeId,omitempty"`
+	ServiceDate      string `json:"serviceDate,omitempty"`
+	DirectionId      *int   `json:"directionId,omitempty"`
+	StartTimeSeconds *int   `json:"startTimeSeconds,omitempty"` // trip origin, seconds since service midnight
+	Mode             string `json:"mode,omitempty"`
 }
 
 func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
@@ -620,9 +628,13 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 						headsign
 						trip {
 							gtfsId
+							directionId
+							departureStoptime { scheduledDeparture }
 							route {
+								gtfsId
 								shortName
 								color
+								mode
 							}
 						}
 					}
@@ -670,7 +682,7 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, dep := range s.StoptimesWithoutPatterns {
-			resp.Departures = append(resp.Departures, StopDepartureInfo{
+			departure := StopDepartureInfo{
 				ScheduledDeparture:     optionalTime(dep.ScheduledDeparture),
 				RealtimeDeparture:      optionalTime(dep.RealtimeDeparture),
 				ScheduledDepartureTime: serviceTimestamp(dep.ServiceDay, dep.ScheduledDeparture),
@@ -684,7 +696,16 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 				Delay:                  dep.ArrivalDelay,
 				Realtime:               dep.Realtime,
 				TripId:                 dep.Trip.GtfsId,
-			})
+				RouteId:                dep.Trip.Route.GtfsId,
+				ServiceDate:            stopServiceDate(dep.ServiceDay),
+				DirectionId:            directionID(dep.Trip.DirectionId),
+				Mode:                   dep.Trip.Route.Mode,
+			}
+			if origin := dep.Trip.DepartureStoptime; origin != nil &&
+				origin.ScheduledDeparture != nil && *origin.ScheduledDeparture >= 0 {
+				departure.StartTimeSeconds = origin.ScheduledDeparture
+			}
+			resp.Departures = append(resp.Departures, departure)
 		}
 
 		jsonBytes, err := json.Marshal(resp)
@@ -707,6 +728,17 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(dataInterface.([]byte))
+}
+
+// stopServiceDate renders a stoptime's serviceDay as a YYYY-MM-DD service
+// date. serviceDay is midnight of the operating day in Europe/Helsinki, so it
+// is read at local noon — that lands inside the same calendar day under either
+// UTC offset, and needs no tzdata on the server.
+func stopServiceDate(day *int64) string {
+	if day == nil || *day <= 0 || *day > math.MaxInt64-12*3600 {
+		return ""
+	}
+	return time.Unix(*day+12*3600, 0).UTC().Format("2006-01-02")
 }
 
 func formatSeconds(sec int) string {

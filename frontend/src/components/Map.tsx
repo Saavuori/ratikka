@@ -15,6 +15,8 @@ import type { Feature, FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
+import { approachSegment } from '../lib/approachPath';
+import type { ArrivalFocus } from '../lib/stopArrivals';
 import {
   getRouteColor,
   routeColorMatchExpression,
@@ -154,6 +156,14 @@ interface MapProps {
   selectedTripDetails: TripDetailsResponse | null;
   journeyLegs?: JourneyLeg[] | null;
   journeyEndpoints?: { from: JourneyEndpoint; to: JourneyEndpoint } | null;
+  /**
+   * The arrival being followed at the selected stop, and the geometry of its
+   * trip. Arrival focus is the selected-vehicle highlight run from the other
+   * end — a stop and the vehicle coming to it — so it drives the same layers,
+   * and App keeps the two selections mutually exclusive.
+   */
+  arrivalFocus?: ArrivalFocus | null;
+  arrivalTripDetails?: TripDetailsResponse | null;
 }
 
 // One vehicle in the GeoJSON collection the map's icon layers read. Named so
@@ -254,6 +264,8 @@ export const Map: React.FC<MapProps> = ({
   selectedStopId,
   selectedBikeStationId,
   selectedStopCoords,
+  arrivalFocus = null,
+  arrivalTripDetails = null,
   selectedStopMode,
   selectedStopIsTrunk,
   onSelectTram,
@@ -285,6 +297,22 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     selectedTripDetailsRef.current = selectedTripDetails;
   }, [selectedTripDetails]);
+
+  const arrivalFocusRef = useRef<ArrivalFocus | null>(arrivalFocus);
+  const arrivalTripDetailsRef = useRef<TripDetailsResponse | null>(arrivalTripDetails);
+  const arrivalStopCoordsRef = useRef<[number, number] | null>(selectedStopCoords ?? null);
+
+  useEffect(() => {
+    arrivalFocusRef.current = arrivalFocus;
+  }, [arrivalFocus]);
+
+  useEffect(() => {
+    arrivalTripDetailsRef.current = arrivalTripDetails;
+  }, [arrivalTripDetails]);
+
+  useEffect(() => {
+    arrivalStopCoordsRef.current = selectedStopCoords ?? null;
+  }, [selectedStopCoords]);
 
   const [apiKey, setApiKey] = React.useState<string | null>(null);
   // MapLibre 6 requires WebGL2 (WebGL 1 support was dropped). Without this the
@@ -1590,42 +1618,47 @@ export const Map: React.FC<MapProps> = ({
             nextStopBoarding = isStopped && nextStopIndex === lastKnownIndex;
 
             if (HIGHLIGHT_NEXT_STOP_ROUTE && selectedVehiclePos && selectedTripDetailsRef.current.geometry) {
-              const polylineCoords = decodePolyline(selectedTripDetailsRef.current.geometry);
-
-              if (polylineCoords.length > 0) {
-                const getClosestPointIndex = (coords: [number, number][], target: [number, number]): number => {
-                  let minD = Infinity;
-                  let index = 0;
-                  for (let i = 0; i < coords.length; i++) {
-                    const d = Math.pow(coords[i][0] - target[0], 2) + Math.pow(coords[i][1] - target[1], 2);
-                    if (d < minD) {
-                      minD = d;
-                      index = i;
-                    }
-                  }
-                  return index;
-                };
-
-                const idxTram = getClosestPointIndex(polylineCoords, selectedVehiclePos);
-                const idxStop = getClosestPointIndex(polylineCoords, nextStopCoords);
-
-                const startIdx = Math.min(idxTram, idxStop);
-                const endIdx = Math.max(idxTram, idxStop);
-                const slice = polylineCoords.slice(startIdx, endIdx + 1);
-
-                routeSegmentCoords = [selectedVehiclePos, ...slice, nextStopCoords];
-              } else {
-                routeSegmentCoords = [selectedVehiclePos, nextStopCoords];
-              }
+              routeSegmentCoords = approachSegment(
+                decodePolyline(selectedTripDetailsRef.current.geometry),
+                selectedVehiclePos,
+                nextStopCoords,
+              );
             }
           }
+        }
+      }
+
+      // Arrival focus: the same highlight, read from the stop's end. There is
+      // no vehicle selected in this mode (App keeps the two exclusive), so the
+      // stop is the one the reader is walking to and the vehicle is whichever
+      // one is bringing the next departure to it.
+      const focus = arrivalFocusRef.current;
+      let focusVehicleMode: string | null = null;
+      if (!selectedVehiclePos && focus) {
+        const focusStopCoords = arrivalStopCoordsRef.current;
+        const focusFeature = features.find((f) => f.properties.veh === focus.vehicleId);
+        if (focusFeature && focusStopCoords) {
+          selectedVehiclePos = focusFeature.geometry.coordinates as [number, number];
+          focusVehicleMode = focusFeature.properties.mode;
+          nextStopCoords = focusStopCoords;
+          nextStopId = focus.stopId;
+          // Doors open at the stop being watched: it is boarding right now.
+          nextStopBoarding = latestTramsRef.current[focus.vehicleId]?.drst === 1;
+          const geometry = arrivalTripDetailsRef.current?.tripId === focus.tripId
+            ? arrivalTripDetailsRef.current?.geometry
+            : undefined;
+          routeSegmentCoords = approachSegment(
+            geometry ? decodePolyline(geometry) : [],
+            selectedVehiclePos,
+            nextStopCoords,
+          );
         }
       }
 
       // Update next stop highlight source
       const nextStopSource = map.getSource('next-stop-highlight-source') as maplibregl.GeoJSONSource;
       if (nextStopSource) {
-        let nextStopMode = 'TRAM';
+        let nextStopMode = focusVehicleMode ? focusVehicleMode.toUpperCase() : 'TRAM';
         if (selectedTramIdRef.current) {
           const selectedTram = latestTramsRef.current[selectedTramIdRef.current];
           if (selectedTram && selectedTram.mode) {
@@ -3464,6 +3497,27 @@ export const Map: React.FC<MapProps> = ({
       console.warn('[Map] trams-selected-layer not found');
     }
   }, [selectedTramId, journeyVehicleIds]);
+
+  // Frame the arrival: the vehicle and the stop it is coming to, both on
+  // screen at once. Done once when the focus changes rather than on every
+  // position tick — a camera that re-frames each second is unusable to
+  // someone walking, and the point is a glance, not a chase.
+  const arrivalFocusKey = arrivalFocus ? `${arrivalFocus.stopId}|${arrivalFocus.vehicleId}` : null;
+  useEffect(() => {
+    const map = mapRef.current;
+    const focused = arrivalFocusRef.current;
+    if (!map || !map.getStyle() || !arrivalFocusKey || !focused) return;
+    const vehicle = latestTramsRef.current[focused.vehicleId];
+    const stop = arrivalStopCoordsRef.current;
+    if (!vehicle || !stop || !Number.isFinite(vehicle.lat) || !Number.isFinite(vehicle.lng)) return;
+    map.fitBounds(
+      [
+        [Math.min(vehicle.lng, stop[0]), Math.min(vehicle.lat, stop[1])],
+        [Math.max(vehicle.lng, stop[0]), Math.max(vehicle.lat, stop[1])],
+      ],
+      { padding: 96, maxZoom: 16, duration: 900 },
+    );
+  }, [arrivalFocusKey]);
 
   // Update selected stop data source dynamically
   useEffect(() => {

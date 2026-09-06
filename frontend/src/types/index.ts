@@ -86,6 +86,15 @@ export interface StopDepartureInfo {
   realtimeDepartureTime?: number;
   departureDelay?: number;
   realtimeState?: string;
+  /**
+   * Trip identity, carried so a departure can be matched to the live vehicle
+   * actually serving it rather than guessed at from the line number.
+   */
+  routeId?: string;
+  serviceDate?: string;
+  directionId?: number;
+  startTimeSeconds?: number;
+  mode?: string;
 }
 
 export interface StopDetailsResponse {
