@@ -1,14 +1,23 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { Clock, LocateFixed, X } from 'lucide-react';
+import { Clock, Footprints, LocateFixed, X, Zap } from 'lucide-react';
 import type { NearbyStop, StopDetailsResponse, StopInfo } from '../types';
 import { fetchNearbyStops, fetchStopDetails } from '../lib/api';
 import { departureView, isDepartureSourceStale, MAX_SAVED_STOPS, pollDepartures } from '../lib/departures';
 import { useSavedStops } from '../hooks/useSavedStops';
+import { nextArrivals, walkVerdict, walkVerdictLabel } from '../lib/stopArrivals';
 import './departures.css';
+import './arrival.css';
+
+export interface StopSelectionExtras {
+  /** Walking distance to the stop, metres — only ever a street distance. */
+  distance?: number;
+  /** Follow the stop's next arrival on the map without a second tap. */
+  autoTrack?: boolean;
+}
 
 export interface DeparturesPanelProps {
-  onSelectStop: (stop: StopInfo) => void;
+  onSelectStop: (stop: StopInfo, extras?: StopSelectionExtras) => void;
   hidden?: boolean;
   isMobile: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -28,6 +37,7 @@ export function DeparturesPanel({ onSelectStop, hidden = false, isMobile, onOpen
   const [nearbyFetchedAt, setNearbyFetchedAt] = useState<number>();
   const [nearbyLoaded, setNearbyLoaded] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [catching, setCatching] = useState(false);
   const [locationError, setLocationError] = useState('');
   const [nearbyError, setNearbyError] = useState('');
   const [previews, setPreviews] = useState<Record<string, Preview>>({});
@@ -128,6 +138,46 @@ export function DeparturesPanel({ onSelectStop, hidden = false, isMobile, onOpen
     );
   };
 
+  /**
+   * The whole walk-to-the-stop gesture in one tap: where am I, which stop is
+   * nearest on foot, and what is coming to it — the map opens already
+   * following that arrival.
+   */
+  const catchNextArrival = async () => {
+    if (!navigator.geolocation) {
+      setLocationError('Location is unavailable in this browser. Use saved stops or select a stop on the map.');
+      return;
+    }
+    const request = ++locationRequest.current;
+    setLocationError('');
+    setCatching(true);
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject,
+          { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 });
+      });
+      const { latitude, longitude } = position.coords;
+      const data = await fetchNearbyStops(latitude, longitude);
+      if (request !== locationRequest.current) return;
+      const nearest = data.stops[0];
+      if (!nearest) {
+        setLocationError('No stops within walking distance. Select a stop on the map instead.');
+        return;
+      }
+      setCoords({ lat: latitude, lon: longitude });
+      setOpen(false);
+      onSelectStop(nearest, { distance: nearest.distance, autoTrack: true });
+    } catch (error) {
+      if (request !== locationRequest.current) return;
+      setLocationError(
+        error instanceof GeolocationPositionError && error.code === error.PERMISSION_DENIED
+          ? 'Location permission denied. Use saved stops or select a stop on the map.'
+          : 'Could not find the nearest stop. Try again, or pick a stop on the map.');
+    } finally {
+      if (request === locationRequest.current) setCatching(false);
+    }
+  };
+
   const close = () => {
     setOpen(false);
     requestAnimationFrame(() => launcher.current?.focus());
@@ -157,6 +207,10 @@ export function DeparturesPanel({ onSelectStop, hidden = false, isMobile, onOpen
           <X size={18} />
         </button>
       </header>
+      <button type="button" className="arrival-now-button" onClick={catchNextArrival} disabled={catching}>
+        <Zap size={14} aria-hidden="true" />
+        {catching ? 'Finding the next one…' : 'Catch the next one'}
+      </button>
       <div className="departures-tabs" role="group" aria-label="Departure stops">
         <button type="button" aria-pressed={tab === 'saved'} onClick={() => setTab('saved')}>Saved ({savedStops.length})</button>
         <button type="button" aria-pressed={tab === 'nearby'} onClick={() => setTab('nearby')}>Nearby</button>
@@ -190,6 +244,10 @@ export function DeparturesPanel({ onSelectStop, hidden = false, isMobile, onOpen
           const departures = preview?.details?.departures ?? [];
           const distance = tab === 'nearby' ? nearby.find((item) => item.gtfsId === stop.gtfsId)?.distance : undefined;
           const saved = savedStops.some((item) => item.gtfsId === stop.gtfsId);
+          // Only the nearby tab knows a walking distance, and only a street
+          // distance can honestly say whether the walk beats the departure.
+          const verdict = stale ? undefined
+            : walkVerdict(distance, nextArrivals(departures, [], now, { limit: 1 })[0]?.etaMs);
           return (
             <li key={stop.gtfsId} className="departures-stop">
               <button
@@ -197,7 +255,7 @@ export function DeparturesPanel({ onSelectStop, hidden = false, isMobile, onOpen
                 className="departures-stop-select"
                 onClick={() => {
                   setOpen(false);
-                  onSelectStop(stop);
+                  onSelectStop(stop, { distance });
                 }}
               >
                 <strong>{stop.name}</strong>
@@ -206,6 +264,11 @@ export function DeparturesPanel({ onSelectStop, hidden = false, isMobile, onOpen
                   {stop.platformCode && ` · Platform ${stop.platformCode}`}
                   {typeof distance === 'number' && ` · ${Math.round(distance)} m away`}
                 </span>
+                {verdict && (
+                  <span className={`arrival-chip outcome-${verdict.outcome}`}>
+                    <Footprints size={11} aria-hidden="true" /> {walkVerdictLabel(verdict)}
+                  </span>
+                )}
                 {!preview && <span>Loading departures…</span>}
                 {preview?.failed && <span className="is-stale">Stale · update failed; retrying</span>}
                 {preview?.details && departures.length === 0 && <span>{stale ? 'Stale · ' : ''}No upcoming departures</span>}

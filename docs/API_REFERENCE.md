@@ -219,9 +219,13 @@ query GetStopTimetable($stopId: String!, $numberOfDepartures: Int!) {
       headsign
       trip {
         gtfsId
+        directionId
+        departureStoptime { scheduledDeparture }
         route {
+          gtfsId
           shortName
           color
+          mode
         }
       }
     }
@@ -515,6 +519,17 @@ The response also includes:
 | `departures[].scheduledDepartureTime` / `realtimeDepartureTime` | Epoch milliseconds calculated from the upstream service day and departure seconds; omitted when unknown |
 | `departures[].departureDelay` | Departure delay in seconds |
 | `departures[].realtimeState` | Upstream state, including `CANCELED` |
+| `departures[].routeId` | Route GTFS ID, e.g. `HSL:1009` |
+| `departures[].serviceDate` | Operating day (`YYYY-MM-DD`) of the trip, from the upstream service day |
+| `departures[].directionId` | `0` or `1`; omitted when upstream reports it as unknown |
+| `departures[].startTimeSeconds` | The trip's origin departure, seconds since service midnight; omitted when unknown |
+| `departures[].mode` | Route mode: `TRAM`, `BUS`, `SUBWAY`, `RAIL`, `FERRY` |
+
+Together `routeId`, `serviceDate`, `directionId` and `startTimeSeconds` name one
+trip unambiguously, which is what lets a client pair a departure with the live
+vehicle serving it. They are omitted rather than defaulted when upstream does not
+report them: direction zero and a midnight origin are both real values, so
+inventing either would match the wrong vehicle rather than no vehicle.
 
 Legacy arrival fields remain for compatibility. Use departure fields for boarding
 and absolute timestamps for countdowns, including trips after midnight. A scheduled

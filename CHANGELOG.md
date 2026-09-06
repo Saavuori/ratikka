@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.58.0] - 2026-09-06
+
+### Added
+- **The stop answers the question you actually walked up to ask**: standing at a stop, or on the way to one, there is one question — is something coming, and can I see it. The timetable answered it only by making you read a list and do the subtraction. The stop panel now opens on a **Next arrival** block: the line, where it is going, the countdown in figures you can read at arm's length, and how confident that number is. The countdown is always the feed's own prediction; locating the vehicle never becomes a second, competing estimate of the same number, it only unlocks the map trace below.
+- **See it coming down the street**: press **Track on map** and the vehicle bringing that departure is followed on the map, with its remaining approach drawn along the route it will actually take — around the corners, not as a bearing through the blocks between. The stop takes the same gold signpost and pulse a selected vehicle's next stop has had since v0.57, and lights amber at the platform edge while the doors are open, because it is the same relationship seen from the other end: this vehicle, that stop. It reuses those layers rather than adding any, and the camera frames the pair once when tracking starts rather than re-framing every second, which is unusable to someone walking. When the tracked departure leaves, tracking moves to whatever is next instead of stranding the map on a vehicle that has gone.
+- **Catch the next one**: one press in the Departures panel finds your location, takes the nearest stop by walking distance, opens it, and starts following its next arrival — the whole walk-to-the-stop gesture without picking anything from a list. Location is still only ever requested when you press the button.
+- **Whether the walk beats the departure**: nearby stops now carry a verdict — *Easy walk*, *Walk now*, *Run for it*, *Too late* — with the minutes you have spare or are short. It is computed from Digitransit's walking distance along streets and paths, never from a straight line: in Helsinki a straight line is usually across water.
+- **Selecting a stop turns on the feeds its own departures need**: buses, metro and commuter trains stream only while a client asks for them, so a bus stop's arrivals had no vehicles to be matched against in the first place. Opening a stop now requests exactly the modes its departures use, for as long as the stop is open, and the tracked vehicle stays drawn even when its mode or line is filtered out — hiding it is precisely what tracking exists to stop.
+
+### Changed
+- **A departure names its trip**: `/api/v1/stop/{id}` now returns `routeId`, `serviceDate`, `directionId`, `startTimeSeconds` and `mode` per departure. Together these name one trip unambiguously, which is what allows a departure to be paired with the live vehicle serving it. They are omitted rather than defaulted when the upstream feed does not report them — direction zero and a midnight origin are both real values, so inventing either would match the *wrong* vehicle rather than no vehicle. The matcher itself is now shared with the journey planner rather than duplicated: one implementation, one set of refusals. An ambiguous match is still no match.
+- **The approach-path geometry is testable**: slicing a route polyline between a vehicle and a stop was inline logic in the map component, exercised by nothing. It is now `lib/approachPath.ts` with unit tests, and both the selected-vehicle highlight and the new arrival tracking call it.
+
+---
+
 ## [v0.57.1] - 2026-09-06
 
 ### Fixed

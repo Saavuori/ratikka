@@ -815,3 +815,120 @@ func TestHandlers_Alerts(t *testing.T) {
 }
 
 
+
+func TestHandlers_StopDetails_TripIdentity(t *testing.T) {
+	// serviceDay 1781470800 is 2026-06-15 00:00 in Europe/Helsinki (UTC+3).
+	mockGraphQLResponse := `{
+		"data": {
+			"stop": {
+				"gtfsId": "HSL:1203420",
+				"name": "Välimerenkatu",
+				"code": "0613",
+				"lat": 60.1629,
+				"lon": 24.9213,
+				"routes": [{"shortName": "9", "longName": "Line 9", "mode": "TRAM"}],
+				"stoptimesWithoutPatterns": [
+					{
+						"scheduledArrival": 33900,
+						"realtimeArrival": 33840,
+						"serviceDay": 1781470800,
+						"realtime": true,
+						"headsign": "Pasila",
+						"trip": {
+							"gtfsId": "HSL:1009_20260615_Su_2_0910",
+							"directionId": "1",
+							"departureStoptime": {"scheduledDeparture": 33000},
+							"route": {"gtfsId": "HSL:1009", "shortName": "9", "color": "007AC9", "mode": "TRAM"}
+						}
+					},
+					{
+						"scheduledArrival": 34500,
+						"realtimeArrival": 34500,
+						"serviceDay": 1781470800,
+						"realtime": false,
+						"headsign": "Pasila",
+						"trip": {
+							"gtfsId": "HSL:1009_20260615_Su_2_0920",
+							"directionId": null,
+							"route": {"shortName": "9", "color": "007AC9", "mode": "TRAM"}
+						}
+					}
+				]
+			}
+		}
+	}`
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(mockGraphQLResponse))
+	}))
+	defer ts.Close()
+
+	oldEndpoint := DigitransitURLEndpoint
+	DigitransitURLEndpoint = ts.URL
+	defer func() { DigitransitURLEndpoint = oldEndpoint }()
+
+	handlers := NewHandlers(cache.NewMemoryCache(), NewGraphQLClient("test-api-key"), &mockMqttWorker{connected: true})
+	req := httptest.NewRequest("GET", "/api/v1/stop/HSL:1203420", nil)
+	req.SetPathValue("stopId", "HSL:1203420")
+	rr := httptest.NewRecorder()
+	handlers.StopDetails(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+	var resp StopDetailsResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.Departures) != 2 {
+		t.Fatalf("expected 2 departures, got %d", len(resp.Departures))
+	}
+
+	tracked := resp.Departures[0]
+	if tracked.ServiceDate != "2026-06-15" {
+		t.Errorf("expected service date 2026-06-15, got %q", tracked.ServiceDate)
+	}
+	if tracked.DirectionId == nil || *tracked.DirectionId != 1 {
+		t.Errorf("expected direction 1, got %v", tracked.DirectionId)
+	}
+	if tracked.StartTimeSeconds == nil || *tracked.StartTimeSeconds != 33000 {
+		t.Errorf("expected start 33000, got %v", tracked.StartTimeSeconds)
+	}
+	if tracked.Mode != "TRAM" {
+		t.Errorf("expected mode TRAM, got %q", tracked.Mode)
+	}
+	if tracked.RouteId != "HSL:1009" {
+		t.Errorf("expected route HSL:1009, got %q", tracked.RouteId)
+	}
+
+	// An unknown direction or a missing origin stoptime must stay unset rather
+	// than collapsing to direction zero or a midnight departure.
+	partial := resp.Departures[1]
+	if partial.DirectionId != nil {
+		t.Errorf("expected nil direction for null directionId, got %v", *partial.DirectionId)
+	}
+	if partial.StartTimeSeconds != nil {
+		t.Errorf("expected nil start for missing departureStoptime, got %v", *partial.StartTimeSeconds)
+	}
+}
+
+func TestStopServiceDate(t *testing.T) {
+	summer := int64(1781470800) // 2026-06-15 00:00 +03:00
+	winter := int64(1765922400) // 2025-12-17 00:00 +02:00
+	cases := []struct {
+		name string
+		day  *int64
+		want string
+	}{
+		{"summer service day", &summer, "2026-06-15"},
+		{"winter service day", &winter, "2025-12-17"},
+		{"missing", nil, ""},
+		{"zero", new(int64), ""},
+	}
+	for _, tc := range cases {
+		if got := stopServiceDate(tc.day); got != tc.want {
+			t.Errorf("%s: expected %q, got %q", tc.name, tc.want, got)
+		}
+	}
+}

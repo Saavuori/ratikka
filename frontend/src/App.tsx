@@ -19,6 +19,7 @@ import { fetchRouteDetails, fetchAlerts, fetchTripDetails } from './lib/api';
 import { readStorage, writeStorage } from './lib/storage';
 import { areTripsEquivalent } from './lib/trip';
 import { findJourneyVehicle, journeyVehicleModes } from './lib/journeyVehicles';
+import type { ArrivalFocus } from './lib/stopArrivals';
 import type { VehiclePosition, Alert, TripDetailsResponse } from './types';
 
 function App() {
@@ -39,6 +40,13 @@ function App() {
   }, [hasJourney]);
 
   const journeyModes = journeyVehicleModes(journey?.itinerary.legs);
+
+  // Which optional feeds the selected stop's own departures need. Selecting a
+  // bus stop turns the bus feed on for as long as the stop is open: without it
+  // there is no vehicle to match an arrival to in the first place.
+  const [stopModes, setStopModes] = useState({ bus: false, metro: false, train: false, tram: false });
+  // The arrival the map is following, published by the stop panel.
+  const [arrivalFocus, setArrivalFocus] = useState<ArrivalFocus | null>(null);
 
   useEffect(() => {
     const getAlerts = () => {
@@ -95,11 +103,12 @@ function App() {
   // backend knows which optional feeds to ingest. Trams always stream.
   const wantsModes = useMemo(
     () => ({
-      bus: showBuses || journeyModes.bus,
-      metro: showMetro || journeyModes.metro,
-      train: showTrains || journeyModes.train,
+      bus: showBuses || journeyModes.bus || stopModes.bus,
+      metro: showMetro || journeyModes.metro || stopModes.metro,
+      train: showTrains || journeyModes.train || stopModes.train,
     }),
-    [showBuses, showMetro, showTrains, journeyModes.bus, journeyModes.metro, journeyModes.train]
+    [showBuses, showMetro, showTrains, journeyModes.bus, journeyModes.metro, journeyModes.train,
+      stopModes.bus, stopModes.metro, stopModes.train]
   );
   const { status: connectionStatus } = useWebSocket({
     onMessage: (data) => handleUpdate(data.vehicles),
@@ -149,6 +158,10 @@ function App() {
     lng?: number;
     mode?: string;
     isTrunkStop?: boolean;
+    /** Walking distance from the reader's location, metres — nearby stops only. */
+    distance?: number;
+    /** Start following the next arrival as soon as one can be located. */
+    autoTrack?: boolean;
   } | null>(null);
   const [selectedBikeStation, setSelectedBikeStation] = useState<{
     id: string;
@@ -381,7 +394,8 @@ function App() {
     lat?: number,
     lng?: number,
     mode?: string,
-    isTrunkStop?: boolean
+    isTrunkStop?: boolean,
+    extras?: { distance?: number; autoTrack?: boolean }
   ) => {
     if (selectedStop?.id === stopId) {
       setIsDetailCollapsed(false); // Auto-expand if collapsed
@@ -390,7 +404,9 @@ function App() {
     setSelectedTram(null);
     setSelectedBikeStation(null);
     setSelectedStopRoutes([]); // Reset selected stop routes!
-    setSelectedStop({ id: stopId, name, code, lat, lng, mode, isTrunkStop });
+    setStopModes({ bus: false, metro: false, train: false, tram: false });
+    setArrivalFocus(null);
+    setSelectedStop({ id: stopId, name, code, lat, lng, mode, isTrunkStop, ...extras });
     setIsDetailCollapsed(false); // Auto-expand detail panel to show schedule
   };
 
@@ -406,6 +422,8 @@ function App() {
   const handleCloseStop = () => {
     setSelectedStop(null);
     setSelectedStopRoutes([]);
+    setStopModes({ bus: false, metro: false, train: false, tram: false });
+    setArrivalFocus(null);
   };
 
   const handleCloseBikeStation = () => {
@@ -480,6 +498,9 @@ function App() {
     Object.entries(trams).filter((entry) => {
       const tram = entry[1];
       if (journeyVehicleIds.includes(tram.veh)) return true;
+      // The arrival being tracked stays on the map even when its mode or line
+      // is filtered out — hiding it is exactly what tracking is meant to stop.
+      if (arrivalFocus?.vehicleId === tram.veh) return true;
       if (tram.mode === 'tram' && !showTrams && !journeyModes.tram) return false;
       if (tram.mode === 'bus' && !wantsModes.bus) return false;
       if (tram.mode === 'metro' && !wantsModes.metro) return false;
@@ -552,6 +573,23 @@ function App() {
       active = false;
     };
   }, [liveTram?.tripId]);
+
+  // Pattern geometry for the arrival being tracked, so the map can draw its
+  // approach along the street rather than as a bearing across the blocks.
+  const [arrivalTripDetails, setArrivalTripDetails] = useState<TripDetailsResponse | null>(null);
+  const arrivalTripId = arrivalFocus?.tripId ?? null;
+
+  useEffect(() => {
+    if (!arrivalTripId) {
+      setArrivalTripDetails(null);
+      return;
+    }
+    let active = true;
+    fetchTripDetails(arrivalTripId)
+      .then((data) => { if (active) setArrivalTripDetails(data); })
+      .catch(() => { if (active) setArrivalTripDetails(null); });
+    return () => { active = false; };
+  }, [arrivalTripId]);
 
   const handleCloseTram = () => {
     setSelectedTram(null);
@@ -626,6 +664,8 @@ function App() {
         selectedTripDetails={selectedTripDetails}
         journeyLegs={journey?.itinerary.legs ?? null}
         journeyEndpoints={journey ? { from: journey.from, to: journey.to } : null}
+        arrivalFocus={arrivalFocus}
+        arrivalTripDetails={arrivalTripDetails}
       />
 
       {/* Sidebar Filters Panel */}
@@ -682,6 +722,11 @@ function App() {
           onClose={handleCloseStop}
           onSelectTripId={(tripId, lineDesi) => handleSelectTripFromStop(tripId, lineDesi)}
           onStopRoutesLoaded={setSelectedStopRoutes}
+          vehicles={vehicles}
+          walkDistance={selectedStop.distance}
+          autoTrack={selectedStop.autoTrack}
+          onArrivalModesLoaded={setStopModes}
+          onArrivalFocusChange={setArrivalFocus}
           onStopCoordsLoaded={(lat, lng) => {
             setSelectedStop((prev) =>
               prev && prev.id === selectedStop.id ? { ...prev, lat, lng } : prev
@@ -721,7 +766,8 @@ function App() {
         isMobile={isMobile}
         hidden={journeyOpen || !!(liveTram && liveTram.veh !== '0')}
         onOpenChange={setDeparturesOpen}
-        onSelectStop={(stop) => handleSelectStop(stop.gtfsId, stop.name, stop.code, stop.lat, stop.lon)}
+        onSelectStop={(stop, extras) =>
+          handleSelectStop(stop.gtfsId, stop.name, stop.code, stop.lat, stop.lon, undefined, undefined, extras)}
       />
 
       {/* Quick vehicle-mode shortcuts (top-right corner) */}

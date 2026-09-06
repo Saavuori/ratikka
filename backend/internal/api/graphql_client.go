@@ -117,10 +117,16 @@ type rawStopResponse struct {
 			RealtimeState      string `json:"realtimeState"`
 			Headsign           string `json:"headsign"`
 			Trip               struct {
-				GtfsId string `json:"gtfsId"`
-				Route  struct {
+				GtfsId            string          `json:"gtfsId"`
+				DirectionId       json.RawMessage `json:"directionId"`
+				DepartureStoptime *struct {
+					ScheduledDeparture *int `json:"scheduledDeparture"`
+				} `json:"departureStoptime"`
+				Route struct {
+					GtfsId    string `json:"gtfsId"`
 					ShortName string `json:"shortName"`
 					Color     string `json:"color"`
+					Mode      string `json:"mode"`
 				} `json:"route"`
 			} `json:"trip"`
 		} `json:"stoptimesWithoutPatterns"`
