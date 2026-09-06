@@ -47,6 +47,18 @@ services:
       - REDIS_URL=redis://ratikka-cache:6379
       - MQTT_BROKER=tls://mqtt.hsl.fi:8883
       - PORT=8080
+      # Rolling history for the timelapse. A week of trams is about 1.1 GB;
+      # unset REPLAY_DIR to record nothing. Buses, metro and trains are
+      # ingested only while somebody is watching them, so recording them would
+      # leave a history full of holes — hence trams alone.
+      - REPLAY_DIR=/data/replay
+      - REPLAY_RETENTION_DAYS=7
+      - REPLAY_MODES=tram
+    volumes:
+      # The history has to outlive the container: update.sh recreates it on a
+      # five-minute cron, and a week's archive inside the container layer would
+      # be lost on every deploy.
+      - replay-data:/data/replay
     depends_on:
       - ratikka-cache
 
@@ -89,6 +101,7 @@ services:
 volumes:
   caddy-data:
   caddy-config:
+  replay-data:
 COMPOSE
 
 cat << 'ALLOY' > monitoring/alloy/config.alloy

@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.64.0] - 2026-09-06
+
+### Added
+- **The map can be wound back a week**: double-click the version badge in the bottom-left corner and it stops being about now. A scrubber covers the last seven days of tram movement — recorded stretches shaded, so the gaps a deploy or a broker reconnect left are visible rather than discovered — with play, pause, and speeds from 1× to 240×, at which a whole day runs past in six minutes. The panel is deliberately not part of the map's ordinary furniture: watching the city's past is a different errand from watching it now, and a map that offers to replay the week in its own chrome asks a question most people opening it did not have.
+  A replayed tram is not a different kind of thing from a live one. It carries the same telemetry, rides the same rails, opens the same doors and reports the same delay, because the archive stores exactly what the live map was shown — the reading after ingestion has deduplicated HSL's fourfold tram copies, paired down the metro's coupled units, read the next stop off the topic and normalised the delay's sign. Everything downstream of the source switch — filtering, selection, the three-tab vehicle panel, the rail snapping, the dead reckoning — works on history without knowing it is history.
+  Everything on the map that is *not* a vehicle is fetched for right now, so entering a replay clears the stop, journey, bike and arrival selections rather than showing tonight's departures beside this morning's trams.
+
+- **A week of trams in 1.1 GB**: the archive is not a database, because nothing is ever asked of it that wants one — playback is a sequential read and a timelapse is a full scan. A reading is therefore a fixed-width 28-byte record in a per-minute chunk file, with each journey's line, direction, trip and operating day interned once per day rather than repeated on all ~1,700 readings that journey produces. Stored as the JSON the WebSocket sends, a week would be 20.8 GB; one reading per Redis hash entry, 5.5 GB, most of it key bookkeeping. Packed, it is 1.08 GB — small enough that the page cache simply holds it, with durability across restarts for free and no eviction policy to get wrong.
+  That layout is also what makes a *place* answerable rather than only a moment. `GET /api/v1/replay/timelapse` takes a bounding box and a span up to the whole retention window, and rejects a reading by reading eight bytes of it and decoding nothing else. Measured, a junction-sized box costs 117 µs per minute of archive, so a whole week is about 1.2 seconds.
+
+- **Fast playback fetches less, not more**: a replay at sixty times real time does not need sixty readings a second of every tram — it needs the same number of *drawn* steps as a replay at one times, each covering sixty times the ground. The window endpoint takes a `step` that thins the result to one reading per vehicle per that many seconds, and the player picks it to hold the drawing rate near eight snapshots a second whatever speed is selected. At 1× through 8× nothing is thinned at all and the map animates a replay exactly as it animates the live feed.
+
+### Changed
+- **The map's animation now knows how fast time is running**: everything it does with distance — carrying a vehicle forward on its own reported speed and acceleration, snapping a tram to the rail its journey is using, deciding a step is too large to be real — is measured in seconds of *history*, while the glide between two snapshots is measured on the wall clock. Those were the same number for as long as the only source was a live feed once a second. At sixty times they are not: a snapshot arrives every eighth of a second carrying eight seconds of travel, and a map told only the wall figure concludes that every vehicle on it has teleported and snaps them all into place. The two are now tracked separately, with the ratio between them supplied by whatever is playing. At 1× the ratio is one and nothing about live behaviour changes.
+
+### Fixed
+- **`docs/REPLAY_FEASIBILITY.md` corrected against the built thing**: the analysis put a week-wide bounding-box scan at 0.13 s, which counted the coordinate comparisons and not the ten thousand files they live in. Measured, it is ~1.2 s. It also expected playback speed to be capped by bandwidth, which server-side thinning removed entirely.
+
+---
+
 ## [v0.63.0] - 2026-09-06
 
 ### Added

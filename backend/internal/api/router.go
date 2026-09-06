@@ -27,6 +27,11 @@ func NewRouter(h *Handlers, hub *ws.Hub) *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/plan", h.Plan)
 	mux.HandleFunc("GET /api/v1/journey/monitor", h.MonitorJourney)
 
+	// Replay / timelapse history
+	mux.HandleFunc("GET /api/v1/replay/index", h.ReplayIndex)
+	mux.HandleFunc("GET /api/v1/replay/window", h.ReplayWindow)
+	mux.HandleFunc("GET /api/v1/replay/timelapse", h.ReplayTimelapse)
+
 	// Metrics Endpoint
 	mux.Handle("GET /metrics", promhttp.Handler())
 
