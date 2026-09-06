@@ -1817,3 +1817,230 @@ body {
     left: 12px;
   }
 }
+
+/* Timelapse panel — the replay controls, revealed by double-clicking the
+   version badge. Sits above the badge in the bottom-left corner on desktop and
+   spans the bottom on mobile, clear of the tab bar. */
+.timelapse-panel {
+  position: absolute;
+  bottom: calc(34px + env(safe-area-inset-bottom));
+  left: 8px;
+  z-index: 12;
+  width: 320px;
+  max-width: calc(100vw - 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-glow);
+  border-radius: 10px;
+  box-shadow: var(--version-badge-shadow);
+  pointer-events: auto;
+}
+
+.timelapse-panel__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.timelapse-panel__title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-gold);
+}
+
+.timelapse-panel__when {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.timelapse-panel__ago {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.timelapse-panel__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: var(--bg-button);
+  border: 1px solid var(--border-button);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.timelapse-panel__close:hover {
+  background: var(--bg-button-hover);
+  color: var(--text-primary);
+}
+
+/* The scrubber, with the recorded stretches shaded behind it so the gaps a
+   deploy or a broker reconnect left are visible rather than discovered. */
+.timelapse-panel__track {
+  position: relative;
+  height: 22px;
+}
+
+.timelapse-panel__coverage {
+  position: absolute;
+  inset: 9px 0 auto 0;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-button);
+  overflow: hidden;
+}
+
+.timelapse-panel__covered {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: var(--accent-green);
+  opacity: 0.55;
+}
+
+.timelapse-panel__scrubber {
+  position: relative;
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.timelapse-panel__scrubber::-webkit-slider-runnable-track {
+  height: 22px;
+  background: transparent;
+}
+
+.timelapse-panel__scrubber::-moz-range-track {
+  height: 22px;
+  background: transparent;
+}
+
+.timelapse-panel__scrubber::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--accent-gold);
+  border: 2px solid var(--bg-panel);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.timelapse-panel__scrubber::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent-gold);
+  border: 2px solid var(--bg-panel);
+}
+
+.timelapse-panel__controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timelapse-panel__play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  background: var(--bg-button);
+  border: 1px solid var(--border-button);
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.timelapse-panel__play:hover {
+  background: var(--bg-button-hover);
+}
+
+.timelapse-panel__speeds {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.timelapse-panel__speed {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  background: var(--bg-button);
+  border: 1px solid var(--border-button);
+  border-radius: 5px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.timelapse-panel__speed:hover {
+  background: var(--bg-button-hover);
+  color: var(--text-primary);
+}
+
+.timelapse-panel__speed.is-active {
+  background: var(--accent-gold);
+  border-color: var(--accent-gold);
+  color: #1e293b;
+}
+
+.timelapse-panel__live {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--bg-button);
+  border: 1px solid var(--border-button);
+  border-radius: 5px;
+  color: var(--accent-green);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.timelapse-panel__live:hover {
+  background: var(--bg-button-hover);
+}
+
+.timelapse-panel__status {
+  font-size: 10px;
+  color: var(--text-secondary);
+  min-height: 12px;
+}
+
+@media (max-width: 768px) {
+  .timelapse-panel {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    bottom: calc(var(--bottom-nav-h) + 34px + env(safe-area-inset-bottom));
+  }
+}

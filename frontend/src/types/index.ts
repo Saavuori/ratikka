@@ -317,3 +317,34 @@ export interface JourneyEndpoint {
   lat: number;
   lon: number;
 }
+
+/** One day of recorded history, and how many minutes landed in each hour. */
+export interface ReplayDayCoverage {
+  date: string;
+  /** Mode to a 24-entry array of minutes recorded in that hour. */
+  hours: Record<string, number[]>;
+}
+
+/** What there is to replay: which modes, how far back, and where the gaps are. */
+export interface ReplayIndexResponse {
+  enabled: boolean;
+  modes: string[];
+  retentionDays: number;
+  /** The server's clock, so the client scrubs against the archive's own now. */
+  serverTime: number;
+  days: ReplayDayCoverage[] | null;
+}
+
+/**
+ * A slice of history. The samples carry the same fields as live vehicles, so
+ * the map, popups and telemetry panels draw a replayed tram with the code they
+ * already use for a running one.
+ */
+export interface ReplayWindowResponse {
+  from: number;
+  to: number;
+  samples: VehiclePosition[];
+  /** The window hit the server's cap and later readings are missing. */
+  truncated: boolean;
+  scanned: number;
+}

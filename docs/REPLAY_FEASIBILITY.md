@@ -319,11 +319,20 @@ the durability comes free.
 
 ### The reason to want it
 
-Not replay — replay is sequential and disk serves it fine. The prize is §10.
-With the whole week's coordinates resident and fixed-width, a bounding-box scan
-over **all 49 M readings takes ~0.13 s** at memory bandwidth. That makes "this
-junction, all week" an interactive query rather than a batch job, and it is what
-turns location timelapse from a feature into something you poke at.
+Not replay — replay is sequential and disk serves it fine. The prize is §10:
+with the whole week's coordinates resident and fixed-width, "this junction, all
+week" becomes a query rather than a batch job.
+
+**Measured, once built** (`BenchmarkBBoxScan`, an ordinary cloud vCPU): a
+junction-sized box over one minute's chunk of 4,920 readings takes **117 µs**,
+so a whole week of 10,080 chunks is about **1.2 s**. An earlier draft of this
+section put it at 0.13 s; that was the coordinate comparisons alone, and the
+real figure is dominated by opening and reading ten thousand files. Still
+interactive, still an order of magnitude better than parsing the equivalent
+NDJSON, but a second rather than a blink — and the honest number to design the
+UI against. A wide box costs more, because it also pays to materialise what it
+keeps: a district-sized box runs ~3.1 ms per chunk, which is why the query caps
+its result and reports having truncated it.
 
 ### Before committing
 
@@ -331,3 +340,34 @@ Check free RAM on the Oracle host — the archive wants ~1.1 GB resident with
 headroom for the rest of the stack, and this box runs the user's other
 applications too. `free -m` and `podman stats --no-stream` answer it; it could
 not be verified from this session.
+
+---
+
+## 12. What was built
+
+This document was the analysis; the feature exists. What shipped, against what
+was proposed above:
+
+| Proposed | Shipped |
+|---|---|
+| §7 option 1: trams only | Yes — `REPLAY_MODES=tram`, on-demand modes deliberately not recorded |
+| §11: packed records, page-cache resident | Yes — 28-byte fixed-width records, per-minute chunk files, no Redis |
+| §3: gzipped NDJSON as the store | No — the packed format won once §10 made bbox scans a requirement |
+| §4: recorder tapping ingestion | Yes — one call beside `cache.SetPosition`, after dedupe |
+| §4: index + chunk endpoints | Yes — `/replay/index`, `/replay/window`, `/replay/timelapse` |
+| §5: `useReplay`, timeline UI, map time scale | Yes — all three |
+| §6: suppress live-only panels | Yes — entering a replay clears stop, journey, bike and arrival selections |
+| §6: speed capped by bandwidth | Solved instead by server-side `step` thinning, which holds the drawn rate near 8/s at any speed |
+| §11: retention of a week | Yes — `REPLAY_RETENTION_DAYS=7` |
+
+Two things the analysis got wrong, both now measured rather than reasoned:
+
+- The week-wide bbox scan is **~1.2 s**, not 0.13 s (§11).
+- Playback speed did not need a bandwidth cap. Thinning to one reading per
+  vehicle per *N* seconds means a fast replay fetches *less* than a slow one,
+  not more, because it draws the same number of steps either way.
+
+Still open, and deliberately not built: recording the other modes (§7 remains a
+real choice, not an oversight), a spatial partition of the chunks (§10 option 1
+— unnecessary while the scan is a second), and video export (§10 — the headless
+MapLibre tooling in `scripts/` is still most of the way there).

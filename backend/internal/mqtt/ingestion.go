@@ -12,6 +12,7 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/prometheus/client_golang/prometheus"
 	"ratikka/internal/cache"
+	"ratikka/internal/replay"
 )
 
 const tramTopic = "/hfp/v2/journey/ongoing/vp/tram/#"
@@ -182,6 +183,12 @@ type IngestionWorker struct {
 	cache  cache.Cache
 	broker string
 
+	// archive keeps a rolling history of the readings that reach the cache, so
+	// the map can be wound back through it. Nil — the default, and what an
+	// instance with no writable volume gets — records nothing; every method on
+	// it tolerates that, so there is no branch here.
+	archive *replay.Archive
+
 	// enabledModes tracks which optional feeds (bus, metro, train) are
 	// currently subscribed. Guarded by mu because EnableMode/DisableMode are
 	// called from the WebSocket hub goroutine while OnConnect (reconnect) reads
@@ -206,6 +213,10 @@ type metroUnit struct {
 	veh  int
 	seen time.Time
 }
+
+// SetArchive wires the replay archive that records readings as they are
+// ingested. Call once before Start.
+func (w *IngestionWorker) SetArchive(a *replay.Archive) { w.archive = a }
 
 func NewIngestionWorker(broker string, cache cache.Cache) *IngestionWorker {
 	return &IngestionWorker{
@@ -446,6 +457,36 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 
 	if err := w.cache.SetPosition(ctx, vehicleID, thinnedJSON); err != nil {
 		log.Printf("Error caching vehicle %s position: %v\n", vehicleID, err)
+	}
+
+	w.archiveReading(thinned, nextStop, eol, stopStr != nil)
+}
+
+// archiveReading files the reading in the replay archive. It is handed the same
+// values the cache was given, after dedupe and after the metro's coupled units
+// have been paired down, so the history holds exactly what the live map showed
+// rather than the raw feed.
+//
+// Errors are logged and swallowed: a full disk or a bad chunk must cost the
+// history, never the live map.
+func (w *IngestionWorker) archiveReading(pos VehiclePosition, nextStop *string, eol, atStop bool) {
+	if !w.archive.Records(pos.Mode) {
+		return
+	}
+
+	next := ""
+	if nextStop != nil {
+		next = *nextStop
+	}
+
+	if err := w.archive.Record(replay.Position{
+		Veh: pos.Veh, Desi: pos.Desi, Route: pos.Route, Dir: pos.Dir,
+		Oday: pos.Oday, Start: pos.Start, TripID: pos.TripId, Mode: pos.Mode,
+		Lat: pos.Lat, Lng: pos.Lng, Hdg: pos.Hdg, Spd: pos.Spd, Acc: pos.Acc,
+		Dl: pos.Dl, Drst: pos.Drst, AtStop: atStop, NextStop: next, EOL: eol,
+		Ts: pos.Ts, Odo: pos.Odo, Oper: pos.Oper, Jrn: pos.Jrn, Occu: pos.Occu,
+	}); err != nil {
+		log.Printf("Error recording vehicle %s to the replay archive: %v\n", pos.Veh, err)
 	}
 }
 

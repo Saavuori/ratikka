@@ -15,6 +15,7 @@ import (
 	"ratikka/internal/cache"
 	"ratikka/internal/config"
 	"ratikka/internal/mqtt"
+	"ratikka/internal/replay"
 	"ratikka/internal/ws"
 )
 
@@ -46,15 +47,34 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 4. Initialize MQTT Ingestion Worker
+	// 4. Open the replay archive, if one is configured. A nil archive records
+	// nothing and every method tolerates it, so the rest of the wiring is the
+	// same whether recording is on or off.
+	archive, err := replay.Open(replay.Config{
+		Root:          cfg.ReplayDir,
+		RetentionDays: cfg.ReplayRetentionDays,
+		Modes:         cfg.ReplayModes,
+	})
+	if err != nil {
+		log.Printf("WARNING: replay archive unavailable: %v. History will not be recorded.\n", err)
+	} else if archive.Enabled() {
+		log.Printf("Recording %v history to %s, keeping %d days\n",
+			archive.Modes(), cfg.ReplayDir, archive.RetentionDays())
+	} else {
+		log.Println("Replay archive disabled (REPLAY_DIR is unset). History will not be recorded.")
+	}
+	defer archive.Close()
+
+	// 5. Initialize MQTT Ingestion Worker
 	log.Printf("Starting MQTT ingestion from broker: %s...\n", cfg.MQTTBroker)
 	mqttWorker := mqtt.NewIngestionWorker(cfg.MQTTBroker, liveCache)
+	mqttWorker.SetArchive(archive)
 	if err := mqttWorker.Start(ctx); err != nil {
 		log.Printf("ERROR starting MQTT worker: %v\n", err)
 	}
 	defer mqttWorker.Stop()
 
-	// 5. Initialize WebSocket Hub. It drives on-demand bus ingestion: buses are
+	// 6. Initialize WebSocket Hub. It drives on-demand bus ingestion: buses are
 	// only streamed while at least one connected client has opted in.
 	wsHub := ws.NewHub(liveCache)
 	wsHub.SetModeController(mqttWorker)
@@ -74,11 +94,46 @@ func main() {
 		}
 	}()
 
-	// 6. Setup REST Handlers & GraphQL API Client
+	// Push buffered history to disk, and drop days that have aged out. The
+	// flush bounds what a crash costs to a few seconds of history; the sweep
+	// runs rarely because it walks the whole archive.
+	if archive.Enabled() {
+		go func() {
+			flush := time.NewTicker(5 * time.Second)
+			defer flush.Stop()
+			sweep := time.NewTicker(10 * time.Minute)
+			defer sweep.Stop()
+
+			if _, err := archive.Sweep(); err != nil {
+				log.Printf("Replay archive sweep failed: %v\n", err)
+			}
+
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-flush.C:
+					if err := archive.Flush(); err != nil {
+						log.Printf("Replay archive flush failed: %v\n", err)
+					}
+				case <-sweep.C:
+					bytes, err := archive.Sweep()
+					if err != nil {
+						log.Printf("Replay archive sweep failed: %v\n", err)
+						continue
+					}
+					log.Printf("Replay archive holds %.1f MB\n", float64(bytes)/(1<<20))
+				}
+			}
+		}()
+	}
+
+	// 7. Setup REST Handlers & GraphQL API Client
 	gqlClient := api.NewGraphQLClient(cfg.DigitransitAPIKey)
 	handlers := api.NewHandlers(liveCache, gqlClient, mqttWorker)
+	handlers.SetArchive(archive)
 
-	// 7. Setup router
+	// 8. Setup router
 	router := api.NewRouter(handlers, wsHub)
 
 	server := &http.Server{
@@ -91,7 +146,7 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	// 8. Handle OS shutdown signals for graceful termination
+	// 9. Handle OS shutdown signals for graceful termination
 	shutdownChan := make(chan os.Signal, 1)
 	signal.Notify(shutdownChan, os.Interrupt, syscall.SIGTERM)
 

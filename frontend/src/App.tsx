@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useTramData } from './hooks/useTramData';
+import { useReplay } from './hooks/useReplay';
 import { useIsMobile } from './hooks/useIsMobile';
 import { Map } from './components/Map';
 import { FilterPanel } from './components/FilterPanel';
@@ -10,6 +11,7 @@ import { TramCard } from './components/TramCard';
 import { StopPopup } from './components/StopPopup';
 import { BikePopup } from './components/BikePopup';
 import { VersionBadge } from './components/VersionBadge';
+import { TimelapsePanel } from './components/TimelapsePanel';
 import { ModeToggles } from './components/ModeToggles';
 import { ViewToggles } from './components/ViewToggles';
 import { BottomNav, type MobileTab } from './components/BottomNav';
@@ -27,7 +29,13 @@ import type { StopsArrivalsResponse } from './types';
 import type { VehiclePosition, Alert, TripDetailsResponse } from './types';
 
 function App() {
-  const { trams, handleUpdate } = useTramData();
+  const { trams: liveTrams, handleUpdate } = useTramData();
+  const replay = useReplay();
+  // The map draws whichever source is playing. A replayed vehicle carries the
+  // same fields as a live one, so nothing downstream of here knows the
+  // difference — filtering, selection, the telemetry panels and the animation
+  // all work on history exactly as they work on now.
+  const trams = replay.active ? replay.vehicles : liveTrams;
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const isMobile = useIsMobile();
   const [journey, setJourney] = useState<JourneySelection | null>(null);
@@ -208,9 +216,24 @@ function App() {
     autoTrack?: boolean;
   } | null>(null);
   const [selectedBikeStation, setSelectedBikeStation] = useState<{
+
     id: string;
     name: string;
   } | null>(null);
+
+  // Everything the map shows beside the vehicles — departures, alerts, journey
+  // plans, bike capacity — is fetched for right now, so beside an hour-old tram
+  // it would be quietly wrong. Leaving a replay puts them all back.
+  useEffect(() => {
+    if (!replay.active) return;
+    setSelectedTram(null);
+    setSelectedStop(null);
+    setSelectedBikeStation(null);
+    setJourney(null);
+    setJourneyOpen(false);
+    setDeparturesOpen(false);
+    setArrivalFocus(null);
+  }, [replay.active]);
 
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
 
@@ -712,6 +735,7 @@ function App() {
         arrivalTripDetails={arrivalTripDetails}
         arrivalLabels={arrivalLabels}
         onVisibleStopsChange={setLabelStopIds}
+        timeScale={replay.timeScale}
       />
 
       {/* Sidebar Filters Panel */}
@@ -842,8 +866,26 @@ function App() {
         setShowRoutes={setShowRoutes}
       />
 
-      {/* Version Badge */}
-      <VersionBadge />
+      {/* Version Badge — double-clicking it reveals the timelapse controls */}
+      <VersionBadge onReveal={replay.available ? () => replay.controls.enter() : undefined} />
+
+      {replay.active && (
+        <TimelapsePanel
+          cursor={replay.cursor}
+          range={replay.range}
+          playing={replay.playing}
+          speed={replay.speed}
+          loading={replay.loading}
+          inGap={replay.inGap}
+          error={replay.error}
+          days={replay.index?.days ?? null}
+          retentionDays={replay.index?.retentionDays ?? 0}
+          onSeek={replay.controls.seek}
+          onToggle={replay.controls.toggle}
+          onSpeed={replay.controls.setSpeed}
+          onExit={replay.controls.exit}
+        />
+      )}
 
       {/* Mobile bottom tab bar: toggles the settings, lines, and details sheets */}
       {isMobile && (

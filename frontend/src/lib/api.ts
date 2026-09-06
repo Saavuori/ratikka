@@ -1,4 +1,4 @@
-import type { TripDetailsResponse, StopDetailsResponse, NearbyStopsResponse, StopsArrivalsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyPlanOptions, JourneyMonitorResponse, JourneyEndpoint } from '../types';
+import type { TripDetailsResponse, StopDetailsResponse, NearbyStopsResponse, StopsArrivalsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyPlanOptions, JourneyMonitorResponse, JourneyEndpoint, ReplayIndexResponse, ReplayWindowResponse } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -155,6 +155,66 @@ export async function fetchJourneyMonitor(legIds: string[], signal?: AbortSignal
   const res = await fetch(`${API_BASE}/journey/monitor?${params}`, { signal });
   if (!res.ok) {
     throw new Error(`Failed to refresh journey: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/** What history the server holds, and where its gaps are. */
+export async function fetchReplayIndex(signal?: AbortSignal): Promise<ReplayIndexResponse> {
+  const res = await fetch(`${API_BASE}/replay/index`, { signal });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch replay index: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/**
+ * A slice of recorded history for playback. `step` thins the result to one
+ * reading per vehicle per that many seconds, which is how fast playback stays
+ * affordable: sixty times real time draws the same number of steps as one
+ * times, each covering sixty times the ground.
+ */
+export async function fetchReplayWindow(
+  from: number,
+  to: number,
+  options: { step?: number; modes?: string[]; bbox?: [number, number, number, number] } = {},
+  signal?: AbortSignal
+): Promise<ReplayWindowResponse> {
+  const params = new URLSearchParams({ from: String(Math.floor(from)), to: String(Math.ceil(to)) });
+  if (options.step && options.step > 1) params.set('step', String(Math.round(options.step)));
+  if (options.modes?.length) params.set('modes', options.modes.join(','));
+  if (options.bbox) params.set('bbox', options.bbox.join(','));
+
+  const res = await fetch(`${API_BASE}/replay/window?${params}`, { signal });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch replay window: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/**
+ * Every reading that passed through one place over a long span. The bounding
+ * box is what makes the span affordable — a junction over a week is a hundred
+ * thousand readings out of tens of millions — so it is required here.
+ */
+export async function fetchReplayTimelapse(
+  from: number,
+  to: number,
+  bbox: [number, number, number, number],
+  options: { step?: number; modes?: string[] } = {},
+  signal?: AbortSignal
+): Promise<ReplayWindowResponse> {
+  const params = new URLSearchParams({
+    from: String(Math.floor(from)),
+    to: String(Math.ceil(to)),
+    bbox: bbox.join(','),
+  });
+  if (options.step && options.step > 1) params.set('step', String(Math.round(options.step)));
+  if (options.modes?.length) params.set('modes', options.modes.join(','));
+
+  const res = await fetch(`${API_BASE}/replay/timelapse?${params}`, { signal });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch timelapse: ${res.statusText}`);
   }
   return res.json();
 }

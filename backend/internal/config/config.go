@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -15,6 +16,18 @@ type Config struct {
 	MQTTBroker        string
 	Port              string
 	NoRedis           bool
+
+	// ReplayDir is where the rolling history of vehicle positions is written.
+	// Empty — the default — records nothing, because an instance without a
+	// volume mounted for it would otherwise fill its own container layer.
+	ReplayDir string
+	// ReplayRetentionDays is how far back the history reaches. A week of trams
+	// is about 1.1 GB.
+	ReplayRetentionDays int
+	// ReplayModes are the vehicle modes recorded. Trams only by default: they
+	// are the one mode ingested unconditionally, so theirs is the only history
+	// without holes wherever nobody happened to be watching.
+	ReplayModes []string
 }
 
 // loadDotEnv tries to find and parse a .env file from common locations and sets env vars
@@ -69,15 +82,45 @@ func loadDotEnv() {
 	}
 }
 
+// parsePositiveInt reads a whole-number setting, falling back to a default for
+// anything missing, unparseable or non-positive.
+func parsePositiveInt(raw string, fallback int) int {
+	v, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || v <= 0 {
+		if strings.TrimSpace(raw) != "" && (err != nil || v <= 0) {
+			log.Printf("Ignoring unusable value %q, using %d\n", raw, fallback)
+		}
+		return fallback
+	}
+	return v
+}
+
+// parseModes reads a comma-separated mode list, defaulting to trams alone.
+func parseModes(raw string) []string {
+	var modes []string
+	for _, part := range strings.Split(raw, ",") {
+		if mode := strings.TrimSpace(part); mode != "" {
+			modes = append(modes, mode)
+		}
+	}
+	if len(modes) == 0 {
+		return []string{"tram"}
+	}
+	return modes
+}
+
 func LoadConfig() *Config {
 	loadDotEnv()
 
 
 	cfg := &Config{
-		DigitransitAPIKey: os.Getenv("DIGITRANSIT_API_KEY"),
-		RedisURL:          os.Getenv("REDIS_URL"),
-		MQTTBroker:        os.Getenv("MQTT_BROKER"),
-		Port:              os.Getenv("PORT"),
+		DigitransitAPIKey:   os.Getenv("DIGITRANSIT_API_KEY"),
+		RedisURL:            os.Getenv("REDIS_URL"),
+		MQTTBroker:          os.Getenv("MQTT_BROKER"),
+		Port:                os.Getenv("PORT"),
+		ReplayDir:           os.Getenv("REPLAY_DIR"),
+		ReplayRetentionDays: parsePositiveInt(os.Getenv("REPLAY_RETENTION_DAYS"), 7),
+		ReplayModes:         parseModes(os.Getenv("REPLAY_MODES")),
 	}
 
 	// Fallback/defaults
