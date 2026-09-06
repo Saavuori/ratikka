@@ -92,6 +92,19 @@ import {
   STOP_FURNITURE_LAYER,
 } from '../lib/stopModels';
 import type { StopFurnitureState } from '../lib/stopModels';
+import {
+  BIKE_STATION_MIN_ZOOM,
+  STOP_CIRCLE_MIN_ZOOM,
+  STATION_CIRCLE_MIN_ZOOM,
+  STOP_CIRCLE_FADE_ZOOM,
+  STOP_CIRCLE_RADIUS,
+  STATION_CIRCLE_RADIUS,
+  STOP_CIRCLE_STROKE_WIDTH,
+  STOP_CIRCLE_STROKE_COLOR,
+  STOP_CIRCLE_OPACITY,
+  STOP_CIRCLE_LAYERS,
+  STATION_CIRCLE_LAYERS,
+} from '../lib/stopCircleStyle';
 import { advanceDoors, isVehicleBraking, vehicles3DEnabled } from '../lib/vehicleAnimation';
 import type { DoorAnimation } from '../lib/vehicleAnimation';
 import { fetchBikeStations } from '../lib/api';
@@ -2472,8 +2485,8 @@ export const Map: React.FC<MapProps> = ({
         type: 'circle',
         source: 'stops',
         'source-layer': 'stops',
-        minzoom: 13,
-        maxzoom: 15.5,
+        minzoom: STOP_CIRCLE_MIN_ZOOM,
+        maxzoom: STOP_CIRCLE_FADE_ZOOM,
         filter: [
           'all',
           ['!', ['get', 'isTrunkStop']],
@@ -2481,13 +2494,11 @@ export const Map: React.FC<MapProps> = ({
         ] as maplibregl.FilterSpecification,
         paint: {
           'circle-color': '#007ac9',
-          'circle-radius': [
-            'interpolate',
-            ['exponential', 1.15],
-            ['zoom'],
-            12, 1,
-            22, 24
-          ]
+          'circle-radius': STOP_CIRCLE_RADIUS,
+          'circle-stroke-color': STOP_CIRCLE_STROKE_COLOR,
+          'circle-stroke-width': STOP_CIRCLE_STROKE_WIDTH,
+          'circle-opacity': STOP_CIRCLE_OPACITY,
+          'circle-stroke-opacity': STOP_CIRCLE_OPACITY
         }
       }, 'trams-circles');
     }
@@ -2498,18 +2509,16 @@ export const Map: React.FC<MapProps> = ({
         type: 'circle',
         source: 'stops',
         'source-layer': 'stops',
-        minzoom: 13,
-        maxzoom: 15.5,
+        minzoom: STOP_CIRCLE_MIN_ZOOM,
+        maxzoom: STOP_CIRCLE_FADE_ZOOM,
         filter: ['all', ['get', 'isTrunkStop'], ['match', ['get', 'mode'], 'BUS', true, false]] as maplibregl.FilterSpecification,
         paint: {
           'circle-color': '#007ac9',
-          'circle-radius': [
-            'interpolate',
-            ['exponential', 1.15],
-            ['zoom'],
-            12, 1,
-            22, 24
-          ]
+          'circle-radius': STOP_CIRCLE_RADIUS,
+          'circle-stroke-color': STOP_CIRCLE_STROKE_COLOR,
+          'circle-stroke-width': STOP_CIRCLE_STROKE_WIDTH,
+          'circle-opacity': STOP_CIRCLE_OPACITY,
+          'circle-stroke-opacity': STOP_CIRCLE_OPACITY
         }
       }, 'trams-circles');
     }
@@ -2520,18 +2529,16 @@ export const Map: React.FC<MapProps> = ({
         type: 'circle',
         source: 'stops',
         'source-layer': 'stops',
-        minzoom: 13,
-        maxzoom: 15.5,
+        minzoom: STOP_CIRCLE_MIN_ZOOM,
+        maxzoom: STOP_CIRCLE_FADE_ZOOM,
         filter: ['match', ['get', 'mode'], 'TRAM', true, false],
         paint: {
           'circle-color': '#00985f',
-          'circle-radius': [
-            'interpolate',
-            ['exponential', 1.15],
-            ['zoom'],
-            12, 1,
-            22, 24
-          ]
+          'circle-radius': STOP_CIRCLE_RADIUS,
+          'circle-stroke-color': STOP_CIRCLE_STROKE_COLOR,
+          'circle-stroke-width': STOP_CIRCLE_STROKE_WIDTH,
+          'circle-opacity': STOP_CIRCLE_OPACITY,
+          'circle-stroke-opacity': STOP_CIRCLE_OPACITY
         }
       }, 'trams-circles');
     }
@@ -2547,18 +2554,16 @@ export const Map: React.FC<MapProps> = ({
         type: 'circle',
         source: 'stops',
         'source-layer': 'stops',
-        minzoom: 12,
-        maxzoom: 15.5,
+        minzoom: STATION_CIRCLE_MIN_ZOOM,
+        maxzoom: STOP_CIRCLE_FADE_ZOOM,
         filter: ['==', STOP_MODE, 'SUBWAY'] as maplibregl.FilterSpecification,
         paint: {
           'circle-color': '#FF6319',
-          'circle-radius': [
-            'interpolate',
-            ['exponential', 1.15],
-            ['zoom'],
-            12, 2,
-            22, 26
-          ]
+          'circle-radius': STATION_CIRCLE_RADIUS,
+          'circle-stroke-color': STOP_CIRCLE_STROKE_COLOR,
+          'circle-stroke-width': STOP_CIRCLE_STROKE_WIDTH,
+          'circle-opacity': STOP_CIRCLE_OPACITY,
+          'circle-stroke-opacity': STOP_CIRCLE_OPACITY
         }
       }, 'trams-circles');
     }
@@ -2569,18 +2574,16 @@ export const Map: React.FC<MapProps> = ({
         type: 'circle',
         source: 'stops',
         'source-layer': 'stops',
-        minzoom: 12,
-        maxzoom: 15.5,
+        minzoom: STATION_CIRCLE_MIN_ZOOM,
+        maxzoom: STOP_CIRCLE_FADE_ZOOM,
         filter: ['==', STOP_MODE, 'RAIL'] as maplibregl.FilterSpecification,
         paint: {
           'circle-color': '#8C4799',
-          'circle-radius': [
-            'interpolate',
-            ['exponential', 1.15],
-            ['zoom'],
-            12, 2,
-            22, 26
-          ]
+          'circle-radius': STATION_CIRCLE_RADIUS,
+          'circle-stroke-color': STOP_CIRCLE_STROKE_COLOR,
+          'circle-stroke-width': STOP_CIRCLE_STROKE_WIDTH,
+          'circle-opacity': STOP_CIRCLE_OPACITY,
+          'circle-stroke-opacity': STOP_CIRCLE_OPACITY
         }
       }, 'trams-circles');
     }
@@ -2787,7 +2790,7 @@ export const Map: React.FC<MapProps> = ({
         id: 'citybike_gauge',
         type: 'symbol',
         source: 'citybike',
-        minzoom: 13,
+        minzoom: BIKE_STATION_MIN_ZOOM,
         layout: {
           'icon-image': [
             'let',
@@ -3275,28 +3278,27 @@ export const Map: React.FC<MapProps> = ({
     }
 
 
-    // Fade out circle stop layers when zooming in (zoom >= 15.5)
-    const circleLayers = [
-      'stops_tram',
-      'stops_bus',
-      'stops_trunk',
-      'stops_lrail',
-      'stops_subway',
-      'stops_ferry',
-      'stops_rail',
-      'stops_metro',
-      'stops_train'
-    ];
-    circleLayers.forEach((layerId) => {
-      if (map.getLayer(layerId)) {
-        map.setPaintProperty(layerId, 'circle-opacity', [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          15.0, 1.0,
-          15.5, 0.0
-        ]);
-      }
+    // Give the stop discs the same treatment in both themes. In the light theme
+    // most of these layers come from the HSL vector style itself, with a radius
+    // ramp built for a style whose stops stay discs all the way in — it puts a
+    // one-pixel dot on the map across the whole band where we draw discs, which
+    // is a stop that is there but cannot be seen. The ramp below is scoped to
+    // that band, so a stop reads as a marker next to the city-bike gauges, and
+    // the discs still fade out as the sign boards take over at 15.5.
+    const applyStopCircleStyle = (layerId: string, radius: typeof STOP_CIRCLE_RADIUS, minzoom: number) => {
+      if (!map.getLayer(layerId)) return;
+      map.setLayerZoomRange(layerId, minzoom, STOP_CIRCLE_FADE_ZOOM);
+      map.setPaintProperty(layerId, 'circle-radius', radius);
+      map.setPaintProperty(layerId, 'circle-stroke-color', STOP_CIRCLE_STROKE_COLOR);
+      map.setPaintProperty(layerId, 'circle-stroke-width', STOP_CIRCLE_STROKE_WIDTH);
+      map.setPaintProperty(layerId, 'circle-opacity', STOP_CIRCLE_OPACITY);
+      map.setPaintProperty(layerId, 'circle-stroke-opacity', STOP_CIRCLE_OPACITY);
+    };
+    STOP_CIRCLE_LAYERS.forEach((layerId) => {
+      applyStopCircleStyle(layerId, STOP_CIRCLE_RADIUS, STOP_CIRCLE_MIN_ZOOM);
+    });
+    STATION_CIRCLE_LAYERS.forEach((layerId) => {
+      applyStopCircleStyle(layerId, STATION_CIRCLE_RADIUS, STATION_CIRCLE_MIN_ZOOM);
     });
 
 

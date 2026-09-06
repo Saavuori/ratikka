@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.60.1] - 2026-09-06
+
+### Fixed
+- **Stops stay visible when you zoom out**: zoom back from street level and the stops vanished while the city-bike gauges stayed put, which made it look as though the map only knew about bikes. The stops were there the whole time — as dots of about one pixel. They inherit the HSL vector style's own radius ramp, which grows a stop from 1 px at zoom 12 to 24 px at zoom 22, but the discs are only ever drawn between zoom 13 and 15.5, where the sign boards take over. Almost the entire ramp sits above the band it is used in, so every disc came out at the very bottom of it. The ramp is now scoped to that band (3.2 px at zoom 13 rising to 5 px, stations a size up), the discs carry their own thin white ring for contrast now that the style's casing layers are switched off, and the threshold at which they appear is pinned to the same constant as the city-bike gauges so the two kinds of marker keep arriving together.
+
+---
+
 ## [v0.60.0] - 2026-09-06
 
 ### Fixed
