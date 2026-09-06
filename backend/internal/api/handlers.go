@@ -615,29 +615,8 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 						longName
 						mode
 					}
-					stoptimesWithoutPatterns(numberOfDepartures: $numberOfDepartures, omitCanceled: false) {
-						scheduledDeparture
-						realtimeDeparture
-						serviceDay
-						departureDelay
-						scheduledArrival
-						realtimeArrival
-						arrivalDelay
-						realtime
-						realtimeState
-						headsign
-						trip {
-							gtfsId
-							directionId
-							departureStoptime { scheduledDeparture }
-							route {
-								gtfsId
-								shortName
-								color
-								mode
-							}
-						}
-					}
+					stoptimesWithoutPatterns(numberOfDepartures: $numberOfDepartures, omitCanceled: false) {` +
+			stoptimeFields + `}
 				}
 			}
 		`
@@ -682,30 +661,7 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, dep := range s.StoptimesWithoutPatterns {
-			departure := StopDepartureInfo{
-				ScheduledDeparture:     optionalTime(dep.ScheduledDeparture),
-				RealtimeDeparture:      optionalTime(dep.RealtimeDeparture),
-				ScheduledDepartureTime: serviceTimestamp(dep.ServiceDay, dep.ScheduledDeparture),
-				RealtimeDepartureTime:  serviceTimestamp(dep.ServiceDay, dep.RealtimeDeparture),
-				DepartureDelay:         dep.DepartureDelay,
-				RealtimeState:          dep.RealtimeState,
-				Line:                   dep.Trip.Route.ShortName,
-				Headsign:               dep.Headsign,
-				ScheduledArrival:       formatSeconds(dep.ScheduledArrival),
-				RealtimeArrival:        formatSeconds(dep.RealtimeArrival),
-				Delay:                  dep.ArrivalDelay,
-				Realtime:               dep.Realtime,
-				TripId:                 dep.Trip.GtfsId,
-				RouteId:                dep.Trip.Route.GtfsId,
-				ServiceDate:            stopServiceDate(dep.ServiceDay),
-				DirectionId:            directionID(dep.Trip.DirectionId),
-				Mode:                   dep.Trip.Route.Mode,
-			}
-			if origin := dep.Trip.DepartureStoptime; origin != nil &&
-				origin.ScheduledDeparture != nil && *origin.ScheduledDeparture >= 0 {
-				departure.StartTimeSeconds = origin.ScheduledDeparture
-			}
-			resp.Departures = append(resp.Departures, departure)
+			resp.Departures = append(resp.Departures, toStopDeparture(dep))
 		}
 
 		jsonBytes, err := json.Marshal(resp)
@@ -728,6 +684,35 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(dataInterface.([]byte))
+}
+
+// toStopDeparture maps one upstream stoptime onto the departure the API
+// serves, trip identity included.
+func toStopDeparture(dep rawStoptime) StopDepartureInfo {
+	departure := StopDepartureInfo{
+		ScheduledDeparture:     optionalTime(dep.ScheduledDeparture),
+		RealtimeDeparture:      optionalTime(dep.RealtimeDeparture),
+		ScheduledDepartureTime: serviceTimestamp(dep.ServiceDay, dep.ScheduledDeparture),
+		RealtimeDepartureTime:  serviceTimestamp(dep.ServiceDay, dep.RealtimeDeparture),
+		DepartureDelay:         dep.DepartureDelay,
+		RealtimeState:          dep.RealtimeState,
+		Line:                   dep.Trip.Route.ShortName,
+		Headsign:               dep.Headsign,
+		ScheduledArrival:       formatSeconds(dep.ScheduledArrival),
+		RealtimeArrival:        formatSeconds(dep.RealtimeArrival),
+		Delay:                  dep.ArrivalDelay,
+		Realtime:               dep.Realtime,
+		TripId:                 dep.Trip.GtfsId,
+		RouteId:                dep.Trip.Route.GtfsId,
+		ServiceDate:            stopServiceDate(dep.ServiceDay),
+		DirectionId:            directionID(dep.Trip.DirectionId),
+		Mode:                   dep.Trip.Route.Mode,
+	}
+	if origin := dep.Trip.DepartureStoptime; origin != nil &&
+		origin.ScheduledDeparture != nil && *origin.ScheduledDeparture >= 0 {
+		departure.StartTimeSeconds = origin.ScheduledDeparture
+	}
+	return departure
 }
 
 // stopServiceDate renders a stoptime's serviceDay as a YYYY-MM-DD service

@@ -18,6 +18,7 @@ func NewRouter(h *Handlers, hub *ws.Hub) *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/trip/{tripId}", h.TripDetails)
 	mux.HandleFunc("GET /api/v1/stop/{stopId}", h.StopDetails)
 	mux.HandleFunc("GET /api/v1/stops/nearby", h.NearbyStops)
+	mux.HandleFunc("GET /api/v1/stops/arrivals", h.StopsArrivals)
 	mux.HandleFunc("GET /api/v1/route/{shortName}", h.RouteDetails)
 	mux.HandleFunc("GET /api/v1/bike-station/{stationId}", h.BikeStationDetails)
 	mux.HandleFunc("GET /api/v1/bike-stations", h.BikeStations)

@@ -1,4 +1,4 @@
-import type { TripDetailsResponse, StopDetailsResponse, NearbyStopsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyPlanOptions, JourneyMonitorResponse, JourneyEndpoint } from '../types';
+import type { TripDetailsResponse, StopDetailsResponse, NearbyStopsResponse, StopsArrivalsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyPlanOptions, JourneyMonitorResponse, JourneyEndpoint } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -23,6 +23,22 @@ export async function fetchNearbyStops(lat: number, lon: number, signal?: AbortS
   const res = await fetch(`${API_BASE}/stops/nearby?${params}`, { signal });
   if (!res.ok) {
     throw new Error(`Failed to fetch nearby stops: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/**
+ * Next departures for several stops in one request. The map labels every stop
+ * in view once it is zoomed in, and a request per stop would be a request per
+ * stop on every refresh. The backend caps the batch, so pass the stops that
+ * matter most first.
+ */
+export async function fetchStopsArrivals(stopIds: string[], signal?: AbortSignal): Promise<StopsArrivalsResponse> {
+  const params = new URLSearchParams();
+  stopIds.forEach((id) => params.append('id', id));
+  const res = await fetch(`${API_BASE}/stops/arrivals?${params}`, { signal });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch stop arrivals: ${res.statusText}`);
   }
   return res.json();
 }

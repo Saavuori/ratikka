@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { StopDepartureInfo, VehiclePosition } from '../types';
 import {
-  arrivalVehicleModes, departureIdentity, focusedArrival, nextArrivals,
+  arrivalLabel, arrivalVehicleModes, departureIdentity, focusedArrival, nextArrivals,
   walkVerdict, walkVerdictLabel,
 } from './stopArrivals';
 
@@ -156,5 +156,28 @@ describe('walkVerdictLabel', () => {
     expect(walkVerdictLabel(walkVerdict(130, 600_000)!)).toBe('Easy walk · 8 min spare');
     expect(walkVerdictLabel(walkVerdict(130, 150_000)!)).toBe('Run for it · 1 min spare');
     expect(walkVerdictLabel(walkVerdict(1300, 300_000)!)).toBe('Too late · 12 min short');
+  });
+});
+
+describe('arrivalLabel', () => {
+  const arrival = (etaMs: number, line = '9') =>
+    nextArrivals([departure({
+      line,
+      scheduledDepartureTime: now + etaMs,
+      realtimeDepartureTime: now + etaMs,
+    })], [], now)[0];
+
+  it('says the line and the time left', () => {
+    expect(arrivalLabel(arrival(300_000))).toBe('9 · 5 min');
+    expect(arrivalLabel(arrival(61_000))).toBe('9 · 2 min');
+    expect(arrivalLabel(arrival(30_000))).toBe('9 · <1 min');
+    expect(arrivalLabel(arrival(-10_000))).toBe('9 · now');
+  });
+
+  it('draws nothing rather than something untrue', () => {
+    expect(arrivalLabel(undefined)).toBeUndefined();
+    // Departed: still listed inside the one-minute grace, but not a label.
+    expect(arrivalLabel(arrival(-45_000))).toBeUndefined();
+    expect(arrivalLabel(arrival(300_000, '  '))).toBeUndefined();
   });
 });
