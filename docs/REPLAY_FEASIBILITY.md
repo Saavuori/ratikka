@@ -256,3 +256,78 @@ research project.
 **The caveat from §7 still binds.** A timelapse can only show modes that were
 being recorded, so a bus junction needs always-on bus ingestion. A tram junction
 does not.
+
+---
+
+## 11. A week of trams in memory
+
+**It fits: ~1.1 GB.** But the packing is what makes it fit, not the memory, and
+once the data is packed Redis stops earning its place.
+
+A week is 49 M tram readings (81/s measured, §3). What that costs depends
+entirely on how it is stored:
+
+| Layout | Week |
+|---|---|
+| NDJSON, one Redis hash entry per reading | **20.8 GB** |
+| Packed 22 B record, one entry per reading | 5.5 GB |
+| Packed 22 B record, **one blob per minute** | **1.08 GB** |
+
+The per-entry overhead is the whole story: Redis spends 60–100 B on every key
+it tracks, so a reading-per-entry layout pays more in bookkeeping than in data.
+Batched into one value per minute — 10,080 keys for the week, 104 KB each —
+that overhead disappears and the dataset is just the readings.
+
+The 22 B record is journey ref (u16), timestamp delta (u16), two int32
+coordinates, speed (u16), acceleration (i8), heading (u16), flags (u8) and next
+stop ref (u16), with route, direction, operating day and trip ID lifted into a
+side table keyed by journey ref — ~21,000 journeys a week, about 1.3 MB. Adding
+the fields the diagnostics tab shows (odometer, occupancy, GPS source) makes it
+28 B and the week 1.4 GB.
+
+### Why not Redis
+
+Nothing in this workload is a Redis workload. The two access patterns are "give
+me minute *N*" (sequential) and "scan every coordinate in a bounding box" (full
+scan, §10). Neither needs a key-value server, and the current instance is
+configured against both:
+
+- **`--appendonly no`.** A week of history evaporates on any Redis restart, and
+  `update.sh` recreates containers on a five-minute cron. Enabling AOF or RDB
+  means writing to disk anyway — at which point disk is the store and Redis is
+  a cache in front of it.
+- **`--maxmemory 64mb --maxmemory-policy allkeys-lru`.** Raising this to hold
+  the archive also removes the safety property it was set for. Left as LRU it
+  silently evicts history under pressure — a replay with holes, discovered by a
+  user, not by a metric. It would need `noeviction` and a separate instance so
+  the live position hash is not evicted alongside it.
+- **BGSAVE forks.** Snapshotting a 1.1 GB dataset can transiently double RSS to
+  **~2.2 GB** through copy-on-write, on a box shared with every other app behind
+  the same Caddy.
+
+### What to do instead
+
+Write the same packed records as files and let the page cache hold them. A
+1.1 GB working set on a host with spare RAM is resident after first touch,
+scans at exactly the same speed as anything in Redis, survives restarts and
+deploys, needs no eviction policy, and needs no new service. If the process
+wants explicit control, `mmap` the week and index into it; the records are
+fixed-width, so an offset is arithmetic.
+
+That is the honest version of "in memory": the memory is the page cache, and
+the durability comes free.
+
+### The reason to want it
+
+Not replay — replay is sequential and disk serves it fine. The prize is §10.
+With the whole week's coordinates resident and fixed-width, a bounding-box scan
+over **all 49 M readings takes ~0.13 s** at memory bandwidth. That makes "this
+junction, all week" an interactive query rather than a batch job, and it is what
+turns location timelapse from a feature into something you poke at.
+
+### Before committing
+
+Check free RAM on the Oracle host — the archive wants ~1.1 GB resident with
+headroom for the rest of the stack, and this box runs the user's other
+applications too. `free -m` and `podman stats --no-stream` answer it; it could
+not be verified from this session.
