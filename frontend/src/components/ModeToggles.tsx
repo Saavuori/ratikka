@@ -3,6 +3,8 @@ import { TramFront, Bus, TrainFrontTunnel, TrainFront } from 'lucide-react';
 import { TRAM_GREEN, BUS_BLUE, METRO_ORANGE, TRAIN_PURPLE } from '../lib/routeColors';
 
 interface ModeTogglesProps {
+  /** Faded out and taken out of the tab order while a mobile bottom sheet covers the map. */
+  hidden?: boolean;
   showTrams: boolean;
   setShowTrams: (show: boolean) => void;
   showBuses: boolean;
@@ -23,6 +25,7 @@ const ICON_SIZE = 16;
  * the opposite corner with the theme and 3D switches.
  */
 export const ModeToggles: React.FC<ModeTogglesProps> = ({
+  hidden = false,
   showTrams,
   setShowTrams,
   showBuses,
@@ -68,7 +71,7 @@ export const ModeToggles: React.FC<ModeTogglesProps> = ({
   ];
 
   return (
-    <div className="corner-toggles mode-toggles" role="group" aria-label="Vehicle modes">
+    <div className={`corner-toggles mode-toggles${hidden ? ' corner-toggles--hidden' : ''}`} role="group" aria-label="Vehicle modes">
       {modes.map((mode) => (
         <button
           key={mode.key}

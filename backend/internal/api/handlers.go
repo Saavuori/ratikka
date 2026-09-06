@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -381,17 +382,17 @@ func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
 				}
 
 				type fuzzyTripData struct {
-					GtfsId       string       `json:"gtfsId"`
-					Route        rawRouteInfo `json:"route"`
-					TripHeadsign string       `json:"tripHeadsign"`
-					Stoptimes    []struct {
-						ScheduledArrival   int    `json:"scheduledArrival"`
-						RealtimeArrival    int    `json:"realtimeArrival"`
-						ArrivalDelay       int    `json:"arrivalDelay"`
-						ScheduledDeparture int    `json:"scheduledDeparture"`
-						RealtimeDeparture  int    `json:"realtimeDeparture"`
-						DepartureDelay     int    `json:"departureDelay"`
-						Realtime           bool   `json:"realtime"`
+					GtfsId           string       `json:"gtfsId"`
+					Route            rawRouteInfo `json:"route"`
+					TripHeadsign     string       `json:"tripHeadsign"`
+					Stoptimes []struct {
+						ScheduledArrival   int `json:"scheduledArrival"`
+						RealtimeArrival    int `json:"realtimeArrival"`
+						ArrivalDelay       int `json:"arrivalDelay"`
+						ScheduledDeparture int `json:"scheduledDeparture"`
+						RealtimeDeparture  int `json:"realtimeDeparture"`
+						DepartureDelay     int `json:"departureDelay"`
+						Realtime           bool `json:"realtime"`
 						RealtimeState      string `json:"realtimeState"`
 						Stop               struct {
 							GtfsId string  `json:"gtfsId"`
@@ -436,17 +437,17 @@ func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
 					}
 
 					raw.Trip = &struct {
-						GtfsId           string       `json:"gtfsId"`
-						Route            rawRouteInfo `json:"route"`
-						TripHeadsign     string       `json:"tripHeadsign"`
-						Stoptimes []struct {
-							ScheduledArrival   int `json:"scheduledArrival"`
-							RealtimeArrival    int `json:"realtimeArrival"`
-							ArrivalDelay       int `json:"arrivalDelay"`
-							ScheduledDeparture int `json:"scheduledDeparture"`
-							RealtimeDeparture  int `json:"realtimeDeparture"`
-							DepartureDelay     int `json:"departureDelay"`
-							Realtime           bool `json:"realtime"`
+						GtfsId       string       `json:"gtfsId"`
+						Route        rawRouteInfo `json:"route"`
+						TripHeadsign string       `json:"tripHeadsign"`
+						Stoptimes    []struct {
+							ScheduledArrival   int    `json:"scheduledArrival"`
+							RealtimeArrival    int    `json:"realtimeArrival"`
+							ArrivalDelay       int    `json:"arrivalDelay"`
+							ScheduledDeparture int    `json:"scheduledDeparture"`
+							RealtimeDeparture  int    `json:"realtimeDeparture"`
+							DepartureDelay     int    `json:"departureDelay"`
+							Realtime           bool   `json:"realtime"`
 							RealtimeState      string `json:"realtimeState"`
 							Stop               struct {
 								GtfsId string  `json:"gtfsId"`
@@ -533,27 +534,42 @@ func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
 
 // Stop Details Output Structs
 type StopDetailsResponse struct {
+	FetchedAt  int64               `json:"fetchedAt"`
 	Stop       StopInfo            `json:"stop"`
 	Routes     []string            `json:"routes"`
 	Departures []StopDepartureInfo `json:"departures"`
 }
 
 type StopInfo struct {
-	GtfsId string  `json:"gtfsId"`
-	Name   string  `json:"name"`
-	Code   string  `json:"code"`
-	Lat    float64 `json:"lat"`
-	Lon    float64 `json:"lon"`
+	PlatformCode string  `json:"platformCode,omitempty"`
+	GtfsId       string  `json:"gtfsId"`
+	Name         string  `json:"name"`
+	Code         string  `json:"code"`
+	Lat          float64 `json:"lat"`
+	Lon          float64 `json:"lon"`
 }
 
 type StopDepartureInfo struct {
-	Line             string `json:"line"`
-	Headsign         string `json:"headsign"`
-	ScheduledArrival string `json:"scheduledArrival"`
-	RealtimeArrival  string `json:"realtimeArrival"`
-	Delay            int    `json:"delay"`
-	Realtime         bool   `json:"realtime"`
-	TripId           string `json:"tripId"`
+	ScheduledDeparture     string `json:"scheduledDeparture,omitempty"`
+	RealtimeDeparture      string `json:"realtimeDeparture,omitempty"`
+	ScheduledDepartureTime int64  `json:"scheduledDepartureTime,omitempty"`
+	RealtimeDepartureTime  int64  `json:"realtimeDepartureTime,omitempty"`
+	DepartureDelay         int    `json:"departureDelay"`
+	RealtimeState          string `json:"realtimeState,omitempty"`
+	Line                   string `json:"line"`
+	Headsign               string `json:"headsign"`
+	ScheduledArrival       string `json:"scheduledArrival"`
+	RealtimeArrival        string `json:"realtimeArrival"`
+	Delay                  int    `json:"delay"`
+	Realtime               bool   `json:"realtime"`
+	TripId                 string `json:"tripId"`
+	// Trip identity, carried so the frontend can match a departure to the
+	// live vehicle actually serving it without guessing from the line number.
+	RouteId          string `json:"routeId,omitempty"`
+	ServiceDate      string `json:"serviceDate,omitempty"`
+	DirectionId      *int   `json:"directionId,omitempty"`
+	StartTimeSeconds *int   `json:"startTimeSeconds,omitempty"` // trip origin, seconds since service midnight
+	Mode             string `json:"mode,omitempty"`
 }
 
 func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
@@ -591,6 +607,7 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 					gtfsId
 					name
 					code
+					platformCode
 					lat
 					lon
 					routes {
@@ -598,7 +615,11 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 						longName
 						mode
 					}
-					stoptimesWithoutPatterns(numberOfDepartures: $numberOfDepartures) {
+					stoptimesWithoutPatterns(numberOfDepartures: $numberOfDepartures, omitCanceled: false) {
+						scheduledDeparture
+						realtimeDeparture
+						serviceDay
+						departureDelay
 						scheduledArrival
 						realtimeArrival
 						arrivalDelay
@@ -607,9 +628,13 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 						headsign
 						trip {
 							gtfsId
+							directionId
+							departureStoptime { scheduledDeparture }
 							route {
+								gtfsId
 								shortName
 								color
+								mode
 							}
 						}
 					}
@@ -634,12 +659,14 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 
 		s := raw.Stop
 		resp := StopDetailsResponse{
+			FetchedAt: time.Now().UnixMilli(),
 			Stop: StopInfo{
-				GtfsId: s.GtfsId,
-				Name:   s.Name,
-				Code:   s.Code,
-				Lat:    s.Lat,
-				Lon:    s.Lon,
+				PlatformCode: s.PlatformCode,
+				GtfsId:       s.GtfsId,
+				Name:         s.Name,
+				Code:         s.Code,
+				Lat:          s.Lat,
+				Lon:          s.Lon,
 			},
 			Routes:     make([]string, 0),
 			Departures: make([]StopDepartureInfo, 0, len(s.StoptimesWithoutPatterns)),
@@ -655,15 +682,30 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, dep := range s.StoptimesWithoutPatterns {
-			resp.Departures = append(resp.Departures, StopDepartureInfo{
-				Line:             dep.Trip.Route.ShortName,
-				Headsign:         dep.Headsign,
-				ScheduledArrival: formatSeconds(dep.ScheduledArrival),
-				RealtimeArrival:  formatSeconds(dep.RealtimeArrival),
-				Delay:            dep.ArrivalDelay,
-				Realtime:         dep.Realtime,
-				TripId:           dep.Trip.GtfsId,
-			})
+			departure := StopDepartureInfo{
+				ScheduledDeparture:     optionalTime(dep.ScheduledDeparture),
+				RealtimeDeparture:      optionalTime(dep.RealtimeDeparture),
+				ScheduledDepartureTime: serviceTimestamp(dep.ServiceDay, dep.ScheduledDeparture),
+				RealtimeDepartureTime:  serviceTimestamp(dep.ServiceDay, dep.RealtimeDeparture),
+				DepartureDelay:         dep.DepartureDelay,
+				RealtimeState:          dep.RealtimeState,
+				Line:                   dep.Trip.Route.ShortName,
+				Headsign:               dep.Headsign,
+				ScheduledArrival:       formatSeconds(dep.ScheduledArrival),
+				RealtimeArrival:        formatSeconds(dep.RealtimeArrival),
+				Delay:                  dep.ArrivalDelay,
+				Realtime:               dep.Realtime,
+				TripId:                 dep.Trip.GtfsId,
+				RouteId:                dep.Trip.Route.GtfsId,
+				ServiceDate:            stopServiceDate(dep.ServiceDay),
+				DirectionId:            directionID(dep.Trip.DirectionId),
+				Mode:                   dep.Trip.Route.Mode,
+			}
+			if origin := dep.Trip.DepartureStoptime; origin != nil &&
+				origin.ScheduledDeparture != nil && *origin.ScheduledDeparture >= 0 {
+				departure.StartTimeSeconds = origin.ScheduledDeparture
+			}
+			resp.Departures = append(resp.Departures, departure)
 		}
 
 		jsonBytes, err := json.Marshal(resp)
@@ -686,6 +728,17 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(dataInterface.([]byte))
+}
+
+// stopServiceDate renders a stoptime's serviceDay as a YYYY-MM-DD service
+// date. serviceDay is midnight of the operating day in Europe/Helsinki, so it
+// is read at local noon — that lands inside the same calendar day under either
+// UTC offset, and needs no tzdata on the server.
+func stopServiceDate(day *int64) string {
+	if day == nil || *day <= 0 || *day > math.MaxInt64-12*3600 {
+		return ""
+	}
+	return time.Unix(*day+12*3600, 0).UTC().Format("2006-01-02")
 }
 
 func formatSeconds(sec int) string {
@@ -1277,5 +1330,3 @@ func (h *Handlers) Alerts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(dataInterface.([]byte))
 }
-
-

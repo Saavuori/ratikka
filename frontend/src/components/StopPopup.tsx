@@ -1,11 +1,17 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import React, { useEffect, useState } from 'react';
-import type { StopDetailsResponse, Alert } from '../types';
+import React, { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
+import type { StopDetailsResponse, Alert, VehiclePosition } from '../types';
 import { fetchStopDetails } from '../lib/api';
 import { getRouteColor } from '../lib/routeColors';
 import { relevantStopAlerts } from '../lib/stopAlerts';
 import { X, Clock, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useSavedStops } from '../hooks/useSavedStops';
+import { departureView, isCancelledDeparture, isDepartureSourceStale, MAX_SAVED_STOPS, pollDepartures } from '../lib/departures';
+import { arrivalVehicleModes, focusedArrival, nextArrivals, walkVerdict } from '../lib/stopArrivals';
+import type { ArrivalFocus } from '../lib/stopArrivals';
+import { ArrivalHeadline } from './ArrivalHeadline';
+import './departures.css';
 
 interface StopPopupProps {
   stopId: string;
@@ -19,6 +25,16 @@ interface StopPopupProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   alerts: Alert[];
+  /** Live positions, used to name the vehicle behind the next departure. */
+  vehicles: VehiclePosition[];
+  /** Which live feeds this stop's departures need streaming to be trackable. */
+  onArrivalModesLoaded?: (modes: { bus: boolean; metro: boolean; train: boolean; tram: boolean }) => void;
+  /** The arrival the map should follow, or null when tracking is off. */
+  onArrivalFocusChange?: (focus: ArrivalFocus | null) => void;
+  /** Walking distance to this stop in metres, when it is known. */
+  walkDistance?: number;
+  /** True while the map is already following this stop's next arrival. */
+  autoTrack?: boolean;
 }
 
 export const StopPopup: React.FC<StopPopupProps> = ({
@@ -33,16 +49,70 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   isCollapsed,
   onToggleCollapse,
   alerts = [],
+  vehicles,
+  onArrivalModesLoaded,
+  onArrivalFocusChange,
+  walkDistance,
+  autoTrack = false,
 }) => {
-  const [details, setDetails] = useState<StopDetailsResponse | null>(null);
+  const [response, setResponse] = useState<{ stopId: string; data: StopDetailsResponse } | null>(null);
+  const details = response?.stopId === stopId ? response.data : null;
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const { savedStops, toggleStop } = useSavedStops();
+  const savedStop = savedStops.find((stop) => stop.gtfsId === stopId);
+  const stale = isDepartureSourceStale(details?.fetchedAt, now, Boolean(error));
   // The timetable is what the panel is for, so alerts stay folded away until
   // asked for — a stop served by many routes can otherwise collect enough of
   // them to fill the panel on its own.
   const [alertsExpanded, setAlertsExpanded] = useState<boolean>(false);
   const isMobile = useIsMobile();
+
+  // The next arrivals, recomputed as positions stream in. `now` also ticks
+  // every second, so a countdown never goes stale between feed updates.
+  const arrivals = useMemo(
+    () => nextArrivals(details?.departures ?? [], vehicles, now),
+    [details, vehicles, now],
+  );
+  const [trackedTripId, setTrackedTripId] = useState<string | null>(null);
+  const arrival = focusedArrival(arrivals, trackedTripId ?? undefined);
+  const tracking = trackedTripId !== null;
+  const verdict = walkVerdict(walkDistance, arrival?.etaMs);
+
+  // A tracked departure eventually leaves. Rather than stranding the map on a
+  // vehicle that has gone, follow whatever is next through the same pin.
+  useEffect(() => {
+    if (tracking && arrival && arrival.departure.tripId !== trackedTripId) {
+      setTrackedTripId(arrival.departure.tripId);
+    }
+  }, [tracking, arrival, trackedTripId]);
+
+  // Opened from "Catch the next one": start following as soon as there is
+  // something locatable to follow, without a second tap. It fires once — a
+  // reader who then presses "Stop tracking" means it.
+  const autoTracked = useRef(false);
+  useEffect(() => {
+    autoTracked.current = false;
+  }, [stopId]);
+  useEffect(() => {
+    if (autoTrack && !autoTracked.current && arrival?.vehicle) {
+      autoTracked.current = true;
+      setTrackedTripId(arrival.departure.tripId);
+    }
+  }, [autoTrack, arrival]);
+
+  const publishFocus = useEffectEvent((focus: ArrivalFocus | null) => onArrivalFocusChange?.(focus));
+  const focusVehicleId = arrival?.vehicle?.veh;
+  const focusTripId = arrival?.departure.tripId;
+  const focusLine = arrival?.departure.line;
+  useEffect(() => {
+    publishFocus(tracking && focusVehicleId && focusTripId
+      ? { stopId, tripId: focusTripId, vehicleId: focusVehicleId, line: focusLine ?? '' }
+      : null);
+  }, [tracking, stopId, focusVehicleId, focusTripId, focusLine]);
+  useEffect(() => () => publishFocus(null), []);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.touches[0].clientX);
@@ -73,59 +143,59 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   const relevantAlerts = relevantStopAlerts(alerts, stopId, details?.routes);
   const worstSeverity = relevantAlerts[0]?.severityLevel ?? 'INFO';
 
+  const publishDetails = useEffectEvent((data: StopDetailsResponse) => {
+    onStopDeparturesLoaded?.(data.departures.filter((d) => !isCancelledDeparture(d)).map((d) => d.tripId).filter(Boolean));
+    onStopRoutesLoaded?.(data.routes || []);
+    onArrivalModesLoaded?.(arrivalVehicleModes(data.departures));
+    if (data.stop) onStopCoordsLoaded?.(data.stop.lat, data.stop.lon);
+  });
+
   useEffect(() => {
-    // Guard against a slow response for a previously selected stop landing
-    // after this one and overwriting both local state and the parent's
-    // route/coordinate state with the wrong stop's data.
-    let active = true;
+    setResponse(null);
     setLoading(true);
     setError(null);
     setAlertsExpanded(false);
-
-    fetchStopDetails(stopId, 8)
-      .then((data) => {
-        if (!active) return;
-        setDetails(data);
+    setTrackedTripId(null);
+    setNow(Date.now());
+    const clock = setInterval(() => setNow(Date.now()), 1000);
+    const stopPolling = pollDepartures(
+      (signal) => fetchStopDetails(stopId, 8, signal),
+      (data) => {
+        setResponse({ stopId, data });
         setLoading(false);
-        if (onStopDeparturesLoaded) {
-          const tripIds = data.departures.map((d) => d.tripId).filter(Boolean);
-          onStopDeparturesLoaded(tripIds);
-        }
-        if (onStopRoutesLoaded) {
-          onStopRoutesLoaded(data.routes || []);
-        }
-        if (onStopCoordsLoaded && data.stop) {
-          onStopCoordsLoaded(data.stop.lat, data.stop.lon);
-        }
-      })
-      .catch((err) => {
-        if (!active) return;
-        console.error(err);
-        setError('Failed to load stop timetable');
+        setError(null);
+        setNow(Date.now());
+        publishDetails(data);
+      },
+      () => {
+        setError('Could not update departures. Retrying automatically.');
         setLoading(false);
-      });
+      },
+    );
 
     return () => {
-      active = false;
+      stopPolling();
+      clearInterval(clock);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- callbacks are stable enough; re-fetch only when the stop changes
   }, [stopId]);
 
-  const getDelayColor = (seconds: number) => {
-    if (seconds > 60) return 'text-rose-400';
-    if (seconds < -60) return 'text-sky-400';
-    return 'text-emerald-400';
-  };
+  // The internal stop id is only useful when reporting a problem, so a phone
+  // shows the subtitle only when it carries something a traveller acts on.
+  const platform = details?.stop.platformCode ? `Platform ${details.stop.platformCode}` : null;
+  const subtitle = isMobile ? platform : [stopId, platform].filter(Boolean).join(' · ');
 
-  const formatDelay = (seconds: number) => {
-    if (Math.abs(seconds) < 30) return 'On time';
-    const mins = Math.round(Math.abs(seconds) / 60);
-    return seconds < 0 ? `${mins}m early` : `${mins}m late`;
-  };
+  // On a phone the note shares its line with the section label, so it says only
+  // how old the data is; the desktop panel has room to explain the cadence too.
+  const age = details?.fetchedAt
+    ? `${Math.max(0, Math.floor((now - details.fetchedAt) / 1000))}s ago`
+    : null;
+  const freshness = isMobile
+    ? [stale ? 'Stale' : 'Live', age].filter(Boolean).join(' · ')
+    : `${stale ? 'Stale · last known departures' : 'Updates every 18 seconds'}${age ? ` · source ${age}` : ' · source time unavailable'}`;
 
   return (
     <div
-      className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}
+      className={`glass-panel detail-popup stop-popup ${isCollapsed ? 'collapsed' : ''}`}
       style={{ pointerEvents: 'auto' }}
       onTouchStart={isMobile ? undefined : handleTouchStart}
       onTouchMove={isMobile ? undefined : handleTouchMove}
@@ -152,95 +222,116 @@ export const StopPopup: React.FC<StopPopupProps> = ({
           {isCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </span>
       </button>
-      {/* Header */}
-      <div className="panel-header" style={{ padding: '0 0 16px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <h2 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>{stopName}</h2>
-            {stopCode && (
-              <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', padding: '2px 6px', borderRadius: '4px', color: '#94a3b8', fontFamily: 'monospace' }}>
-                {stopCode}
-              </span>
+
+      {/* Everything above the timetable stays put while the departures scroll —
+          on a phone the sheet is short enough that a scrolling header would
+          take the stop's own name off screen. */}
+      <div className="sheet-head">
+        {/* Header */}
+        <div className="panel-header" style={{ padding: '0 0 16px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h2 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>{stopName}</h2>
+              {stopCode && (
+                <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', padding: '2px 6px', borderRadius: '4px', color: '#94a3b8', fontFamily: 'monospace' }}>
+                  {stopCode}
+                </span>
+              )}
+            </div>
+            {subtitle && (
+              <p className="panel-subtitle" style={{ fontFamily: 'monospace', marginTop: '4px', fontSize: '0.65rem' }}>
+                {subtitle}
+              </p>
             )}
           </div>
-          <p className="panel-subtitle" style={{ fontFamily: 'monospace', marginTop: '4px', fontSize: '0.65rem' }}>
-            {stopId}
-          </p>
-        </div>
-        {!isCollapsed && (
-          <button
-            onClick={onToggleCollapse}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              padding: '4px',
-              display: 'flex',
-              alignItems: 'center',
-              outline: 'none',
-            }}
-            aria-label="Collapse panel"
-          >
-            {isMobile ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          </button>
-        )}
-        <button onClick={onClose} className="close-btn">
-          <X size={18} />
-        </button>
-      </div>
-
-      {/* Service alerts — a one-line summary that expands into a scrollable
-          list, so the timetable below always keeps its share of the panel. */}
-      {relevantAlerts.length > 0 && (
-        <div className="stop-alerts">
-          <button
-            className={`stop-alerts-summary severity-${worstSeverity.toLowerCase()}`}
-            onClick={() => setAlertsExpanded((v) => !v)}
-            aria-expanded={alertsExpanded}
-          >
-            <AlertTriangle size={14} className="stop-alerts-icon" />
-            <span className="stop-alerts-count">
-              {relevantAlerts.length === 1
-                ? '1 service alert'
-                : `${relevantAlerts.length} service alerts`}
-            </span>
-            {!alertsExpanded && (
-              <span className="stop-alerts-preview">{relevantAlerts[0].headerText}</span>
-            )}
-            {alertsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-
-          {alertsExpanded && (
-            <div className="stop-alerts-list">
-              {relevantAlerts.map((alert, idx) => (
-                <div key={idx} className={`stop-alert severity-${alert.severityLevel.toLowerCase()}`}>
-                  <h4 className="stop-alert-title">{alert.headerText}</h4>
-                  {alert.descriptionText && (
-                    <p className="stop-alert-desc">{alert.descriptionText}</p>
-                  )}
-                  {alert.url && (
-                    <a
-                      href={alert.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="stop-alert-link"
-                    >
-                      Official Info <ExternalLink size={8} />
-                    </a>
-                  )}
-                </div>
-              ))}
-            </div>
+          {!isCollapsed && (
+            <button
+              onClick={onToggleCollapse}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                padding: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                outline: 'none',
+              }}
+              aria-label="Collapse panel"
+              className="panel-collapse-btn"
+            >
+              {isMobile ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>
           )}
+          <button onClick={onClose} className="close-btn" aria-label="Close stop departures">
+            <X size={18} />
+          </button>
         </div>
-      )}
+        <button
+          type="button"
+          className="save-stop-button"
+          aria-pressed={Boolean(savedStop)}
+          disabled={!savedStop && (!details || savedStops.length >= MAX_SAVED_STOPS)}
+          onClick={() => {
+            const stop = savedStop ?? details?.stop;
+            if (stop) toggleStop(stop);
+          }}
+        >
+          {savedStop ? 'Remove saved stop' : savedStops.length >= MAX_SAVED_STOPS ? '10 saved stops maximum' : 'Save stop'}
+        </button>
+
+        {/* Service alerts — a one-line summary that expands into a scrollable
+            list, so the timetable below always keeps its share of the panel. */}
+        {relevantAlerts.length > 0 && (
+          <div className="stop-alerts">
+            <button
+              className={`stop-alerts-summary severity-${worstSeverity.toLowerCase()}`}
+              onClick={() => setAlertsExpanded((v) => !v)}
+              aria-expanded={alertsExpanded}
+            >
+              <AlertTriangle size={14} className="stop-alerts-icon" />
+              <span className="stop-alerts-count">
+                {relevantAlerts.length === 1
+                  ? '1 service alert'
+                  : `${relevantAlerts.length} service alerts`}
+              </span>
+              {!alertsExpanded && (
+                <span className="stop-alerts-preview">{relevantAlerts[0].headerText}</span>
+              )}
+              {alertsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+
+            {alertsExpanded && (
+              <div className="stop-alerts-list">
+                {relevantAlerts.map((alert, idx) => (
+                  <div key={idx} className={`stop-alert severity-${alert.severityLevel.toLowerCase()}`}>
+                    <h4 className="stop-alert-title">{alert.headerText}</h4>
+                    {alert.descriptionText && (
+                      <p className="stop-alert-desc">{alert.descriptionText}</p>
+                    )}
+                    {alert.url && (
+                      <a
+                        href={alert.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="stop-alert-link"
+                      >
+                        Official Info <ExternalLink size={8} />
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Body */}
       <div className="timeline-container" style={{ flex: 1, marginTop: '16px' }}>
         {/* Routes serving stop */}
         {details && details.routes && details.routes.length > 0 && (
-          <div>
+          <div className="stop-lines">
             <div className="legend-title">Lines serving this stop</div>
             <div className="routes-chips">
               {details.routes.map((route) => (
@@ -266,16 +357,29 @@ export const StopPopup: React.FC<StopPopupProps> = ({
 
         {/* Error Fallback */}
         {error && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 0', gap: '8px', color: '#ef4444', textAlign: 'center' }}>
-            <AlertTriangle size={24} />
-            <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{error}</span>
+          <div className="departures-message" role="status">
+            {error}
           </div>
         )}
 
         {/* Departures List */}
-        {!loading && !error && details && (
+        {!loading && details && (
           <div>
-            <div className="legend-title" style={{ marginBottom: '8px' }}>Upcoming Departures</div>
+            <div className="legend-title" style={{ marginBottom: '8px' }}>Next arrival</div>
+            <ArrivalHeadline
+              arrival={arrival}
+              now={now}
+              stale={stale}
+              verdict={verdict}
+              tracking={tracking}
+              onToggleTracking={() => setTrackedTripId(tracking ? null : arrival?.departure.tripId ?? null)}
+            />
+            <div className="departures-heading">
+              <div className="legend-title">Upcoming Departures</div>
+              <p className={`departures-freshness ${stale ? 'is-stale' : ''}`} role="status">
+                {freshness}
+              </p>
+            </div>
 
             {details.departures.length === 0 ? (
               <div style={{ fontSize: '0.75rem', color: '#64748b', padding: '24px 0', textAlign: 'center' }}>
@@ -283,13 +387,17 @@ export const StopPopup: React.FC<StopPopupProps> = ({
               </div>
             ) : (
               <div className="departure-list">
-                {details.departures.map((dep, idx) => (
-                  <div
+                {details.departures.map((dep, idx) => {
+                  const view = departureView(dep, now, stale);
+                  return (
+                  <button
+                    type="button"
                     key={idx}
+                    disabled={!view.selectable}
                     onClick={() => {
-                      if (dep.tripId) onSelectTripId(dep.tripId, dep.line);
+                      if (view.selectable) onSelectTripId(dep.tripId, dep.line);
                     }}
-                    className="departure-item"
+                    className={`departure-item departure-button ${view.status === 'Cancelled' ? 'is-cancelled' : ''}`}
                   >
                     <div className="departure-left">
                       <div className="departure-badge" style={{ backgroundColor: getRouteColor(dep.line), color: '#ffffff' }}>
@@ -304,14 +412,15 @@ export const StopPopup: React.FC<StopPopupProps> = ({
                     <div className="departure-right">
                       <div className="departure-time">
                         <Clock size={12} style={{ color: '#64748b' }} />
-                        <span>{dep.realtimeArrival}</span>
+                        <span>{view.time}{view.countdown && ` · ${view.countdown}`}</span>
                       </div>
-                      <span className={`timeline-delay ${getDelayColor(dep.delay)}`} style={{ fontSize: '0.65rem', marginTop: '2px', display: 'block' }}>
-                        {formatDelay(dep.delay)}
+                      <span className={`departure-status ${stale ? 'is-stale' : ''}`}>
+                        {view.status}{view.delayText && ` · ${view.delayText}`}
                       </span>
                     </div>
-                  </div>
-                ))}
+                  </button>
+                  );
+                })}
               </div>
             )}
           </div>

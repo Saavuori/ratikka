@@ -46,7 +46,12 @@ HSL MQTT broker ──▶ backend (Go) ──▶ Redis (live coord cache)
   so a metro train carries on down its track through the seconds the tunnel feed
   is silent instead of freezing and then lurching),
   `routeSlots.ts` (which offset slot each highlighted route takes) and `routeLineStyle.ts`
-  (the paint expressions that turn a slot into pixels — see "Verifying the map").
+  (the paint expressions that turn a slot into pixels — see "Verifying the map"),
+  `stopPlatforms.ts` (the basemap's own OSM platform polygons, restyled as a paved
+  island with a kerb and an edge band instead of anonymous grey pavement) and
+  `stopModels.ts` (the stop's furniture — pad, shelter, pole and sign board — as
+  `fill-extrusion` boxes in ground metres, plus the helpers that read a stop's
+  orientation off the platform polygon it stands in or the route line past it).
 - Vanilla CSS with theme variables in `index.css` / `App.css`.
 
 ## HTTP API
@@ -169,8 +174,8 @@ out of the `feat:` pattern so a batch of them cuts a patch, not a minor.
 
 ### Verifying the map
 
-Nothing about the map is checked by `tsc` or the unit tests. There are four
-separate failure modes and a script for each — **run all four**; passing one
+Nothing about the map is checked by `tsc` or the unit tests. There are five
+separate failure modes and a script for each — **run all five**; passing one
 proves nothing about the others.
 
 ```bash
@@ -182,6 +187,7 @@ node scripts/verify-map-layers.mjs        # 1. are the layer specs valid?
 DIGITRANSIT_API_KEY=... node scripts/verify-map-renders.mjs   # 2. does it draw?
 node scripts/verify-route-offsets.mjs     # 3. does it draw in the right place?
 node scripts/verify-vehicle-3d.mjs        # 4. do the 3D vehicles have the right shape?
+node scripts/verify-stop-markers.mjs      # 5. do the stops read as places?
 ```
 
 Playwright is intentionally not a devDependency, to keep `npm install` lean.
@@ -238,6 +244,30 @@ render something plausible: a body at the wrong size or heading is still a box,
 and a body with no height at all is still a filled footprint seen from above.
 The dimensions are unit tested in CI (`vehicleModels.test.ts`); this script is
 what proves the renderer agrees.
+
+**5. Stops** (`verify-stop-markers.mjs`) — draws a synthetic platform polygon
+and a synthetic stop with the app's own paint and models, and measures: that the
+kerb lands on the polygon it outlines, that the platform and its edge band honour
+their zoom gates, that the pad is drawn at its modelled length and turns with the
+stop's bearing, that the shelter has walls standing above its footprint, that
+nothing is extruded below the fade-in zoom, and that the highlight and boarding
+cues actually reach the screen. Needs no key.
+
+A stop is three things now and each fails invisibly. The platform is the
+basemap's own OSM polygon restyled — a kerb drawn from geometry that has drifted
+still renders, it just fences off a shape near the surface rather than around it.
+The furniture is `fill-extrusion` geometry in **metres on the ground**
+(`frontend/src/lib/stopModels.ts`), so it has the vehicles' two failure modes:
+a shelter at the wrong size or heading is still a box, and one with no height is
+still a filled footprint seen from above. And the live cues — the gold a
+selected vehicle's next stop takes, the amber its platform edge takes while the
+doors are open — are colour swaps that render either way. The dimensions and the
+paint expressions are unit tested in CI (`stopModels.test.ts`,
+`stopPlatforms.test.ts`); this script is what proves the renderer agrees.
+
+Note that stops in the **dark** theme pull platform polygons from a second
+Digitransit source that the light theme gets for free from its own basemap — so
+a dark-theme change here is one of the cases where check 2 is not optional.
 
 ## Conventions
 

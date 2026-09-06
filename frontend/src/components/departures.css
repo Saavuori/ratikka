@@ -1,0 +1,121 @@
+.departures-launcher {
+  position: absolute;
+  top: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 105;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-glow);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  backdrop-filter: blur(16px);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.departures-launcher svg { color: var(--accent-green); }
+.departures-launcher:hover { background: var(--bg-panel-hover); }
+
+.departures-panel {
+  position: absolute;
+  top: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 105;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 160px);
+  padding: 14px;
+  gap: 10px;
+  overflow: auto;
+  pointer-events: auto;
+  color: var(--text-primary);
+}
+
+.departures-panel-header, .departures-panel-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.95rem;
+}
+.departures-panel-header { justify-content: space-between; }
+.departures-tabs { display: flex; gap: 8px; }
+.departures-tabs button, .save-stop-button, .departures-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-button);
+  background: var(--bg-button);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.departures-tabs button { flex: 1; }
+.departures-tabs button[aria-pressed="true"], .save-stop-button[aria-pressed="true"] {
+  border-color: var(--border-focus);
+}
+.save-stop-button:disabled { opacity: 0.65; cursor: default; }
+.departures-panel button:hover:not(:disabled), .save-stop-button:hover:not(:disabled) { background: var(--bg-button-hover); }
+.departures-panel button:focus-visible, .departures-launcher:focus-visible,
+.save-stop-button:focus-visible, .departure-button:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
+}
+.departures-message, .departures-location p, .departures-freshness {
+  margin: 6px 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.departures-stop-list { list-style: none; padding: 0; margin: 0; }
+.departures-stop {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-glow);
+}
+.departures-stop-select {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  text-align: left;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.departures-stop-meta { color: var(--text-secondary); font-size: 0.7rem; }
+.departures-preview { display: block; line-height: 1.5; }
+.departures-preview > span { display: block; color: var(--text-secondary); font-size: 0.7rem; }
+.departures-stop > .save-stop-button { margin: 6px 8px 0; }
+.departure-button { width: 100%; border: 0; text-align: left; font: inherit; color: inherit; }
+.departure-button:disabled { cursor: default; }
+.departure-button.is-cancelled .departure-time { text-decoration: line-through; }
+.departure-status { display: block; margin-top: 3px; font-size: 0.65rem; color: var(--text-secondary); }
+.is-stale, .departures-freshness.is-stale { color: var(--text-secondary); font-weight: 700; }
+
+@media (max-width: 768px) {
+  .departures-launcher { top: 58px; }
+  .departures-panel.mobile {
+    top: 58px;
+    width: calc(100vw - 20px);
+    max-width: none;
+    max-height: 55dvh;
+  }
+  .departures-panel button, .save-stop-button { min-height: 40px; }
+}

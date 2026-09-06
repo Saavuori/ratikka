@@ -1,0 +1,133 @@
+/* The "is it coming, will I make it" block: one glance, three answers —
+   which line, how long, and whether the walk beats it. */
+
+.arrival-headline {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 10px 0 2px;
+  padding: 12px;
+  border: 1px solid var(--border-glow);
+  border-left: 3px solid var(--accent-green);
+  border-radius: 10px;
+  background: var(--bg-panel-hover);
+}
+
+.arrival-headline.confidence-live-predicted { border-left-color: var(--accent-blue); }
+.arrival-headline.confidence-scheduled,
+.arrival-headline.is-empty { border-left-color: var(--border-glow); }
+
+.arrival-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.arrival-badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.arrival-headsign {
+  overflow: hidden;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arrival-figures {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.15;
+}
+
+.arrival-countdown {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.arrival-clock {
+  font-size: 0.65rem;
+  font-family: monospace;
+  color: var(--text-secondary);
+}
+
+.arrival-meta, .arrival-walk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.arrival-meta svg, .arrival-walk svg { flex: none; }
+
+.arrival-walk { font-weight: 600; }
+.arrival-walk.outcome-comfortable { color: var(--accent-green); }
+.arrival-walk.outcome-brisk { color: var(--accent-blue); }
+.arrival-walk.outcome-run { color: var(--accent-gold); }
+.arrival-walk.outcome-missed { color: var(--accent-coral); }
+
+.arrival-track { grid-column: 1 / -1; margin-top: 8px; width: 100%; }
+
+.arrival-headline.is-empty {
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  color: var(--text-secondary);
+}
+.arrival-headline.is-empty .arrival-countdown { font-size: 1.1rem; }
+.arrival-headline.is-empty .arrival-meta { grid-column: auto; margin: 0; }
+
+/* The nearby list's compact verdict chip. */
+.arrival-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  border: 1px solid currentColor;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+.arrival-chip.outcome-comfortable { color: var(--accent-green); }
+.arrival-chip.outcome-brisk { color: var(--accent-blue); }
+.arrival-chip.outcome-run { color: var(--accent-gold); }
+.arrival-chip.outcome-missed { color: var(--accent-coral); }
+
+/* One-tap entry: geolocate, take the nearest stop, start tracking. */
+.arrival-now-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-focus);
+  background: var(--bg-button);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.arrival-now-button:hover:not(:disabled) { background: var(--bg-button-hover); }
+.arrival-now-button:disabled { opacity: 0.65; cursor: default; }
+.arrival-now-button svg { color: var(--accent-green); }
+
+@media (max-width: 768px) {
+  .arrival-track, .arrival-now-button { min-height: 40px; }
+}

@@ -24,6 +24,9 @@ A premium, high-performance web application mapping **all active Helsinki trams,
 ### Live Map
 
 * **Destination Journey Search**: A top-center "Where to?" search plans a trip from your current location (used by default) to any searched destination, ranks the routes that get you there, and highlights the exact stops to use — boarding stop in green, final stop in coral, transfers in gold — while drawing each transit and walking leg on the map and fitting the journey into view.
+* **Live Journey Monitoring**: Choose departure or arrival date/time in **Europe/Helsinki**, then monitor the selected trips without silently switching to a different itinerary. Updated boarding/arrival predictions, platforms, cancellation/stale labels, relevant disruptions and estimated transfer margins remain available when the planner is minimized. Find alternatives explicitly when plans change.
+* **Your Journey's Vehicles**: Fresh, unambiguously matched vehicles receive gold map rings and can be selected from the journey panel. Matching requires the operating day and trip identity, never just a line number. The journey temporarily requests its bus/metro/train feeds without changing saved mode preferences; missing telemetry is shown as unavailable.
+* **Live Departures & Saved Stops**: The **Departures** panel finds nearby stops after an explicit location request and provides locally saved stops with departure previews. Selected stop boards refresh automatically, show departure countdowns and platforms, and distinguish live predictions, scheduled times, cancellations and stale data. Saved stops stay in this browser; no account is required.
 * **Real-time 60fps Vehicle Interpolation**: Live MQTT vehicle coordinate updates for **trams, buses, metro and commuter trains** are mathematically interpolated (lerp) for buttery-smooth vehicle movement.
 * **State-Coded Vehicle Markers**: Every vehicle renders as a labelled circle carrying its line number, coloured by live state — `#0984e3` blue while moving, `#e17055` coral while stopped or with doors open. A separate heading arrow encodes the mode: a round green (`#00985f`) pointer for trams, a rounded-square blue (`#007ac9`) pointer for buses.
 * **Immersive Chase Mode (Follow Vehicle)**: Lock onto any tram or bus to automatically track it. The camera auto-centers and auto-rotates (bearing) matching the vehicle's live heading, and releases as soon as you drag the map.
@@ -77,11 +80,13 @@ All endpoints are served by the Go backend under `/api/v1`. See [docs/API_REFERE
 | `GET` | `/api/v1/alerts` | Active HSL service disruptions |
 | `GET` | `/api/v1/trip/{tripId}` | Trip route, headsign, stop timeline, and geometry |
 | `GET` | `/api/v1/stop/{stopId}` | Stop details and upcoming departures (`?departures=N`) |
+| `GET` | `/api/v1/stops/nearby` | Nearby stops (`?lat=&lon=&radius=`), with distances |
 | `GET` | `/api/v1/route/{shortName}` | Route geometry and colour by short name |
 | `GET` | `/api/v1/bike-station/{stationId}` | Live City Bike capacity |
 | `GET` | `/api/v1/bike-stations` | All City Bike stations with live counts (GeoJSON) |
 | `GET` | `/api/v1/geocode` | Destination search (Digitransit geocoding, `?text=&lat=&lon=`) |
 | `GET` | `/api/v1/plan` | Journey planning between two points (`?fromLat=&fromLon=&toLat=&toLon=`) |
+| `GET` | `/api/v1/journey/monitor` | Refresh selected journey legs (`?legId=...`, repeated per leg) |
 | `GET` | `/api/v1/stream` | WebSocket stream of live vehicle positions |
 | `GET` | `/metrics` | Prometheus exposition format |
 | `GET` | `/` | Embedded React SPA (go:embed static fallback) |

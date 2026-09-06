@@ -1,4 +1,4 @@
-import type { TripDetailsResponse, StopDetailsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyEndpoint } from '../types';
+import type { TripDetailsResponse, StopDetailsResponse, NearbyStopsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyPlanOptions, JourneyMonitorResponse, JourneyEndpoint } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -10,10 +10,19 @@ export async function fetchTripDetails(tripId: string): Promise<TripDetailsRespo
   return res.json();
 }
 
-export async function fetchStopDetails(stopId: string, departures = 10): Promise<StopDetailsResponse> {
-  const res = await fetch(`${API_BASE}/stop/${encodeURIComponent(stopId)}?departures=${departures}`);
+export async function fetchStopDetails(stopId: string, departures = 10, signal?: AbortSignal): Promise<StopDetailsResponse> {
+  const res = await fetch(`${API_BASE}/stop/${encodeURIComponent(stopId)}?departures=${departures}`, { signal });
   if (!res.ok) {
     throw new Error(`Failed to fetch stop departures: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchNearbyStops(lat: number, lon: number, signal?: AbortSignal): Promise<NearbyStopsResponse> {
+  const params = new URLSearchParams({ lat: String(lat), lon: String(lon) });
+  const res = await fetch(`${API_BASE}/stops/nearby?${params}`, { signal });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch nearby stops: ${res.statusText}`);
   }
   return res.json();
 }
@@ -105,7 +114,8 @@ export async function fetchGeocode(
 export async function fetchJourneyPlan(
   from: JourneyEndpoint,
   to: JourneyEndpoint,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options: JourneyPlanOptions = {}
 ): Promise<JourneyPlanResponse> {
   const params = new URLSearchParams({
     fromLat: String(from.lat),
@@ -113,6 +123,9 @@ export async function fetchJourneyPlan(
     toLat: String(to.lat),
     toLon: String(to.lon),
   });
+  if (options.date) params.set('date', options.date);
+  if (options.time) params.set('time', options.time);
+  if (options.arriveBy !== undefined) params.set('arriveBy', String(options.arriveBy));
   const res = await fetch(`${API_BASE}/plan?${params.toString()}`, { signal });
   if (!res.ok) {
     throw new Error(`Failed to plan journey: ${res.statusText}`);
@@ -120,4 +133,12 @@ export async function fetchJourneyPlan(
   return res.json();
 }
 
-
+export async function fetchJourneyMonitor(legIds: string[], signal?: AbortSignal): Promise<JourneyMonitorResponse> {
+  const params = new URLSearchParams();
+  legIds.forEach((id) => params.append('legId', id));
+  const res = await fetch(`${API_BASE}/journey/monitor?${params}`, { signal });
+  if (!res.ok) {
+    throw new Error(`Failed to refresh journey: ${res.statusText}`);
+  }
+  return res.json();
+}

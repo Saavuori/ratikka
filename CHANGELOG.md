@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.58.1] - 2026-09-06
+
+### Fixed
+- **One scrollbar, and the times above the fold**: the stop sheet drew two scrollbars side by side — the departures list carried a viewport-height cap and an `overflow` of its own inside the panel's scrolling body, so the phone painted a track for each and split the wheel between them. The list is now plain content in the panel's single scrolling region. What that region shows is mostly departures now, too: on a phone the sheet is 78% of the viewport rather than 62%, the internal `HSL:` stop id (useful for a bug report, not for catching a tram) is gone from the header, the "Lines serving this stop" label is dropped in favour of the coloured chips that already say it, and the freshness note shares its line with the "Upcoming departures" label and shortens to `Live · 12s ago` instead of restating the polling interval. Nothing is removed from the desktop panel, which has the room.
+
+---
+
+## [v0.58.0] - 2026-09-06
+
+### Added
+- **The stop answers the question you actually walked up to ask**: standing at a stop, or on the way to one, there is one question — is something coming, and can I see it. The timetable answered it only by making you read a list and do the subtraction. The stop panel now opens on a **Next arrival** block: the line, where it is going, the countdown in figures you can read at arm's length, and how confident that number is. The countdown is always the feed's own prediction; locating the vehicle never becomes a second, competing estimate of the same number, it only unlocks the map trace below.
+- **See it coming down the street**: press **Track on map** and the vehicle bringing that departure is followed on the map, with its remaining approach drawn along the route it will actually take — around the corners, not as a bearing through the blocks between. The stop takes the same gold signpost and pulse a selected vehicle's next stop has had since v0.57, and lights amber at the platform edge while the doors are open, because it is the same relationship seen from the other end: this vehicle, that stop. It reuses those layers rather than adding any, and the camera frames the pair once when tracking starts rather than re-framing every second, which is unusable to someone walking. When the tracked departure leaves, tracking moves to whatever is next instead of stranding the map on a vehicle that has gone.
+- **Catch the next one**: one press in the Departures panel finds your location, takes the nearest stop by walking distance, opens it, and starts following its next arrival — the whole walk-to-the-stop gesture without picking anything from a list. Location is still only ever requested when you press the button.
+- **Whether the walk beats the departure**: nearby stops now carry a verdict — *Easy walk*, *Walk now*, *Run for it*, *Too late* — with the minutes you have spare or are short. It is computed from Digitransit's walking distance along streets and paths, never from a straight line: in Helsinki a straight line is usually across water.
+- **Selecting a stop turns on the feeds its own departures need**: buses, metro and commuter trains stream only while a client asks for them, so a bus stop's arrivals had no vehicles to be matched against in the first place. Opening a stop now requests exactly the modes its departures use, for as long as the stop is open, and the tracked vehicle stays drawn even when its mode or line is filtered out — hiding it is precisely what tracking exists to stop.
+
+### Changed
+- **A departure names its trip**: `/api/v1/stop/{id}` now returns `routeId`, `serviceDate`, `directionId`, `startTimeSeconds` and `mode` per departure. Together these name one trip unambiguously, which is what allows a departure to be paired with the live vehicle serving it. They are omitted rather than defaulted when the upstream feed does not report them — direction zero and a midnight origin are both real values, so inventing either would match the *wrong* vehicle rather than no vehicle. The matcher itself is now shared with the journey planner rather than duplicated: one implementation, one set of refusals. An ambiguous match is still no match.
+- **The approach-path geometry is testable**: slicing a route polyline between a vehicle and a stop was inline logic in the map component, exercised by nothing. It is now `lib/approachPath.ts` with unit tests, and both the selected-vehicle highlight and the new arrival tracking call it.
+
+---
+
+## [v0.57.1] - 2026-09-06
+
+### Fixed
+- **The stop sheet fits the phone it is on**: on a narrow screen the stop's timetable opened as a bottom sheet tall enough to reach up into the two corner chip rows, which float above it — so the map-view and vehicle-mode chips sat on top of the sheet's own header, over the stop's name on one side and its close button on the other. The chips now step aside while a sheet is expanded and come back when it closes, and the sheet is shorter (62% of the viewport, down from 72%). Inside it, the stop's name, code, save button and any service alerts stay put while only the departures scroll, instead of the whole panel scrolling the stop's identity off the top; the redundant collapse chevron in the header is gone on mobile (the drag handle, the toggle tab and the bottom bar's Details button all do the same thing), and the save button is a compact chip rather than a full-width block that read as the panel's primary action. Departure rows no longer wrap: a long headsign elides and the departure time keeps its own column on one line.
+
+---
+
+## [v0.57.0] - 2026-09-05
+
+### Added
+- **Stops are places on the map, not pins on it**: a stop was a coloured circle that became a disc on a stick — a road sign, in a city where the stop itself is usually a raised island you can see from the tram. The island was already on screen and had been all along: OpenStreetMap has the platform footprints, the basemap carries them in its `transportation` layer, and the light style drew them as `road_service_area` — the same anonymous grey it gives every pedestrian square and service yard. They are now drawn as what they are: a paved surface with a kerb line around it and a dashed ochre edge band at close zoom, fading in from zoom 15 so the city view stays clean. No geometry is invented; it is the OSM footprint, restyled. The dark theme has no platform data of its own (Carto's dark-matter carries no dependable platform subclass), so it attaches the same Digitransit tiles the light theme already loads, gated to zoom 14 and up — one extra request, only when zoomed in, so both themes draw identical ground.
+- **A kerbside sign board instead of a road sign**: HSL's stop furniture is a rectangular board on a pole, and drawing it that way is most of what makes a stop read as a stop. The disc is gone; each stop now carries a mode-coloured board with a white pictogram, a pole beneath it and a contact shadow at its foot, drawn at twice the resolution so the board's edges and the glyph stay crisp zoomed in. The stop's name appears under the board from zoom 17. Boards no longer ignore placement, so at a dense terminal the labels step out of each other's way rather than stacking.
+- **Stop furniture at real scale in 3D**: in the tilted view the vehicles have been extruded bodies measured in ground metres since v0.56; the stops they call at were still flat symbols. Each stop now gets a pad, a glazed shelter with a roof slab, a pole and a sign board, all in metres — a tram island 24 m long against the 27 m Artic drawing up beside it, a shorter kerbside pad for a bus, a wider apron and canopy for a metro or commuter-rail entrance. Nothing about the stop tiles says which way a stop faces, so the bearing is read off geometry already on the map: the long axis of the platform polygon the stop stands in, or failing that the nearest route line. A stop with neither gets a square pad and a pole and no shelter — furniture placed at a guessed angle would read as data. Where OSM already gives a stop a platform, that polygon is extruded to kerb height instead of a synthetic slab being laid over it. Clicking a shelter opens the same popup its sign does.
+- **The stop a selected vehicle is heading for shows it**: pick a vehicle and its next stop takes the gold of the selection ring across its board, pole and pad, and pulses under it on the same clock the vehicles animate to. While the vehicle is standing there with its doors open, the platform edge lights amber — the boarding cue in the place a passenger would be standing.
+
+### Changed
+- **A fifth map check**: `scripts/verify-stop-markers.mjs` joins the four existing ones (see CLAUDE.md). A stop now fails invisibly in three separate ways — a kerb drawn from drifted geometry still renders, a shelter at the wrong size or heading is still a box, and the live cues are colour swaps that render either way — so the script draws a synthetic stop with the app's own models and paint and measures the pixels: kerb against polygon, pad length against the model, walls above the footprint, zoom gates honoured, cues visible. It needs no Digitransit key.
+
+---
+
 ## [v0.56.2] - 2026-09-05
 
 ### Fixed

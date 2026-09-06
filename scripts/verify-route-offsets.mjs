@@ -124,7 +124,7 @@ const measure = (coords, offsetIndex, zoom, center) =>
         data: {
           type: 'Feature',
           geometry: { type: 'LineString', coordinates: coords },
-          properties: { offsetIndex, selected: false },
+          properties: { offsetIndex, selected: false, dim: false },
         },
       });
       map.addLayer({
