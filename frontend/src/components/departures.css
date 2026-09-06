@@ -79,10 +79,15 @@
   line-height: 1.5;
   color: var(--text-secondary);
 }
-.departures-stop-list { list-style: none; padding: 0; margin: 0; }
+.departures-stop-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+
+/* Each stop reads as its own card, the way the stop panel's timetable does —
+   the departures below it then belong to a stop instead of floating in a list. */
 .departures-stop {
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border-glow);
+  padding: 4px;
+  border: 1px solid var(--border-glow);
+  border-radius: 12px;
+  background: var(--bg-card);
 }
 .departures-stop-select {
   display: flex;
@@ -99,10 +104,51 @@
   font-size: 0.8rem;
   cursor: pointer;
 }
+.departures-stop-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.departures-stop-name {
+  overflow: hidden;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The same code chip the stop panel puts beside the stop's name. */
+.departures-stop-code {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-glow);
+  background: var(--bg-button);
+  color: var(--text-secondary);
+  font-family: monospace;
+  font-size: 0.65rem;
+}
 .departures-stop-meta { color: var(--text-secondary); font-size: 0.7rem; }
-.departures-preview { display: block; line-height: 1.5; }
-.departures-preview > span { display: block; color: var(--text-secondary); font-size: 0.7rem; }
-.departures-stop > .save-stop-button { margin: 6px 8px 0; }
+.departures-note { color: var(--text-secondary); font-size: 0.7rem; }
+
+/* The preview rows reuse the stop panel's departure row — same coloured line
+   badge, same right-aligned time column — only sized down for the list. */
+.departures-preview-list { display: flex; flex-direction: column; gap: 1px; width: 100%; }
+.departures-preview { padding: 4px 6px; cursor: inherit; }
+.departures-stop-select:hover .departures-preview { background: var(--bg-button-hover); }
+.departures-preview .departure-badge {
+  width: 30px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  font-size: 0.75rem;
+}
+.departures-preview .departure-left { gap: 8px; }
+.departures-preview .departure-dest { font-size: 0.75rem; font-weight: 600; }
+.departures-preview .departure-time { font-size: 0.72rem; }
+.departures-preview .departure-time svg { color: var(--text-secondary); }
+.departures-preview.is-cancelled .departure-time { text-decoration: line-through; }
+.departures-stop > .save-stop-button { margin: 2px 8px 8px; }
 .departure-button { width: 100%; border: 0; text-align: left; font: inherit; color: inherit; }
 .departure-button:disabled { cursor: default; }
 .departure-button.is-cancelled .departure-time { text-decoration: line-through; }

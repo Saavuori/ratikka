@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.59.1] - 2026-09-06
+
+### Changed
+- **The departures list looks like the stop panel it opens**: the saved and nearby lists showed their previews as plain text — a bold line number, the headsign, and the times run together in grey — while opening the same stop gave the coloured line badge and the two-column timetable row. Same departures, two visual languages, and the line number lost the one colour that identifies it. Each stop is now a card carrying its name and its code chip, and its previews reuse the stop panel's own departure row: the line's colour behind the badge, the headsign eliding rather than wrapping, and the time and status right-aligned in their own column. Nothing about the data changed; the list simply stops disagreeing with the panel it leads to.
+
+---
+
 ## [v0.59.0] - 2026-09-06
 
 ### Added
