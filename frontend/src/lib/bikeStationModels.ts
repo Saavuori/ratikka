@@ -280,6 +280,12 @@ export function acrossFrom(
 
 // A rack is a couple of metres of pavement furniture, so like the stop
 // shelters it only starts to mean anything once a metre is worth a pixel.
+// Where the gauge markers switch on. The stop discs are pinned level with it
+// (see lib/stopCircleStyle) so both kinds of marker arrive together on the way
+// out of a zoomed-in view — a map that shows bike stations and no stops looks
+// like a map that does not know where the stops are.
+export const BIKE_STATION_MIN_ZOOM = 13;
+
 export const BIKE_3D_MIN_ZOOM = 16.2;
 export const BIKE_3D_FULL_ZOOM = 17.2;
 
