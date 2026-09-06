@@ -51,7 +51,11 @@ HSL MQTT broker ──▶ backend (Go) ──▶ Redis (live coord cache)
   island with a kerb and an edge band instead of anonymous grey pavement) and
   `stopModels.ts` (the stop's furniture — pad, shelter, pole and sign board — as
   `fill-extrusion` boxes in ground metres, plus the helpers that read a stop's
-  orientation off the platform polygon it stands in or the route line past it).
+  orientation off the platform polygon it stands in or the route line past it),
+  and `bikeStationModels.ts` (a city-bike station's two faces: the gauge marker's
+  SVG — a bicycle in a disc, ringed by an availability arc — and the rack it
+  becomes up close, an apron with a dock per dock and a bike per available bike,
+  in the same ground metres as the vehicles and the stop furniture).
 - Vanilla CSS with theme variables in `index.css` / `App.css`.
 
 ## HTTP API
@@ -188,6 +192,7 @@ DIGITRANSIT_API_KEY=... node scripts/verify-map-renders.mjs   # 2. does it draw?
 node scripts/verify-route-offsets.mjs     # 3. does it draw in the right place?
 node scripts/verify-vehicle-3d.mjs        # 4. do the 3D vehicles have the right shape?
 node scripts/verify-stop-markers.mjs      # 5. do the stops read as places?
+node scripts/verify-bike-stations.mjs    # 6. do the bike stations read as bike stations?
 ```
 
 Playwright is intentionally not a devDependency, to keep `npm install` lean.
@@ -268,6 +273,25 @@ paint expressions are unit tested in CI (`stopModels.test.ts`,
 Note that stops in the **dark** theme pull platform polygons from a second
 Digitransit source that the light theme gets for free from its own basemap — so
 a dark-theme change here is one of the cases where check 2 is not optional.
+
+**6. City-bike stations** (`verify-bike-stations.mjs`) — draws the gauge marker
+and the 3D rack with the app's own art and models, and measures: that every
+scarcity bucket's SVG decodes and paints, that a fuller station paints a longer
+arc, that the apron is drawn at its modelled length and turns with its bearing,
+that the rack has boxes standing above its footprint, that nothing is extruded
+below the fade-in zoom, that a fuller rack shows more bikes and an empty one
+none, and that the selected station takes the selection gold. Needs no key.
+
+A station is two drawn things now (`frontend/src/lib/bikeStationModels.ts`) and
+both fail quietly. The flat marker is an SVG rasterised through an `Image` and
+handed to `map.addImage`: a malformed path or a colour the URI encoder mangles
+leaves a symbol layer that "works" and draws nothing. The rack is
+`fill-extrusion` geometry in **metres on the ground**, with the vehicles' two
+failure modes — wrong size or heading is still a row of boxes, no height is
+still a footprint seen from above. And the design's whole claim, that a fuller
+station *looks* fuller, is about pixels rather than geometry. The dimensions and
+the zoom ramps are unit tested in CI (`bikeStationModels.test.ts`); this script
+is what proves the renderer agrees.
 
 The stop's **next-arrival label** (`stop-arrival-labels-layer`) is the other
 such case, for a different reason: it is a `symbol` layer with a `text-field`,
