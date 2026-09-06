@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.61.0] - 2026-09-06
+
+### Changed
+- **City-bike stations look like city-bike stations**: a station was a circle with a number in it. Correct, and it said "data point" — the one thing on a map full of trams, buses and shelters that never said what it was. It is now a bicycle: the availability gauge is kept, because how full a station is is the reason to look at it at all, but the ring is drawn around a bicycle rather than around a numeral, and the count moves underneath where it stays readable as the marker shrinks. The scarcity colours are unchanged — grey when the last bike has gone, red when one more rider empties it, amber in the middle, green when there is no question.
+
+### Added
+- **City-bike racks in 3D**: zoom past 16.2 in 3D view and the marker hands over to the station itself — an apron, a dock post for every dock, a yellow bike standing in every dock that has one, and the payment terminal at the end, built from the same `fill-extrusion` boxes in ground metres as the 3D vehicles and the stop shelters, so a station beside a tram stop belongs to the same scene. Because a dock is drawn per dock and a bike per bike, the number the gauge summarises is, up close, simply the thing you see: a full rack looks full and an empty one looks empty. The rack takes its orientation from the route line running past it, turns gold when the station is selected, and clicking it opens the same panel its marker does.
+- **A sixth map verification script** (`scripts/verify-bike-stations.mjs`): the marker is an SVG rasterised through an `Image`, which draws nothing at all when it is malformed, and the rack is geometry in metres, which is still a row of boxes at the wrong size or heading. Eighteen checks measure the rendered pixels — every bucket's art decodes and paints, a fuller station paints a longer arc, the apron matches its modelled length, the rack turns with its bearing and stands above its footprint, nothing is extruded below the fade-in zoom, a fuller rack shows more bikes and an empty one none, and the selection gold reaches the screen.
+
 ## [v0.60.0] - 2026-09-06
 
 ### Fixed
