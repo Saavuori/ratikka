@@ -14,6 +14,9 @@
   background: var(--bg-panel-hover);
 }
 
+/* Standing at the platform right now takes the same gold the map gives a
+   boarding vehicle, so the two agree at a glance. */
+.arrival-headline.confidence-at-stop { border-left-color: #fbbf24; }
 .arrival-headline.confidence-live-predicted { border-left-color: var(--accent-blue); }
 .arrival-headline.confidence-scheduled,
 .arrival-headline.is-empty { border-left-color: var(--border-glow); }

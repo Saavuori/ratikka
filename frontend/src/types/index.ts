@@ -5,10 +5,23 @@ export interface VehiclePosition {
   lng: number;
   hdg: number;
   spd: number;
+  /** Seconds behind schedule: positive is late, negative is early. */
   dl: number;
   drst: number;
   route: string;
+  /**
+   * The stop the vehicle is standing at or inside the stop area of. Null for
+   * the whole run between two stops — over half the messages a tram sends — so
+   * this is never the stop it is heading for. `nextStop` is.
+   */
   stop: string | null;
+  /**
+   * The stop the vehicle is running to, as the feed itself reports it on every
+   * message. Null only when the feed names none, `eol` included.
+   */
+  nextStop?: string | null;
+  /** The vehicle has reached the end of its line; there is no next stop. */
+  eol?: boolean;
   ts: number;
   tripId: string;
   mode: string;

@@ -1,13 +1,29 @@
 import type { StopDepartureInfo, VehiclePosition } from '../types';
 import { departureEpoch, isCancelledDeparture } from './departures';
 import { findTripVehicle, type TripIdentity } from './journeyVehicles';
+import { isApproaching, isBoardingAt } from './nextStop';
 
 /**
- * How the arrival's countdown was arrived at. The number itself always comes
- * from the timetable feed — `live-tracked` only adds that the vehicle serving
- * it has been located on the map, so its approach can be drawn.
+ * What is known about the vehicle behind the arrival. The countdown itself
+ * always comes from the timetable feed; these say how much the live feed
+ * corroborates it, strongest first:
+ *
+ * - `at-stop` — the vehicle is standing at this stop with its doors open.
+ * - `approaching` — the vehicle names this stop as the one it is running to.
+ *   The strongest confirmation short of the vehicle being here, and the feed's
+ *   own word rather than anything inferred from position or timetable.
+ * - `live-tracked` — the vehicle has been located on the map, but is not yet
+ *   heading for this stop: it has stops to make first, or has already been.
+ * - `live-predicted` — nobody could be located, but the feed's time is a live
+ *   prediction rather than the printed timetable.
+ * - `scheduled` — the timetable, and nothing more.
  */
-export type ArrivalConfidence = 'live-tracked' | 'live-predicted' | 'scheduled';
+export type ArrivalConfidence =
+  | 'at-stop'
+  | 'approaching'
+  | 'live-tracked'
+  | 'live-predicted'
+  | 'scheduled';
 
 export interface StopArrival {
   departure: StopDepartureInfo;
@@ -46,6 +62,29 @@ export interface NextArrivalsOptions {
   lines?: string[];
   /** Maximum arrivals to return. */
   limit?: number;
+  /**
+   * The stop these departures leave from. Without it a located vehicle can
+   * only be reported as `live-tracked`, because nothing says whether it is
+   * heading here.
+   */
+  stopId?: string;
+}
+
+/**
+ * How much the live feed corroborates a departure, given the vehicle serving
+ * it. Never touches the countdown — only what can be said about the vehicle.
+ */
+function arrivalConfidence(
+  vehicle: VehiclePosition | undefined,
+  departure: StopDepartureInfo,
+  stopId: string | undefined,
+): ArrivalConfidence {
+  if (vehicle) {
+    if (isBoardingAt(vehicle, stopId)) return 'at-stop';
+    if (isApproaching(vehicle, stopId)) return 'approaching';
+    return 'live-tracked';
+  }
+  return departure.realtime ? 'live-predicted' : 'scheduled';
 }
 
 /**
@@ -77,7 +116,7 @@ export function nextArrivals(
       vehicle,
       epoch,
       etaMs,
-      confidence: vehicle ? 'live-tracked' : departure.realtime ? 'live-predicted' : 'scheduled',
+      confidence: arrivalConfidence(vehicle, departure, options.stopId),
     });
   }
   arrivals.sort((a, b) => a.epoch - b.epoch);

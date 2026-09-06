@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { VehiclePosition, TripDetailsResponse } from '../types';
 import { Navigation, Clock, X, Target, ChevronsUp, ChevronUp, ChevronDown, ChevronsDown } from 'lucide-react';
 import { getRouteColor, getModeAccent } from '../lib/routeColors';
+import { tripProgress } from '../lib/nextStop';
 
 interface TramCardProps {
   tram: VehiclePosition;
@@ -36,63 +37,9 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
     return seconds < 0 ? `${mins} min early` : `${mins} min late`;
   };
 
-  const getStopIndices = () => {
-    if (!tripDetails) return { currentStopIndex: -1, nextStopIndex: -1, lastKnownIndex: -1 };
-
-    const isStopped = tram.drst === 1;
-    const hasExplicitStop = !!tram.stop;
-    const stopIdToMatch = tram.stop || lastStopId;
-
-    let matchedIndex = -1;
-    if (stopIdToMatch) {
-      const cleanToMatch = stopIdToMatch.replace(/^HSL:/, '');
-      matchedIndex = tripDetails.stops.findIndex(
-        s => s.gtfsId === stopIdToMatch || s.gtfsId?.replace(/^HSL:/, '') === cleanToMatch
-      );
-    }
-
-    if (matchedIndex === -1) {
-      const now = new Date();
-      const currentMinutes = now.getHours() * 60 + now.getMinutes();
-      const nextIndex = tripDetails.stops.findIndex(stop => {
-        const [h, m] = stop.realtimeArrival.split(':').map(Number);
-        const stopMinutes = h * 60 + m;
-        return stopMinutes >= currentMinutes;
-      });
-
-      if (nextIndex !== -1) {
-        return {
-          currentStopIndex: -1,
-          nextStopIndex: nextIndex,
-          lastKnownIndex: nextIndex > 0 ? nextIndex - 1 : 0
-        };
-      } else {
-        return {
-          currentStopIndex: -1,
-          nextStopIndex: -1,
-          lastKnownIndex: tripDetails.stops.length - 1
-        };
-      }
-    }
-
-    if (hasExplicitStop) {
-      if (isStopped) {
-        const currentStopIndex = matchedIndex;
-        const nextStopIndex = matchedIndex + 1 < tripDetails.stops.length ? matchedIndex + 1 : -1;
-        return { currentStopIndex, nextStopIndex, lastKnownIndex: matchedIndex };
-      } else {
-        const nextStopIndex = matchedIndex;
-        const lastKnownIndex = matchedIndex - 1;
-        return { currentStopIndex: -1, nextStopIndex, lastKnownIndex };
-      }
-    } else {
-      const nextStopIndex = matchedIndex + 1 < tripDetails.stops.length ? matchedIndex + 1 : -1;
-      const lastKnownIndex = matchedIndex;
-      return { currentStopIndex: -1, nextStopIndex, lastKnownIndex };
-    }
-  };
-
-  const { currentStopIndex, nextStopIndex } = getStopIndices();
+  const { currentStopIndex, nextStopIndex } = tripProgress(tram, tripDetails?.stops, {
+    lastSeenStopId: lastStopId,
+  });
   const isStopped = tram.drst === 1;
   const currentStop = isStopped && currentStopIndex !== -1 ? tripDetails?.stops[currentStopIndex] : null;
   const nextStop = nextStopIndex !== -1 ? tripDetails?.stops[nextStopIndex] : null;

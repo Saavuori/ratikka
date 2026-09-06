@@ -73,8 +73,8 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   // The next arrivals, recomputed as positions stream in. `now` also ticks
   // every second, so a countdown never goes stale between feed updates.
   const arrivals = useMemo(
-    () => nextArrivals(details?.departures ?? [], vehicles, now),
-    [details, vehicles, now],
+    () => nextArrivals(details?.departures ?? [], vehicles, now, { stopId }),
+    [details, vehicles, now, stopId],
   );
   const [trackedTripId, setTrackedTripId] = useState<string | null>(null);
   const arrival = focusedArrival(arrivals, trackedTripId ?? undefined);

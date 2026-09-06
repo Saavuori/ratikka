@@ -7,6 +7,8 @@ import { getRouteColor } from '../lib/routeColors';
 import './arrival.css';
 
 const CONFIDENCE_TEXT: Record<StopArrival['confidence'], string> = {
+  'at-stop': 'Here now · doors open',
+  approaching: 'Live · on its way here',
   'live-tracked': 'Live · vehicle on the map',
   'live-predicted': 'Live prediction · vehicle not located yet',
   scheduled: 'Scheduled · no live prediction yet',

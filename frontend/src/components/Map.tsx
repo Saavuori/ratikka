@@ -16,6 +16,7 @@ import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint 
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
 import { approachSegment } from '../lib/approachPath';
+import { tripProgress, isBoardingAt } from '../lib/nextStop';
 import { ARRIVAL_LABEL_MIN_ZOOM, ARRIVAL_LABEL_STOP_LIMIT } from '../lib/stopArrivals';
 import type { ArrivalFocus } from '../lib/stopArrivals';
 import {
@@ -1671,46 +1672,13 @@ export const Map: React.FC<MapProps> = ({
             selectedVehiclePos = activeFeature.geometry.coordinates as [number, number];
           }
 
-          const isStopped = selectedTram.drst === 1;
-          const hasExplicitStop = !!selectedTram.stop;
           if (selectedTram.stop) {
             lastSeenStopIdRef.current = selectedTram.stop;
           }
-          const stopIdToMatch = selectedTram.stop || lastSeenStopIdRef.current;
           const tripStops = selectedTripDetailsRef.current.stops;
-
-          let lastKnownIndex = -1;
-          if (stopIdToMatch) {
-            const cleanToMatch = stopIdToMatch.replace(/^HSL:/, '');
-            lastKnownIndex = tripStops.findIndex(s => s.gtfsId === stopIdToMatch || s.gtfsId?.replace(/^HSL:/, '') === cleanToMatch);
-          }
-
-          let nextStopIndex: number;
-
-          if (lastKnownIndex === -1) {
-            // Fallback: Estimate position based on arrival times
-            const now = new Date();
-            const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
-            nextStopIndex = tripStops.findIndex(stop => {
-              const [h, m] = stop.realtimeArrival.split(':').map(Number);
-              const stopMinutes = h * 60 + m;
-              return stopMinutes >= currentMinutes;
-            });
-          } else {
-            if (hasExplicitStop) {
-              if (isStopped) {
-                // Doors open: we are currently at lastKnownIndex
-                nextStopIndex = lastKnownIndex + 1 < tripStops.length ? lastKnownIndex + 1 : -1;
-              } else {
-                // Doors closed: physically at/arriving at lastKnownIndex, but doors closed
-                nextStopIndex = lastKnownIndex;
-              }
-            } else {
-              // Between stops: we departed lastKnownIndex (which was lastStopId)
-              nextStopIndex = lastKnownIndex + 1 < tripStops.length ? lastKnownIndex + 1 : -1;
-            }
-          }
+          const { nextStopIndex } = tripProgress(selectedTram, tripStops, {
+            lastSeenStopId: lastSeenStopIdRef.current,
+          });
 
           if (nextStopIndex !== -1) {
             const matchedStop = tripStops[nextStopIndex];
@@ -1718,7 +1686,7 @@ export const Map: React.FC<MapProps> = ({
             nextStopId = matchedStop.gtfsId ?? null;
             // Doors open at the stop we are pointing at: the platform edge
             // lights up while passengers are actually boarding.
-            nextStopBoarding = isStopped && nextStopIndex === lastKnownIndex;
+            nextStopBoarding = isBoardingAt(selectedTram, nextStopId);
 
             if (HIGHLIGHT_NEXT_STOP_ROUTE && selectedVehiclePos && selectedTripDetailsRef.current.geometry) {
               routeSegmentCoords = approachSegment(

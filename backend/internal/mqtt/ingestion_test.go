@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"ratikka/internal/cache"
@@ -100,8 +101,10 @@ func TestIngestionWorker_HandleMessage(t *testing.T) {
 	if thinned.Spd != 8.5 {
 		t.Errorf("expected Spd 8.5, got %f", thinned.Spd)
 	}
-	if thinned.Dl != -15 {
-		t.Errorf("expected Dl -15, got %d", thinned.Dl)
+	// HFP's dl counts seconds ahead of schedule, so -15 there is 15 seconds
+	// late here; see normalizeDelay.
+	if thinned.Dl != 15 {
+		t.Errorf("expected Dl 15, got %d", thinned.Dl)
 	}
 	if thinned.Drst != 0 {
 		t.Errorf("expected Drst 0, got %d", thinned.Drst)
@@ -111,6 +114,12 @@ func TestIngestionWorker_HandleMessage(t *testing.T) {
 	}
 	if thinned.Stop == nil || *thinned.Stop != "HSL:1203420" {
 		t.Errorf("expected Stop HSL:1203420, got %v", thinned.Stop)
+	}
+	if thinned.NextStop == nil || *thinned.NextStop != "HSL:1203420" {
+		t.Errorf("expected NextStop HSL:1203420, got %v", thinned.NextStop)
+	}
+	if thinned.Eol {
+		t.Error("expected Eol false")
 	}
 	if thinned.Ts != 1781461815 {
 		t.Errorf("expected Ts 1781461815, got %d", thinned.Ts)
@@ -256,7 +265,6 @@ func TestIngestionWorker_HandleMessage_StopNormalization(t *testing.T) {
 		})
 	}
 }
-
 
 // Metro and commuter-train messages ride the same VP payload on the same topic
 // layout, so the mode comes straight from the topic and the rest parses as it
@@ -476,5 +484,100 @@ func TestIngestionWorker_DedupeIsPerVehicle(t *testing.T) {
 	worker.handleMessage(nil, reading(91))
 	if counting.writes != 2 {
 		t.Errorf("expected both vehicles stored, got %d writes", counting.writes)
+	}
+}
+
+// The next stop is read off the topic, because that is the only place it is
+// always stated. These are the shapes level 13 comes in.
+func TestParseNextStop(t *testing.T) {
+	cases := []struct {
+		name  string
+		topic string
+		want  string
+		eol   bool
+	}{
+		{
+			name:  "bare id is prefixed",
+			topic: "/hfp/v2/journey/ongoing/vp/tram/0040/00456/1005T/1/Katajanokan term./17:36/1020450/5/60;24/19/65/90",
+			want:  "HSL:1020450",
+		},
+		{
+			name:  "already prefixed id is left alone",
+			topic: "/hfp/v2/journey/ongoing/vp/tram/22/229/HSL:1009/1/Jätkäsaari/09:15/HSL:1203420/14/60.17/24.94",
+			want:  "HSL:1203420",
+		},
+		{
+			name:  "end of line names no stop",
+			topic: "/hfp/v2/journey/ongoing/vp/tram/0040/00456/1005T/1/Katajanokan term./17:36/EOL/5/60;24/19/65/90",
+			eol:   true,
+		},
+		{
+			name:  "empty level names no stop",
+			topic: "/hfp/v2/journey/ongoing/vp/tram/0040/00456/1005T/1/Katajanokan term./17:36//5/60;24/19/65/90",
+		},
+		{
+			name:  "literal null names no stop",
+			topic: "/hfp/v2/journey/ongoing/vp/tram/0040/00456/1005T/1/Katajanokan term./17:36/null/5/60;24/19/65/90",
+		},
+		{
+			name:  "truncated topic names no stop",
+			topic: "/hfp/v2/journey/ongoing/vp/tram/0040/00456",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, eol := parseNextStop(strings.Split(tc.topic, "/"))
+			if eol != tc.eol {
+				t.Errorf("eol: expected %v, got %v", tc.eol, eol)
+			}
+			switch {
+			case tc.want == "" && got != nil:
+				t.Errorf("expected no next stop, got %q", *got)
+			case tc.want != "" && (got == nil || *got != tc.want):
+				t.Errorf("expected next stop %q, got %v", tc.want, got)
+			}
+		})
+	}
+}
+
+// A vehicle waiting at a terminus republishes the same second and the same
+// coordinate until it is given somewhere to go. The message that finally names
+// the onward stop differs only in the topic, and dropping it as a duplicate
+// would leave the map pointing at the stop the vehicle is standing on.
+func TestIngestionWorker_NextStopChangeIsNotADuplicate(t *testing.T) {
+	counting := &countingCache{Cache: cache.NewMemoryCache()}
+	worker := NewIngestionWorker("tls://mock:8883", counting)
+
+	reading := func(nextStop string) *mockMessage {
+		return &mockMessage{
+			payload: []byte(`{"VP":{"desi":"9","dir":"1","oper":40,"veh":90,"tsi":1788630995,"spd":0,"hdg":225,"lat":60.203964,"long":24.9687,"oday":"2026-09-05","start":"20:54","route":"1009"}}`),
+			topic:   "/hfp/v2/journey/ongoing/vp/tram/0040/00090/1009/1/Eiranranta/20:54/" + nextStop + "/5/60;24/29/06/3",
+		}
+	}
+
+	worker.handleMessage(nil, reading("1230410"))
+	worker.handleMessage(nil, reading("1230410"))
+	if counting.writes != 1 {
+		t.Fatalf("expected the repeat to be dropped, got %d writes", counting.writes)
+	}
+
+	worker.handleMessage(nil, reading("1230411"))
+	if counting.writes != 2 {
+		t.Errorf("expected the new next stop to be stored, got %d writes", counting.writes)
+	}
+}
+
+// HFP counts seconds ahead of schedule; everything downstream counts seconds
+// behind it.
+func TestNormalizeDelay(t *testing.T) {
+	if got := normalizeDelay(-120); got != 120 {
+		t.Errorf("two minutes late should read +120, got %d", got)
+	}
+	if got := normalizeDelay(59); got != -59 {
+		t.Errorf("running early should read negative, got %d", got)
+	}
+	if got := normalizeDelay(0); got != 0 {
+		t.Errorf("on time should read 0, got %d", got)
 	}
 }
