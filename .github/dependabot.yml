@@ -47,7 +47,7 @@ updates:
       # A MapLibre major shipped a blank map through a green CI once (v0.46.0).
       # Majors need `scripts/verify-map-layers.mjs`, `verify-map-renders.mjs`
       # and `verify-route-offsets.mjs` run by hand, so they are raised
-      # deliberately rather than proposed by a bot. See CLAUDE.md.
+      # deliberately rather than proposed by a bot. See .github/copilot-instructions.md.
       - dependency-name: maplibre-gl
         update-types: [version-update:semver-major]
 

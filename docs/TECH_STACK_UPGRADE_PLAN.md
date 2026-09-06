@@ -229,7 +229,7 @@ These are not version numbers, but they are the most consequential findings.
 
 `docker-build.yml` goes straight from tag → docker build → push → Watchtower →
 production. There is **no `go test`, no `npm run lint`, no `npm run build`
-gate**. `CLAUDE.md` says "Run them before pushing to `main`, since a merge ships
+gate**. `.github/copilot-instructions.md` says "Run them before pushing to `main`, since a merge ships
 to production" — that instruction is currently enforced by nothing but
 discipline.
 
@@ -289,9 +289,9 @@ docker, weekly, grouped): drift becomes a stream of small reviewable PRs
 instead of a periodic audit. Pairs with 6.1 — Dependabot PRs are only safe to
 merge if CI actually tests them.
 
-### 6.5 `CLAUDE.md` describes a versioning scheme that no longer exists
+### 6.5 `.github/copilot-instructions.md` describes a versioning scheme that no longer exists
 
-`CLAUDE.md` documents releases as driven by `mathieudutour/github-tag-action`
+`.github/copilot-instructions.md` documents releases as driven by `mathieudutour/github-tag-action`
 computing the next tag from Conventional Commits (`feat` → minor, `fix` →
 patch). The actual `docker-build.yml` does something different: it greps the
 top `## [vX.Y.Z]` heading out of `CHANGELOG.md` and uses **that** as the tag,
@@ -363,7 +363,7 @@ revertable.
 3. CI job: `go test ./...` + `npm ci && npm run lint && npm run build && npm test`,
    running on PRs and on `main`.
 4. `.github/dependabot.yml` for gomod, npm, github-actions, docker.
-5. Correct the Versioning & Release section of `CLAUDE.md`.
+5. Correct the Versioning & Release section of `.github/copilot-instructions.md`.
 
 **Effect:** everything after this is verified by CI rather than by hand.
 **Risk:** none — no shipped code changes.
