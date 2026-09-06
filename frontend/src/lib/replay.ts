@@ -318,7 +318,7 @@ export function badgeTitle(revealable: boolean): string {
 
 /**
  * How long a single click waits to see whether it is really half of a double.
- * Below about 200 ms a deliberate double-click on a trackpad often reads as two
- * singles; much above it and the changelog link feels broken.
+ * The browser's default double-click window is commonly about 500 ms; waiting
+ * that long prevents the changelog link from winning before the second click.
  */
-export const DOUBLE_CLICK_GRACE_MS = 250;
+export const DOUBLE_CLICK_GRACE_MS = 500;

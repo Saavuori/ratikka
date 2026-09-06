@@ -289,8 +289,8 @@ describe('badgeTitle', () => {
 
 describe('DOUBLE_CLICK_GRACE_MS', () => {
   it('waits long enough to catch a real double-click, briefly enough not to feel broken', () => {
-    expect(DOUBLE_CLICK_GRACE_MS).toBeGreaterThanOrEqual(200);
-    expect(DOUBLE_CLICK_GRACE_MS).toBeLessThanOrEqual(400);
+    expect(DOUBLE_CLICK_GRACE_MS).toBeGreaterThanOrEqual(400);
+    expect(DOUBLE_CLICK_GRACE_MS).toBeLessThanOrEqual(600);
   });
 });
 
