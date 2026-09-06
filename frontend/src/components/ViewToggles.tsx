@@ -1,11 +1,14 @@
 import React from 'react';
-import { Sun, Moon, Box, Route, TramFront } from 'lucide-react';
+import { Sun, Moon, Box, Route, TramFront, Satellite } from 'lucide-react';
+import type { MapTheme } from '../lib/stopPlatforms';
 
 interface ViewTogglesProps {
   /** Faded out and taken out of the tab order while a mobile bottom sheet covers the map. */
   hidden?: boolean;
-  mapTheme: 'light' | 'dark';
-  setMapTheme: (theme: 'light' | 'dark') => void;
+  mapTheme: MapTheme;
+  setMapTheme: (theme: MapTheme) => void;
+  /** False where the deployment has no National Land Survey key; the chip is then not shown. */
+  satelliteAvailable?: boolean;
   is3D: boolean;
   setIs3D: (is3D: boolean) => void;
   always3DVehicles: boolean;
@@ -30,6 +33,7 @@ export const ViewToggles: React.FC<ViewTogglesProps> = ({
   hidden = false,
   mapTheme,
   setMapTheme,
+  satelliteAvailable = false,
   is3D,
   setIs3D,
   always3DVehicles,
@@ -37,7 +41,10 @@ export const ViewToggles: React.FC<ViewTogglesProps> = ({
   showRoutes,
   setShowRoutes,
 }) => {
-  const isDark = mapTheme === 'dark';
+  const isSatellite = mapTheme === 'satellite';
+  // Satellite is drawn on the dark style, so it counts as dark for the chip:
+  // leaving the imagery from there lands on the map it was already wearing.
+  const isDark = mapTheme !== 'light';
 
   const toggles = [
     {
@@ -48,6 +55,17 @@ export const ViewToggles: React.FC<ViewTogglesProps> = ({
       active: isDark,
       toggle: () => setMapTheme(isDark ? 'light' : 'dark'),
     },
+    // Aerial imagery is a third basemap rather than a fourth theme, and it
+    // gets its own chip rather than a third stop on the theme chip: one button
+    // cycling three maps hides two of them behind a guess. Switching it off
+    // lands on the dark map the photo was drawn over.
+    ...(satelliteAvailable ? [{
+      key: 'satellite',
+      icon: <Satellite size={ICON_SIZE} />,
+      label: `${isSatellite ? 'Hide' : 'Show'} aerial imagery`,
+      active: isSatellite,
+      toggle: () => setMapTheme(isSatellite ? 'dark' : 'satellite'),
+    }] : []),
     {
       key: 'routes',
       icon: <Route size={ICON_SIZE} />,

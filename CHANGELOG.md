@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.63.0] - 2026-09-06
+
+### Added
+- **An aerial basemap**: a third map beside light and dark, and the one a transit map is oddly often missing — the ground itself. It is the National Land Survey's orthophoto mosaic (`ortokuva`), not Google's imagery: Google's satellite tiles may only be drawn by Google's own APIs, and for Helsinki the national photos are the better picture anyway, flown for mapping rather than assembled into a global mosaic. They are open data under CC BY, so the map carries the credit while they are showing.
+  The photo is a raster layer slid *under* the dark style's labels rather than a style of its own. Everything the vector style draws below its first label — land, water, roads, buildings — ends up beneath an opaque photo and is simply never seen, while street and place names keep drawing on top, which is the one thing a bare aerial view badly lacks; anything the style happens to order after its labels is switched off so it cannot draw over the imagery. The stops, platforms, route ribbons and vehicles are unchanged and sit above both, in their dark-theme colours, because dark is what the labels under them are.
+  The open interface serves the orthophotos to zoom 16 — about 1.2 m per pixel at Helsinki's latitude — and the map goes to 18, so the last two zooms are the level-16 tiles overzoomed: softer up close, but imagery that keeps going where the stops get interesting rather than cutting out there.
+  The mode needs a (free) National Land Survey key in `MML_API_KEY`, served to the browser by `GET /api/v1/config` beside the Digitransit map key. A deployment without one does not show the chip at all, rather than offering a map that would come back as a grid of 401s.
+
+---
+
 ## [v0.62.3] - 2026-09-06
 
 ### Fixed

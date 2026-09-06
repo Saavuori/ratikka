@@ -43,6 +43,7 @@ services:
       - "com.centurylinklabs.watchtower.scope=ratikka"
     environment:
       - DIGITRANSIT_API_KEY=${DIGITRANSIT_API_KEY}
+      - MML_API_KEY=${MML_API_KEY}
       - REDIS_URL=redis://ratikka-cache:6379
       - MQTT_BROKER=tls://mqtt.hsl.fi:8883
       - PORT=8080
@@ -152,6 +153,7 @@ set_env_var() {
 }
 
 set_env_var "DIGITRANSIT_API_KEY" "Enter your DIGITRANSIT_API_KEY (Required)" "true"
+set_env_var "MML_API_KEY" "Enter your MML_API_KEY (Optional, for the satellite map)" "false"
 set_env_var "DOMAIN_NAME" "Enter your Domain Name (e.g. hsl-live.duckdns.org, leave blank for :80)" "false"
 set_env_var "GRAFANA_CLOUD_PROMETHEUS_URL" "Enter your GRAFANA_CLOUD_PROMETHEUS_URL (Optional, for monitoring)" "false"
 set_env_var "GRAFANA_CLOUD_PROMETHEUS_USER" "Enter your GRAFANA_CLOUD_PROMETHEUS_USER (Optional, for monitoring)" "false"

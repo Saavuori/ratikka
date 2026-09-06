@@ -1,4 +1,4 @@
-import type { TripDetailsResponse, StopDetailsResponse, NearbyStopsResponse, StopsArrivalsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyPlanOptions, JourneyMonitorResponse, JourneyEndpoint } from '../types';
+import type { MapConfigResponse, TripDetailsResponse, StopDetailsResponse, NearbyStopsResponse, StopsArrivalsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyPlanOptions, JourneyMonitorResponse, JourneyEndpoint } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -49,6 +49,30 @@ export async function fetchVersionInfo(): Promise<VersionResponse> {
     throw new Error(`Failed to fetch version info: ${res.statusText}`);
   }
   return res.json();
+}
+
+/**
+ * The map keys, fetched once per page load. Both the map and the view toggles
+ * need them -- the map to sign its tile requests, the toggles to know whether
+ * the satellite basemap can be offered -- so the in-flight promise is shared
+ * rather than the request being made twice. A failure resolves to no keys at
+ * all: the map then draws what needs no key, which is what it did before.
+ */
+let mapConfigPromise: Promise<MapConfigResponse> | null = null;
+
+export function fetchMapConfig(): Promise<MapConfigResponse> {
+  if (!mapConfigPromise) {
+    mapConfigPromise = fetch(`${API_BASE}/config`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to fetch map config: ${res.statusText}`);
+        return res.json() as Promise<MapConfigResponse>;
+      })
+      .catch((err) => {
+        console.error('Failed to fetch map key config:', err);
+        return { digitransit_map_key: '', mml_api_key: '' };
+      });
+  }
+  return mapConfigPromise;
 }
 
 export async function fetchRouteDetails(shortName: string): Promise<RouteDetailsResponse> {

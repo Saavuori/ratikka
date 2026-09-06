@@ -97,17 +97,29 @@ await page.route('**/api/v1/route/**', (r) =>
 await page.route('**/api/v1/version', (r) =>
   r.fulfill({ json: { version: 'test', build_date: 'test', git_sha: 'abcdef1234' } }));
 await page.route('**/api/v1/config', (r) =>
-  r.fulfill({ json: { digitransit_map_key: 'test-key' } }));
+  r.fulfill({ json: { digitransit_map_key: 'test-key', mml_api_key: 'test-mml-key' } }));
 
 // Sprites must return parseable JSON / a real PNG or style.load never fires.
 const stubAsset = (r) => {
   const u = r.request().url();
   if (u.includes('/dark-matter-gl-style/style.json')) {
+    // Shaped like the real dark-matter in the one way the satellite basemap
+    // cares about: ground and roads, then labels, then a line layer ordered
+    // after them -- so "the photo goes under the labels and over everything
+    // else" is something this check can actually observe.
     return r.fulfill({ json: {
       version: 8,
       glyphs: `${base}/stub/{fontstack}/{range}.pbf`,
       sources: { carto: { type: 'vector', tiles: [`${base}/stub/{z}/{x}/{y}.pbf`] } },
-      layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#15191e' } }],
+      layers: [
+        { id: 'background', type: 'background', paint: { 'background-color': '#15191e' } },
+        { id: 'stub-roads', type: 'line', source: 'carto', 'source-layer': 'transportation' },
+        {
+          id: 'stub-labels', type: 'symbol', source: 'carto', 'source-layer': 'place',
+          layout: { 'text-field': ['get', 'name'], 'text-font': ['Open Sans Regular'] },
+        },
+        { id: 'stub-late-roads', type: 'line', source: 'carto', 'source-layer': 'transportation' },
+      ],
     } });
   }
   if (u.includes('.png')) return r.fulfill({ contentType: 'image/png', body: PNG });
@@ -197,6 +209,52 @@ await page.getByRole('button', { name: 'Enable 3D map', exact: true }).click();
 await page.waitForFunction(() =>
   window.__mlMap.getLayoutProperty('vehicles-3d', 'visibility') === 'visible');
 console.log('3D vehicle toggle, live doors, pitch independence, zoom fallback and persistence: PASS');
+
+// The aerial basemap: MML's orthophotos as a raster layer slid under the dark
+// style's labels, with everything the app draws still on top of both.
+await page.getByRole('button', { name: 'Show aerial imagery', exact: true }).click();
+await page.waitForFunction(() =>
+  window.__mlMap.getLayer('mml-ortho-layer') && window.__mlMap.getSource('mml-ortho'));
+const ortho = await page.evaluate(() => {
+  const map = window.__mlMap;
+  const ids = map.getStyle().layers.map((l) => l.id);
+  const visible = (id) => map.getLayoutProperty(id, 'visibility') ?? 'visible';
+  return {
+    tiles: map.getStyle().sources['mml-ortho'].tiles,
+    maxzoom: map.getStyle().sources['mml-ortho'].maxzoom,
+    photo: ids.indexOf('mml-ortho-layer'),
+    labels: ids.indexOf('stub-labels'),
+    vehicles: ids.indexOf('vehicles-3d'),
+    labelsVisible: visible('stub-labels'),
+    lateRoadsVisible: visible('stub-late-roads'),
+    stored: localStorage.getItem('mapTheme'),
+  };
+});
+assert.match(ortho.tiles[0], /avoin-karttakuva\.maanmittauslaitos\.fi\/.*api-key=test-mml-key/,
+  'orthophoto tiles must be signed with the MML key from /api/v1/config');
+assert.equal(ortho.maxzoom, 16, 'past the open interface\'s last level MapLibre must overzoom');
+assert.ok(ortho.photo >= 0 && ortho.photo < ortho.labels, 'imagery must sit under the basemap labels');
+assert.ok(ortho.vehicles > ortho.photo, 'vehicles must survive the switch, on top of the imagery');
+assert.equal(ortho.labelsVisible, 'visible', 'labels are what the bare photo lacks');
+assert.equal(ortho.lateRoadsVisible, 'none', 'vector roads ordered above the labels must not draw over the photo');
+assert.equal(ortho.stored, 'satellite');
+
+// Switching the imagery off goes back to the dark map it was drawn on -- with
+// the vector ground it had hidden restored, and no orthophoto source left
+// requesting tiles behind it.
+await page.getByRole('button', { name: 'Hide aerial imagery', exact: true }).click();
+await page.waitForFunction(() =>
+  window.__mlMap.getSource('carto') && !window.__mlMap.getLayer('mml-ortho-layer'));
+await page.waitForFunction(() => window.__mlMap.getLayer('vehicles-3d'));
+const afterOrtho = await page.evaluate(() => ({
+  lateRoads: window.__mlMap.getLayoutProperty('stub-late-roads', 'visibility') ?? 'visible',
+  source: !!window.__mlMap.getSource('mml-ortho'),
+  stored: localStorage.getItem('mapTheme'),
+}));
+assert.equal(afterOrtho.lateRoads, 'visible', 'the vector ground must come back when the photo goes');
+assert.equal(afterOrtho.source, false, 'the orthophoto source must not outlive the mode');
+assert.equal(afterOrtho.stored, 'dark');
+console.log('satellite basemap: tiles signed, under the labels, over the vector ground: PASS');
 
 const canvas = await page.locator('canvas.maplibregl-canvas').count();
 const webgl2 = await page.evaluate(() => {
