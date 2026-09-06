@@ -105,10 +105,18 @@ trains report GPS with delay and — on some units — odometer and door state.
 | `long` | `float` | Longitude (WGS84) | Map position |
 | `hdg` | `int` | Heading in degrees (0–360) | Marker rotation |
 | `spd` | `float` | Speed in m/s | Movement indicator |
-| `dl` | `int` | Delay in seconds (negative = early) | Schedule info |
+| `dl` | `int` | Seconds **ahead of** schedule — positive is early, negative is late, the opposite of GTFS-RT. Negated on ingestion so everything downstream reads positive as late. | Schedule info |
 | `drst` | `int` | Door status (0=closed, 1=open) | Stopped indicator |
 | `route` | `string` | GTFS route ID (e.g. `"HSL:1009"`) | Route lookup |
-| `stop` | `string?` | Current/next stop GTFS ID (null if between stops) | Stop association |
+| `stop` | `string?` | The stop the vehicle is standing at or inside the stop area of. **Null for the whole run between two stops** — over half of all vp messages — so it is never a source for "where is it heading". | Stop association |
+
+The stop a vehicle is heading for is not in the payload at all: it is topic
+level 13, `{next_stop}` (see the hierarchy above), and unlike `stop` it is
+stated on every message. A five-minute capture of the live tram feed (44,432
+messages) carried a next stop on every topic while the payload's `stop` was
+null on 52.8% of vp readings; where the payload did name a stop it matched the
+topic every time, because a vehicle that has not yet pulled away from a stop is
+both at it and heading for it.
 | `tst` | `string` | ISO 8601 timestamp | Freshness check |
 | `start` | `string` | Trip start time (`"HH:MM"`) | Trip identification |
 | `oday` | `string` | Operating day (`"YYYY-MM-DD"`) | Trip identification |
@@ -357,6 +365,7 @@ modes keep their current value for that client. The older single-mode form
       "drst": 0,
       "route": "HSL:1009",
       "stop": "HSL:1203420",
+      "nextStop": "HSL:1203420",
       "ts": 1781461815,
       "tripId": "HSL:1009_20260616_Mo_1_0915",
       "mode": "tram"
@@ -412,6 +421,13 @@ modes keep their current value for that client. The older single-mode form
   "count": 4
 }
 ```
+
+`nextStop` is the stop the vehicle is running to, lifted from the HFP topic so
+it is answered on every message; `stop` is only set while the vehicle is at a
+stop, and is null between them. `eol` (omitted when false) says the vehicle has
+reached the end of its line and has no next stop. `dl` is seconds **behind**
+schedule — positive is late — which is the negation of the HFP field of the same
+name and matches the `delay` fields the timetable endpoints return.
 
 `mode` is one of `tram`, `bus`, `metro` or `train`. Field quality varies by
 mode: metro positions come from the signalling system (`loc: "MAN"`), so `dl`,

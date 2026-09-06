@@ -58,6 +58,25 @@ describe('nextArrivals', () => {
     expect(nextArrivals([departure({ realtime: false })], [], now)[0].confidence).toBe('scheduled');
   });
 
+  it('says so when the vehicle itself names this stop as the one it is running to', () => {
+    const live = vehicle({ nextStop: 'HSL:1010425' });
+    const [arrival] = nextArrivals([departure()], [live], now, { stopId: 'HSL:1010425' });
+    expect(arrival.confidence).toBe('approaching');
+    // Without knowing which stop these departures leave from there is nothing
+    // to compare the vehicle's next stop against.
+    expect(nextArrivals([departure()], [live], now)[0].confidence).toBe('live-tracked');
+  });
+
+  it('separates a vehicle standing here from one still on its way', () => {
+    const boarding = vehicle({ stop: 'HSL:1010425', nextStop: 'HSL:1010425', drst: 1 });
+    expect(nextArrivals([departure()], [boarding], now, { stopId: 'HSL:1010425' })[0].confidence)
+      .toBe('at-stop');
+    // Located, but with stops to make before it gets here.
+    const elsewhere = vehicle({ nextStop: 'HSL:1020450' });
+    expect(nextArrivals([departure()], [elsewhere], now, { stopId: 'HSL:1010425' })[0].confidence)
+      .toBe('live-tracked');
+  });
+
   it('never guesses a vehicle from the line number alone', () => {
     // Same line and mode, different trip: not this departure's vehicle.
     const other = vehicle({ veh: '9-102', tripId: 'HSL:1009_20260906_Su_1_1210', dir: '1', start: '12:10' });

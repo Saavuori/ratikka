@@ -6,6 +6,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { useTrafficLights } from '../hooks/useTrafficLights';
 import { getRouteColor, getModeAccent } from '../lib/routeColors';
 import { classifyStopReason } from '../lib/trafficLights';
+import { tripProgress } from '../lib/nextStop';
 import { VehicleSchematic } from './VehicleSchematic';
 
 interface TramPopupProps {
@@ -107,69 +108,11 @@ export const TramPopup: React.FC<TramPopupProps> = ({
     return '#34d399';
   };
 
-  // Determine current position in the schedule.
-  // tram.stop = the GTFS ID of the stop the tram most recently passed or is currently at.
-  // drst === 1 means doors open = stopped at a stop.
-  const getStopIndices = () => {
-    if (!tripDetails) return { currentStopIndex: -1, nextStopIndex: -1, lastKnownIndex: -1 };
-
-    const isStopped = tram.drst === 1;
-    const hasExplicitStop = !!tram.stop;
-    const stopIdToMatch = tram.stop || lastStopId;
-
-    let matchedIndex = -1;
-    if (stopIdToMatch) {
-      const cleanToMatch = stopIdToMatch.replace(/^HSL:/, '');
-      matchedIndex = tripDetails.stops.findIndex(
-        s => s.gtfsId === stopIdToMatch || s.gtfsId?.replace(/^HSL:/, '') === cleanToMatch
-      );
-    }
-
-    if (matchedIndex === -1) {
-      // Fallback: Estimate position based on arrival times
-      const now = new Date();
-      const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
-      const nextIndex = tripDetails.stops.findIndex(stop => {
-        const [h, m] = stop.realtimeArrival.split(':').map(Number);
-        const stopMinutes = h * 60 + m;
-        return stopMinutes >= currentMinutes;
-      });
-
-      if (nextIndex !== -1) {
-        return {
-          currentStopIndex: -1,
-          nextStopIndex: nextIndex,
-          lastKnownIndex: nextIndex > 0 ? nextIndex - 1 : 0
-        };
-      } else {
-        return {
-          currentStopIndex: -1,
-          nextStopIndex: -1,
-          lastKnownIndex: tripDetails.stops.length - 1
-        };
-      }
-    }
-
-    if (hasExplicitStop) {
-      if (isStopped) {
-        // Doors open: we ARE at this stop
-        const currentStopIndex = matchedIndex;
-        const nextStopIndex = matchedIndex + 1 < tripDetails.stops.length ? matchedIndex + 1 : -1;
-        return { currentStopIndex, nextStopIndex, lastKnownIndex: matchedIndex };
-      } else {
-        // Doors closed: arriving at this stop
-        const nextStopIndex = matchedIndex;
-        const lastKnownIndex = matchedIndex - 1;
-        return { currentStopIndex: -1, nextStopIndex, lastKnownIndex };
-      }
-    } else {
-      // Between stops: heading to next stop
-      const nextStopIndex = matchedIndex + 1 < tripDetails.stops.length ? matchedIndex + 1 : -1;
-      const lastKnownIndex = matchedIndex;
-      return { currentStopIndex: -1, nextStopIndex, lastKnownIndex };
-    }
-  };
+  // Where the tram has got to along the trip. The feed reports the stop it is
+  // running to on every message, so this is read rather than inferred; see
+  // tripProgress for what happens on the rare message that names none.
+  const getStopIndices = () =>
+    tripProgress(tram, tripDetails?.stops, { lastSeenStopId: lastStopId });
 
   const speedKmh = Math.round(tram.spd * 3.6);
   const isDoorsOpen = tram.drst === 1;
@@ -579,10 +522,13 @@ export const TramPopup: React.FC<TramPopupProps> = ({
 
             {/* Stop Callout (always visible under telemetry for context) */}
             {!loading && !error && tripDetails && (() => {
-              const { currentStopIndex, nextStopIndex, lastKnownIndex } = getStopIndices();
+              const { currentStopIndex, nextStopIndex } = getStopIndices();
               const isStopped = tram.drst === 1;
 
-              if (lastKnownIndex === -1) return null;
+              // Nothing to say only when neither stop could be established. A
+              // vehicle heading for the trip's very first stop has no stop
+              // behind it, and that is an answer, not a blank.
+              if (currentStopIndex === -1 && nextStopIndex === -1) return null;
 
               const currentStop = isStopped && currentStopIndex !== -1 ? tripDetails.stops[currentStopIndex] : null;
               const nextStop = nextStopIndex !== -1 ? tripDetails.stops[nextStopIndex] : null;
@@ -642,16 +588,16 @@ export const TramPopup: React.FC<TramPopupProps> = ({
 
             {/* Stop Timeline */}
             {!loading && !error && tripDetails && (() => {
-              const { currentStopIndex, nextStopIndex, lastKnownIndex } = getStopIndices();
+              const { currentStopIndex, nextStopIndex } = getStopIndices();
               const isStopped = tram.drst === 1;
 
-              // Filter for upcoming stops only (excluding past stops entirely)
+              // The timeline starts where the tram is: the stop it is standing
+              // at, or the one it is running to. With neither established there
+              // is no cut to make, so the whole trip is listed.
+              const from = isStopped && currentStopIndex !== -1 ? currentStopIndex : nextStopIndex;
               const upcomingStops = tripDetails.stops
                 .map((stop, idx) => ({ ...stop, originalIdx: idx }))
-                .filter((stop) => {
-                  if (lastKnownIndex === -1) return true;
-                  return isStopped ? stop.originalIdx >= currentStopIndex : stop.originalIdx > lastKnownIndex;
-                });
+                .filter((stop) => from === -1 || stop.originalIdx >= from);
 
               if (upcomingStops.length === 0) {
                 return (

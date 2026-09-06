@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.60.0] - 2026-09-06
+
+### Fixed
+- **The next stop is now the next stop**: it had been showing the stop already behind the tram, or nothing at all, and the reason was that we were reading the wrong field. HFP's `VP` payload carries a `stop`, and it is the stop the vehicle is standing *at* — null for the entire run between two stops. On a five-minute capture of the live tram feed (44,432 messages, 47,424 `vp` readings) it was null 52.8% of the time. So for more than half of every journey there was nothing to read, and the display fell back to guessing: take the last stop we saw and add one. That guess is wrong the moment a stop is missed or the vehicle is picked up mid-trip, and before its first stop of the trip had been seen there was no guess to make at all — hence "nothing".
+  The stop a vehicle is heading for was there the whole time, one level up: `next_stop`, level 13 of the MQTT topic itself. Unlike the payload field it is stated on **every** message — 44,432 out of 44,432 in that capture — and where the payload did name a stop the two agreed exactly, 22,376 times out of 22,376, because a vehicle that has not yet pulled away is both at a stop and heading for it. It is now parsed off the topic and published as `nextStop` on every vehicle, with `eol` for a vehicle that has run out of line. Replaying 102,172 captured live messages through the ingestion path, all 83 vehicles left in the cache carried a next stop; only 34 of them carried a payload `stop`.
+- **Late was showing as early, and early as late**: HFP's `dl` counts seconds *ahead* of schedule, the opposite of GTFS-RT and the opposite of the `delay` the timetable API returns for the very same journeys — and the app read it as the latter. Checked against the scheduled times HFP publishes on its own stop events (`ttarr` against the event's `tst`), 108 of the 109 samples more than 90 seconds off schedule in that capture confirmed it. `dl` is negated on ingestion, so one convention now holds everywhere: positive is late.
+- **The timetable fallback read the wrong clock**: when nothing about a vehicle can be matched to its trip, the next stop is guessed from stop times — which are on Helsinki's clock, but were compared against the browser's. Correct in Helsinki, out by the offset everywhere else.
+
+### Changed
+- **One next-stop resolver instead of three**: the vehicle card, the vehicle panel and the map each carried their own copy of the guessing logic, and they did not agree with each other — the map named the stop the vehicle was standing at while the card named the one after it. They now share `tripProgress`, which prefers what the vehicle reports and says where its answer came from (`reported`, `at-stop`, `timetable`, `end-of-line`), so a guess is never mistaken for the feed's own word.
+- **A stop can now tell you the tram is actually coming**: the next-arrival block distinguishes a vehicle that names this stop as the one it is running to (`Live · on its way here`) from one that is merely visible on the map with stops to make first, and a vehicle standing at the platform with its doors open (`Here now · doors open`) from either. The countdown is still the feed's own prediction and nothing else — locating a vehicle has never been allowed to become a second, competing estimate of the same number, and this does not change that. It changes what can be said about the vehicle behind it.
+
+---
+
 ## [v0.59.0] - 2026-09-06
 
 ### Added
