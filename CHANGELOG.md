@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.62.2] - 2026-09-06
+
+### Fixed
+- **The metro "M" signs follow the Metro toggle**: switch metro off in the city centre and the map still stood thick with orange M pins. The entrance pins, their letter and wheelchair badges, and the named metro station icons come from the HSL vector style rather than from anything the app draws, so nothing had ever tied them to the mode toggles — the metro trains, stations and lines went away and their signage stayed. They are now switched with the mode, alongside the metro stops and route lines, and restored the same way after a theme or style reload.
+
+---
+
 ## [v0.61.1] - 2026-09-06
 
 ### Fixed

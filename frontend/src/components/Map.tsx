@@ -800,6 +800,26 @@ export const Map: React.FC<MapProps> = ({
     routeRibbonLayers.forEach((layerId) => setVisible(layerId, routes));
   };
 
+  // The basemap's own metro furniture: the orange "M" entrance pins (with their
+  // letter and wheelchair badges) and the named station terminal icons. They are
+  // part of the vector style rather than anything we draw, so nothing tied them
+  // to the Metro toggle — turning metro off left a city centre still stacked
+  // with M signs. They belong to the mode, so they follow it.
+  const METRO_SIGN_LAYERS = [
+    'subway-entrance_icon',
+    'subway-entrance_letter',
+    'subway-entrance_accessibility',
+    'icon_subway-station',
+  ];
+
+  const updateMetroSignVisibility = (map: maplibregl.Map, metro: boolean) => {
+    METRO_SIGN_LAYERS.forEach((layerId) => {
+      // Absent in the dark theme, which loads Carto's basemap instead.
+      if (!map.getLayer(layerId)) return;
+      map.setLayoutProperty(layerId, 'visibility', metro ? 'visible' : 'none');
+    });
+  };
+
   // Helper to toggle 3D tilt and buildings extrusion
   const update3DMode = (map: maplibregl.Map, active: boolean, theme: 'light' | 'dark') => {
     // 1. Set pitch
@@ -3383,6 +3403,7 @@ export const Map: React.FC<MapProps> = ({
       Object.keys(routeGeometriesRef.current),
       showRoutesRef.current,
     );
+    updateMetroSignVisibility(map, showMetroRef.current);
     update3DMode(map, is3DRef.current, mapThemeRef.current);
     updateVehicle3DMode(map, vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current));
     // The style reload recreated every source, so whatever the furniture was
@@ -3928,6 +3949,7 @@ export const Map: React.FC<MapProps> = ({
         Object.keys(routeGeometries),
         showRoutes,
       );
+      updateMetroSignVisibility(map, showMetro);
     }
   }, [lineFilters, showTrams, showBuses, showMetro, showTrains, showRoutes, selectedLine, routeGeometries]);
 
