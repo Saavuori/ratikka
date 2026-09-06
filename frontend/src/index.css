@@ -884,6 +884,19 @@ body {
 }
 
 /* Stop Timetable Details */
+/* The freshness note rides alongside the "Upcoming departures" label rather
+   than taking a line of its own above the times. */
+.departures-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 16px 0 6px;
+}
+
+.departures-heading .legend-title { margin-bottom: 0; }
+.departures-heading .departures-freshness { margin: 0; font-size: 0.65rem; text-align: right; }
+
 .routes-chips {
   display: flex;
   flex-wrap: wrap;
@@ -901,13 +914,13 @@ body {
   color: var(--text-primary);
 }
 
+/* No scroller of its own: the timeline container around it is the panel's one
+   scrolling region, and a second one nested inside it put two scrollbars side
+   by side and split the wheel between them. */
 .departure-list {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  max-height: calc(100vh - 280px);
-  max-height: calc(100dvh - 280px);
-  overflow-y: auto;
 }
 
 .departure-item {
@@ -1623,6 +1636,25 @@ body {
     overflow: hidden;
   }
 
+  /* The timetable is what the sheet is for — give it as much of the phone as
+     the map can spare. Scoped away from `.collapsed`, which zeroes the same
+     property from an earlier rule of equal specificity. */
+  .detail-popup.stop-popup:not(.collapsed) {
+    max-height: 78vh;
+    max-height: 78dvh;
+  }
+
+  /* The coloured chips already say which lines these are; the label above them
+     only costs a row of the timetable. */
+  .stop-popup .stop-lines .legend-title {
+    display: none;
+  }
+
+  .stop-popup .route-chip {
+    padding: 2px 7px;
+    font-size: 0.7rem;
+  }
+
   .stop-popup .timeline-container {
     max-height: none;
     margin-top: 10px !important;
@@ -1647,9 +1679,13 @@ body {
     font-size: 0.7rem;
   }
 
+  .stop-popup .departures-heading {
+    margin: 12px 0 4px;
+  }
+
   .stop-popup .departures-freshness {
-    margin: 4px 0 6px;
-    font-size: 0.68rem;
+    margin: 0;
+    font-size: 0.62rem;
   }
 
   .stop-popup .routes-chips {

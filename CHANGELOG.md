@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.58.1] - 2026-09-06
+
+### Fixed
+- **One scrollbar, and the times above the fold**: the stop sheet drew two scrollbars side by side — the departures list carried a viewport-height cap and an `overflow` of its own inside the panel's scrolling body, so the phone painted a track for each and split the wheel between them. The list is now plain content in the panel's single scrolling region. What that region shows is mostly departures now, too: on a phone the sheet is 78% of the viewport rather than 62%, the internal `HSL:` stop id (useful for a bug report, not for catching a tram) is gone from the header, the "Lines serving this stop" label is dropped in favour of the coloured chips that already say it, and the freshness note shares its line with the "Upcoming departures" label and shortens to `Live · 12s ago` instead of restating the polling interval. Nothing is removed from the desktop panel, which has the room.
+
+---
+
 ## [v0.58.0] - 2026-09-06
 
 ### Added

@@ -179,6 +179,20 @@ export const StopPopup: React.FC<StopPopupProps> = ({
     };
   }, [stopId]);
 
+  // The internal stop id is only useful when reporting a problem, so a phone
+  // shows the subtitle only when it carries something a traveller acts on.
+  const platform = details?.stop.platformCode ? `Platform ${details.stop.platformCode}` : null;
+  const subtitle = isMobile ? platform : [stopId, platform].filter(Boolean).join(' · ');
+
+  // On a phone the note shares its line with the section label, so it says only
+  // how old the data is; the desktop panel has room to explain the cadence too.
+  const age = details?.fetchedAt
+    ? `${Math.max(0, Math.floor((now - details.fetchedAt) / 1000))}s ago`
+    : null;
+  const freshness = isMobile
+    ? [stale ? 'Stale' : 'Live', age].filter(Boolean).join(' · ')
+    : `${stale ? 'Stale · last known departures' : 'Updates every 18 seconds'}${age ? ` · source ${age}` : ' · source time unavailable'}`;
+
   return (
     <div
       className={`glass-panel detail-popup stop-popup ${isCollapsed ? 'collapsed' : ''}`}
@@ -224,10 +238,11 @@ export const StopPopup: React.FC<StopPopupProps> = ({
                 </span>
               )}
             </div>
-            <p className="panel-subtitle" style={{ fontFamily: 'monospace', marginTop: '4px', fontSize: '0.65rem' }}>
-              {stopId}
-              {details?.stop.platformCode && ` · Platform ${details.stop.platformCode}`}
-            </p>
+            {subtitle && (
+              <p className="panel-subtitle" style={{ fontFamily: 'monospace', marginTop: '4px', fontSize: '0.65rem' }}>
+                {subtitle}
+              </p>
+            )}
           </div>
           {!isCollapsed && (
             <button
@@ -316,7 +331,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
       <div className="timeline-container" style={{ flex: 1, marginTop: '16px' }}>
         {/* Routes serving stop */}
         {details && details.routes && details.routes.length > 0 && (
-          <div>
+          <div className="stop-lines">
             <div className="legend-title">Lines serving this stop</div>
             <div className="routes-chips">
               {details.routes.map((route) => (
@@ -359,13 +374,12 @@ export const StopPopup: React.FC<StopPopupProps> = ({
               tracking={tracking}
               onToggleTracking={() => setTrackedTripId(tracking ? null : arrival?.departure.tripId ?? null)}
             />
-            <div className="legend-title" style={{ margin: '16px 0 8px' }}>Upcoming Departures</div>
-            <p className={`departures-freshness ${stale ? 'is-stale' : ''}`} role="status">
-              {stale ? 'Stale · last known departures' : 'Updates every 18 seconds'}
-              {details.fetchedAt
-                ? ` · source ${Math.max(0, Math.floor((now - details.fetchedAt) / 1000))}s ago`
-                : ' · source time unavailable'}
-            </p>
+            <div className="departures-heading">
+              <div className="legend-title">Upcoming Departures</div>
+              <p className={`departures-freshness ${stale ? 'is-stale' : ''}`} role="status">
+                {freshness}
+              </p>
+            </div>
 
             {details.departures.length === 0 ? (
               <div style={{ fontSize: '0.75rem', color: '#64748b', padding: '24px 0', textAlign: 'center' }}>
