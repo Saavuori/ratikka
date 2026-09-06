@@ -2,6 +2,8 @@ import React from 'react';
 import { Sun, Moon, Box, Route, TramFront } from 'lucide-react';
 
 interface ViewTogglesProps {
+  /** Faded out and taken out of the tab order while a mobile bottom sheet covers the map. */
+  hidden?: boolean;
   mapTheme: 'light' | 'dark';
   setMapTheme: (theme: 'light' | 'dark') => void;
   is3D: boolean;
@@ -25,6 +27,7 @@ const VIEW_ACCENT = '#34d399';
  * that section (and the mobile "Settings" sheet behind it) is gone.
  */
 export const ViewToggles: React.FC<ViewTogglesProps> = ({
+  hidden = false,
   mapTheme,
   setMapTheme,
   is3D,
@@ -69,7 +72,7 @@ export const ViewToggles: React.FC<ViewTogglesProps> = ({
   ];
 
   return (
-    <div className="corner-toggles view-toggles" role="group" aria-label="Map view">
+    <div className={`corner-toggles view-toggles${hidden ? ' corner-toggles--hidden' : ''}`} role="group" aria-label="Map view">
       {toggles.map((t) => (
         <button
           key={t.key}

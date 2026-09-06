@@ -117,7 +117,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
 
   return (
     <div
-      className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}
+      className={`glass-panel detail-popup stop-popup ${isCollapsed ? 'collapsed' : ''}`}
       style={{ pointerEvents: 'auto' }}
       onTouchStart={isMobile ? undefined : handleTouchStart}
       onTouchMove={isMobile ? undefined : handleTouchMove}
@@ -144,102 +144,109 @@ export const StopPopup: React.FC<StopPopupProps> = ({
           {isCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </span>
       </button>
-      {/* Header */}
-      <div className="panel-header" style={{ padding: '0 0 16px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <h2 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>{stopName}</h2>
-            {stopCode && (
-              <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', padding: '2px 6px', borderRadius: '4px', color: '#94a3b8', fontFamily: 'monospace' }}>
-                {stopCode}
+
+      {/* Everything above the timetable stays put while the departures scroll —
+          on a phone the sheet is short enough that a scrolling header would
+          take the stop's own name off screen. */}
+      <div className="sheet-head">
+        {/* Header */}
+        <div className="panel-header" style={{ padding: '0 0 16px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h2 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>{stopName}</h2>
+              {stopCode && (
+                <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', padding: '2px 6px', borderRadius: '4px', color: '#94a3b8', fontFamily: 'monospace' }}>
+                  {stopCode}
+                </span>
+              )}
+            </div>
+            <p className="panel-subtitle" style={{ fontFamily: 'monospace', marginTop: '4px', fontSize: '0.65rem' }}>
+              {stopId}
+              {details?.stop.platformCode && ` · Platform ${details.stop.platformCode}`}
+            </p>
+          </div>
+          {!isCollapsed && (
+            <button
+              onClick={onToggleCollapse}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                padding: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                outline: 'none',
+              }}
+              aria-label="Collapse panel"
+              className="panel-collapse-btn"
+            >
+              {isMobile ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>
+          )}
+          <button onClick={onClose} className="close-btn" aria-label="Close stop departures">
+            <X size={18} />
+          </button>
+        </div>
+        <button
+          type="button"
+          className="save-stop-button"
+          aria-pressed={Boolean(savedStop)}
+          disabled={!savedStop && (!details || savedStops.length >= MAX_SAVED_STOPS)}
+          onClick={() => {
+            const stop = savedStop ?? details?.stop;
+            if (stop) toggleStop(stop);
+          }}
+        >
+          {savedStop ? 'Remove saved stop' : savedStops.length >= MAX_SAVED_STOPS ? '10 saved stops maximum' : 'Save stop'}
+        </button>
+
+        {/* Service alerts — a one-line summary that expands into a scrollable
+            list, so the timetable below always keeps its share of the panel. */}
+        {relevantAlerts.length > 0 && (
+          <div className="stop-alerts">
+            <button
+              className={`stop-alerts-summary severity-${worstSeverity.toLowerCase()}`}
+              onClick={() => setAlertsExpanded((v) => !v)}
+              aria-expanded={alertsExpanded}
+            >
+              <AlertTriangle size={14} className="stop-alerts-icon" />
+              <span className="stop-alerts-count">
+                {relevantAlerts.length === 1
+                  ? '1 service alert'
+                  : `${relevantAlerts.length} service alerts`}
               </span>
+              {!alertsExpanded && (
+                <span className="stop-alerts-preview">{relevantAlerts[0].headerText}</span>
+              )}
+              {alertsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+
+            {alertsExpanded && (
+              <div className="stop-alerts-list">
+                {relevantAlerts.map((alert, idx) => (
+                  <div key={idx} className={`stop-alert severity-${alert.severityLevel.toLowerCase()}`}>
+                    <h4 className="stop-alert-title">{alert.headerText}</h4>
+                    {alert.descriptionText && (
+                      <p className="stop-alert-desc">{alert.descriptionText}</p>
+                    )}
+                    {alert.url && (
+                      <a
+                        href={alert.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="stop-alert-link"
+                      >
+                        Official Info <ExternalLink size={8} />
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-          <p className="panel-subtitle" style={{ fontFamily: 'monospace', marginTop: '4px', fontSize: '0.65rem' }}>
-            {stopId}
-            {details?.stop.platformCode && ` · Platform ${details.stop.platformCode}`}
-          </p>
-        </div>
-        {!isCollapsed && (
-          <button
-            onClick={onToggleCollapse}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              padding: '4px',
-              display: 'flex',
-              alignItems: 'center',
-              outline: 'none',
-            }}
-            aria-label="Collapse panel"
-          >
-            {isMobile ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          </button>
         )}
-        <button onClick={onClose} className="close-btn" aria-label="Close stop departures">
-          <X size={18} />
-        </button>
       </div>
-      <button
-        type="button"
-        className="save-stop-button"
-        aria-pressed={Boolean(savedStop)}
-        disabled={!savedStop && (!details || savedStops.length >= MAX_SAVED_STOPS)}
-        onClick={() => {
-          const stop = savedStop ?? details?.stop;
-          if (stop) toggleStop(stop);
-        }}
-      >
-        {savedStop ? 'Remove saved stop' : savedStops.length >= MAX_SAVED_STOPS ? '10 saved stops maximum' : 'Save stop'}
-      </button>
-
-      {/* Service alerts — a one-line summary that expands into a scrollable
-          list, so the timetable below always keeps its share of the panel. */}
-      {relevantAlerts.length > 0 && (
-        <div className="stop-alerts">
-          <button
-            className={`stop-alerts-summary severity-${worstSeverity.toLowerCase()}`}
-            onClick={() => setAlertsExpanded((v) => !v)}
-            aria-expanded={alertsExpanded}
-          >
-            <AlertTriangle size={14} className="stop-alerts-icon" />
-            <span className="stop-alerts-count">
-              {relevantAlerts.length === 1
-                ? '1 service alert'
-                : `${relevantAlerts.length} service alerts`}
-            </span>
-            {!alertsExpanded && (
-              <span className="stop-alerts-preview">{relevantAlerts[0].headerText}</span>
-            )}
-            {alertsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-
-          {alertsExpanded && (
-            <div className="stop-alerts-list">
-              {relevantAlerts.map((alert, idx) => (
-                <div key={idx} className={`stop-alert severity-${alert.severityLevel.toLowerCase()}`}>
-                  <h4 className="stop-alert-title">{alert.headerText}</h4>
-                  {alert.descriptionText && (
-                    <p className="stop-alert-desc">{alert.descriptionText}</p>
-                  )}
-                  {alert.url && (
-                    <a
-                      href={alert.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="stop-alert-link"
-                    >
-                      Official Info <ExternalLink size={8} />
-                    </a>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Body */}
       <div className="timeline-container" style={{ flex: 1, marginTop: '16px' }}>
