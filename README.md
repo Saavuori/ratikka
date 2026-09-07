@@ -41,6 +41,9 @@ A premium, high-performance web application mapping **all active Helsinki trams,
 * **Detailed 3D Vehicles**: Distinct tram, bus, metro and commuter-train bodies have articulated sections, windows, running gear and roof equipment. A vehicle running on rails **bends at its joints**: each rigid section is placed at its own point on the track at the bearing the rails have there, with the gangway stretching between them, so a 27 m tram takes a street corner instead of ploughing its nose through the building outside the curve. Models fade in between zoom 13 and 14 (previously 15–16), retaining real-world dimensions. The vehicle button in the map-view controls enables **Always show 3D vehicles**, including on the flat map, independently of map tilt; this preference persists. Below zoom 13, icons remain visible for readability.
 * **Live Doors & Lights**: At close zooms, door leaves slide open and closed from reported `drst` changes, with a locally animated transition. Head/tail lamps mark direction; bus/tram rear lamps brighten while braking, and an amber roof indicator shows inferred braking for every mode. Braking is inferred from acceleration, standstill or open doors—not a directly reported lamp signal. Missing door telemetry leaves doors closed; rail door-side information is unavailable, so both sides are illustrated.
 * **Self-Location (GPS)**: A geolocate control tracks and centres on your own position, styled to match the glassmorphic theme.
+* **Timelapse — Replay the Last Week**: **Double-click the version badge** in the bottom-left corner and the map stops being about now. A scrubber covers the last seven days of tram movement, with the recorded stretches shaded so the gaps a deploy or a broker reconnect left are visible rather than discovered; play it back at 1× through 240×, and a whole day runs past in six minutes. A replayed tram is not a different kind of thing from a live one — it carries the same telemetry, rides the same rails, opens the same doors — because the history stores exactly what the live map was shown. The panel is deliberately not part of the map's ordinary furniture: watching the city's past is a different errand from watching it now.
+
+  The archive behind it is a packed 28-byte record per reading, with each journey's line, trip and operating day interned once per day rather than repeated on all ~1,700 of its readings — so a week of trams is about 1.1 GB rather than fifteen, small enough that the page cache simply holds it. That is also what makes a *place* answerable rather than only a moment: asking what passed one junction all week is a scan of eight bytes per reading, most of them rejected without decoding anything else. Trams alone are recorded, because trams are the only mode ingested unconditionally — a bus history would have holes wherever nobody happened to be watching buses.
 
 ### Telemetry & Diagnostics
 
@@ -62,6 +65,7 @@ A premium, high-performance web application mapping **all active Helsinki trams,
 
 * **Backend**: Go 1.26, using native `http.ServeMux` method-and-pattern routing (Go 1.22+), `coder/websocket` for streaming, `eclipse/paho.mqtt.golang` to ingest live telemetry from HSL's public broker, and `golang.org/x/sync/singleflight` for query deduplication.
 * **MQTT Ingestion**: Subscribes to `/hfp/v2/journey/ongoing/vp/tram/#` and `/hfp/v2/journey/ongoing/vp/bus/#` on `tls://mqtt.hsl.fi:8883`.
+* **History Archive**: fixed-width 28-byte position records in per-minute chunk files on a bind-mounted volume, with per-day journey and stop dictionaries; a rolling seven days of trams is ~1.1 GB. Configured by `REPLAY_DIR`, `REPLAY_RETENTION_DAYS` and `REPLAY_MODES`; unset `REPLAY_DIR` to record nothing.
 * **State Store**: Redis 8 (Alpine), acting as a low-overhead live coordinate cache with a 64 MB `allkeys-lru` cap, tracking unique operator-prefixed vehicle IDs (`{operator}-{vehicle}`). An in-memory map is used instead when Redis is disabled.
 * **Frontend**: React 19, TypeScript, Vite 8, MapLibre GL JS 5.x, Lucide icons, and vanilla CSS with custom theme variables.
 * **Map Tile Stream**: Digitransit Map API v3 (vector `style.json`, stop POI tiles, and rental-station tiles).
@@ -91,6 +95,9 @@ All endpoints are served by the Go backend under `/api/v1`. See [docs/API_REFERE
 | `GET` | `/api/v1/geocode` | Destination search (Digitransit geocoding, `?text=&lat=&lon=`) |
 | `GET` | `/api/v1/plan` | Journey planning between two points (`?fromLat=&fromLon=&toLat=&toLon=`) |
 | `GET` | `/api/v1/journey/monitor` | Refresh selected journey legs (`?legId=...`, repeated per leg) |
+| `GET` | `/api/v1/replay/index` | What history is recorded, and where its gaps are |
+| `GET` | `/api/v1/replay/window` | A slice of recorded history for playback (`?from=&to=&step=`) |
+| `GET` | `/api/v1/replay/timelapse` | Everything that passed one place over a long span (`?from=&to=&bbox=`) |
 | `GET` | `/api/v1/stream` | WebSocket stream of live vehicle positions |
 | `GET` | `/metrics` | Prometheus exposition format |
 | `GET` | `/` | Embedded React SPA (go:embed static fallback) |

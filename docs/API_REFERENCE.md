@@ -21,6 +21,9 @@
   - [REST — Traffic Lights (All)](#rest--traffic-lights-all)
   - [REST — Destination Search (Geocode)](#rest--destination-search-geocode)
   - [REST — Journey Plan](#rest--journey-plan)
+  - [REST — Replay Index](#rest--replay-index)
+  - [REST — Replay Window](#rest--replay-window)
+  - [REST — Timelapse](#rest--timelapse)
   - [REST — Health Check](#rest--health-check)
   - [REST — Version Info](#rest--version-info)
 
@@ -972,6 +975,118 @@ Transfer warnings subtract walking time from the interval between transit legs.
 They are estimates, not guaranteed connections; scheduled or stale data is
 identified separately. Invalid requests return `400`; upstream errors return
 `502`.
+
+---
+
+### REST — Replay Index
+
+What history the server holds, and where its gaps are. The client draws the
+timeline's shaded stretches from `days`, and scrubs against `serverTime` rather
+than the browser's own clock — a browser running fast would otherwise let the
+scrubber run past the end of the archive.
+
+Coverage is reported per hour rather than per minute: a week is 10,080 minutes,
+and the timeline only needs to know where the gaps are.
+
+| Property | Value |
+|---|---|
+| **Method** | `GET` |
+| **Path** | `/api/v1/replay/index` |
+| **Cache** | `public, max-age=15` |
+
+**Response** `200 OK`:
+
+```json
+{
+  "enabled": true,
+  "modes": ["tram"],
+  "retentionDays": 7,
+  "serverTime": 1757174400,
+  "days": [
+    {
+      "date": "2026-09-06",
+      "hours": { "tram": [60, 60, 0, 0, 0, 0, 12, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60] }
+    }
+  ]
+}
+```
+
+`enabled` is `false` when no archive is configured (`REPLAY_DIR` unset). The
+frontend hides the timelapse gesture entirely in that case rather than offering
+a control that does nothing.
+
+---
+
+### REST — Replay Window
+
+A slice of recorded history for playback. Every sample carries the same field
+names as a live vehicle on the WebSocket, so the map draws a replayed tram with
+the code it already uses for a running one.
+
+| Property | Value |
+|---|---|
+| **Method** | `GET` |
+| **Path** | `/api/v1/replay/window` |
+| **Query** | `from`, `to` (Unix seconds, max 15 minutes apart), `step`, `modes`, `bbox` |
+
+`step` thins the result to at most one reading per vehicle per that many
+seconds, and is how fast playback stays affordable: sixty times real time draws
+the same number of steps as one times, each covering sixty times the ground, so
+it fetches an eighth of the readings rather than sixty times as many. Capped at
+60.
+
+**Response** `200 OK`:
+
+```json
+{
+  "from": 1757174400,
+  "to": 1757174520,
+  "truncated": false,
+  "scanned": 9840,
+  "samples": [
+    {
+      "veh": "0040-456", "desi": "9", "lat": 60.171234, "lng": 24.941234,
+      "hdg": 187, "spd": 8.42, "acc": -0.31, "dl": -45, "drst": 0,
+      "route": "1009", "stop": null, "nextStop": "HSL:1020450",
+      "ts": 1757174401, "tripId": "HSL:1009_20260906_Su_1_1736", "mode": "tram"
+    }
+  ]
+}
+```
+
+A window that finished more than two minutes ago can never change and is served
+`public, max-age=86400, immutable`; one running up to now is still being
+appended to and is `no-store`. `truncated` reports that the server's sample cap
+was reached and later readings in the window are missing.
+
+`503` when no archive is configured; `400` for a reversed, zero-length or
+over-long span.
+
+---
+
+### REST — Timelapse
+
+Every reading that passed through one place over a long span — the query the
+packed archive exists for. A junction over a week is on the order of a hundred
+thousand readings out of tens of millions, so the bounding box is what makes
+the span affordable, and it is required here rather than optional.
+
+| Property | Value |
+|---|---|
+| **Method** | `GET` |
+| **Path** | `/api/v1/replay/timelapse` |
+| **Query** | `from`, `to` (up to the whole retention window), `bbox` (**required**), `step`, `modes` |
+
+`bbox` is `west,south,east,north` in degrees, and may cover at most 0.04 square
+degrees — comfortably more than the tram network, and far less than "the whole
+world for a week".
+
+The response is shaped exactly like [Replay Window](#rest--replay-window).
+`scanned` counts every reading walked, hits and misses together: the filter
+rejects rather than skips, which is what the fixed-width record makes cheap —
+eight bytes are read per rejected reading and nothing is decoded.
+
+`400` for a missing, malformed, inverted or over-large box.
 
 ---
 

@@ -254,6 +254,19 @@ interface MapProps {
    * worth a label. Reported when the view settles, never per frame.
    */
   onVisibleStopsChange?: (stopIds: string[]) => void;
+  /**
+   * How many seconds of history a second of wall clock covers. One while the
+   * live feed is playing, and the replay speed while history is.
+   *
+   * Everything the animation does with distance — carrying a vehicle forward
+   * on its own speed and acceleration, deciding a step is too large to be real
+   * — is measured in seconds of *history*, while the glide between two
+   * snapshots is measured on the wall clock. At one times these are the same
+   * number and this changes nothing. At sixty times a snapshot arrives every
+   * eighth of a second carrying eight seconds of travel, and a map told only
+   * the wall figure would conclude that every vehicle on it had teleported.
+   */
+  timeScale?: number;
 }
 
 // One vehicle in the GeoJSON collection the map's icon layers read. Named so
@@ -403,6 +416,7 @@ export const Map: React.FC<MapProps> = ({
   selectedTripDetails,
   journeyLegs = null,
   journeyEndpoints = null,
+  timeScale = 1,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -1785,6 +1799,15 @@ export const Map: React.FC<MapProps> = ({
   // indistinguishable from a jump, and past 2.5 s the feed is broken rather
   // than slow, so the vehicles should stop rather than be flung onward.
   const windowSecRef = useRef<number>(1);
+  // The same window measured in seconds of history rather than of wall clock.
+  // Identical to windowSecRef at one times; see the `timeScale` prop.
+  const dataWindowSecRef = useRef<number>(1);
+  // Read inside the animation frame and the snapshot effect, which must not be
+  // torn down and rebuilt when the playback speed changes.
+  const timeScaleRef = useRef<number>(timeScale);
+  useEffect(() => {
+    timeScaleRef.current = timeScale;
+  }, [timeScale]);
   const MIN_WINDOW_SEC = 0.7;
   const MAX_WINDOW_SEC = 2.5;
 
@@ -1814,7 +1837,7 @@ export const Map: React.FC<MapProps> = ({
       fix.spd,
       fix.acc,
       0,
-      age + windowSecRef.current,
+      age + dataWindowSecRef.current,
       fix.limits
     );
     if (advance <= 0) return null;
@@ -2282,8 +2305,13 @@ export const Map: React.FC<MapProps> = ({
     // the right rate when the feed is late, instead of arriving early and
     // standing still until it catches up.
     if (lastUpdateRef.current > 0) {
-      windowSecRef.current = clamp(
-        (now - lastUpdateRef.current) / 1000,
+      const wallSec = (now - lastUpdateRef.current) / 1000;
+      windowSecRef.current = clamp(wallSec, MIN_WINDOW_SEC, MAX_WINDOW_SEC);
+      // Prediction is still bounded by MAX_WINDOW_SEC: a fast replay may hand
+      // over eight seconds of travel at a time, but carrying a vehicle eight
+      // seconds forward on a stale speed invents more than it draws.
+      dataWindowSecRef.current = clamp(
+        wallSec * Math.max(timeScaleRef.current, 0.1),
         MIN_WINDOW_SEC,
         MAX_WINDOW_SEC
       );
@@ -2321,7 +2349,9 @@ export const Map: React.FC<MapProps> = ({
       // How stale the placement being continued from is — the age of the anchor
       // it came from, or one snapshot when the vehicle has only a target — sets
       // how far along its route the vehicle may have got since.
-      const placementAge = fix ? (now - fix.seenAt) / 1000 : windowSecRef.current;
+      const placementAge = fix
+        ? ((now - fix.seenAt) / 1000) * Math.max(timeScaleRef.current, 0.1)
+        : dataWindowSecRef.current;
       const snapped = placeOnRails(tram, previousPlacement, placementAge);
       let target: RenderPosition = snapped
         ? { lat: snapped.lat, lng: snapped.lng, hdg: snapped.hdg, track: snapped.track }
@@ -2375,7 +2405,7 @@ export const Map: React.FC<MapProps> = ({
         // message froze mid-journey is carried for its mode's horizon and then
         // holds, which past that horizon is what it is most likely doing anyway.
         newFixes[id] = fix;
-        const age = (now - fix.seenAt) / 1000;
+        const age = ((now - fix.seenAt) / 1000) * Math.max(timeScaleRef.current, 0.1);
         const predicted = predictPosition(fix, age);
         if (predicted) {
           target = predicted;
@@ -2406,7 +2436,7 @@ export const Map: React.FC<MapProps> = ({
       // at all — the outliers, and nothing else.
       const leap =
         distanceBetween(from, target) >
-        limits.maxSpeed * 4 * Math.max(windowSecRef.current, MIN_WINDOW_SEC);
+        limits.maxSpeed * 4 * Math.max(dataWindowSecRef.current, MIN_WINDOW_SEC);
       newPrev[id] = leap ? target : from;
       newTarget[id] = target;
     });

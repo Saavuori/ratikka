@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"ratikka/internal/cache"
+	"ratikka/internal/replay"
 )
 
 type mockMessage struct {
@@ -579,5 +582,88 @@ func TestNormalizeDelay(t *testing.T) {
 	}
 	if got := normalizeDelay(0); got != 0 {
 		t.Errorf("on time should read 0, got %d", got)
+	}
+}
+
+// A tram reaching the live cache must also reach the archive, carrying the
+// values the map was shown rather than the raw feed: the next stop parsed off
+// the topic, the delay in the sign convention the rest of the app uses.
+func TestIngestionWorker_RecordsToArchive(t *testing.T) {
+	archive, err := replay.Open(replay.Config{Root: t.TempDir(), RetentionDays: 7, Modes: []string{"tram"}})
+	if err != nil {
+		t.Fatalf("Open archive: %v", err)
+	}
+	defer archive.Close()
+
+	worker := NewIngestionWorker("tls://mock:8883", cache.NewMemoryCache())
+	worker.SetArchive(archive)
+
+	ts := time.Now().Add(-time.Minute).Truncate(time.Second)
+	payload := fmt.Sprintf(`{"VP":{"desi":"9","dir":"1","oper":22,"veh":229,"tsi":%d,
+		"spd":8.5,"hdg":145,"lat":60.16985,"long":24.93848,"acc":0.12,"dl":-15,
+		"odo":12456,"drst":1,"oday":"2026-06-15","start":"09:15","stop":"HSL:1203420",
+		"route":"HSL:1009","occu":0}}`, ts.Unix())
+
+	worker.handleMessage(nil, &mockMessage{
+		payload: []byte(payload),
+		topic:   "/hfp/v2/journey/ongoing/vp/tram/22/229/HSL:1009/1/Jätkäsaari/09:15/HSL:1203420/14/60.17/24.94",
+	})
+
+	res, err := archive.Read(replay.Query{From: ts.Add(-time.Minute), To: ts.Add(time.Minute)})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(res.Samples) != 1 {
+		t.Fatalf("archive holds %d readings, want 1", len(res.Samples))
+	}
+
+	got := res.Samples[0]
+	if got.Veh != "22-229" || got.Desi != "9" || got.Mode != "tram" {
+		t.Errorf("identity: %+v", got)
+	}
+	if math.Abs(got.Lat-60.16985) > 1e-5 || math.Abs(got.Lng-24.93848) > 1e-5 {
+		t.Errorf("coordinate: got %.5f,%.5f", got.Lat, got.Lng)
+	}
+	if got.Dl != 15 {
+		t.Errorf("delay: got %d, want 15 — the archive stores the normalized sign", got.Dl)
+	}
+	if got.NextStop == nil || *got.NextStop != "HSL:1203420" {
+		t.Errorf("next stop off the topic: %v", got.NextStop)
+	}
+	if got.Drst != 1 {
+		t.Errorf("door state: got %d, want 1", got.Drst)
+	}
+}
+
+// Buses are ingested only while somebody is watching them, so recording them
+// would produce a history with holes. The archive is told which modes it keeps
+// and the ingestion path must respect that.
+func TestIngestionWorker_DoesNotArchiveUnrecordedModes(t *testing.T) {
+	root := t.TempDir()
+	archive, err := replay.Open(replay.Config{Root: root, RetentionDays: 7, Modes: []string{"tram"}})
+	if err != nil {
+		t.Fatalf("Open archive: %v", err)
+	}
+	defer archive.Close()
+
+	worker := NewIngestionWorker("tls://mock:8883", cache.NewMemoryCache())
+	worker.SetArchive(archive)
+
+	ts := time.Now().Add(-time.Minute).Truncate(time.Second)
+	payload := fmt.Sprintf(`{"VP":{"desi":"550","dir":"1","oper":12,"veh":99,"tsi":%d,
+		"spd":8.5,"hdg":145,"lat":60.2,"long":24.9,"oday":"2026-06-15","start":"09:15",
+		"route":"HSL:2550"}}`, ts.Unix())
+
+	worker.handleMessage(nil, &mockMessage{
+		payload: []byte(payload),
+		topic:   "/hfp/v2/journey/ongoing/vp/bus/12/99/HSL:2550/1/Itäkeskus/09:15/HSL:1203420/14/60.2/24.9",
+	})
+
+	res, err := archive.Read(replay.Query{From: ts.Add(-time.Minute), To: ts.Add(time.Minute)})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(res.Samples) != 0 {
+		t.Fatalf("a bus was archived: %+v", res.Samples)
 	}
 }
