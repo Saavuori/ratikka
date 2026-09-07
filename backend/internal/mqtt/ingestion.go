@@ -20,12 +20,18 @@ const tramTopic = "/hfp/v2/journey/ongoing/vp/tram/#"
 // optionalModeTopics are the HFP feeds that are only ingested while at least
 // one connected client asks for them. Trams are always on; the rest are opt-in
 // because they are either huge (buses are ~80% of the whole feed) or of
-// narrower interest (metro, commuter train). They all carry the same VP payload
-// on the same topic layout, so one handler serves every mode.
+// narrower interest (metro, commuter train, ferry). They all carry the same VP
+// payload on the same topic layout, so one handler serves every mode.
+//
+// The ferry feed is the smallest of the five by a wide margin — the Suomenlinna
+// run is a handful of vessels — but it is the only one that reports a real
+// `occu` percentage rather than the 0 every road and rail vehicle sends, which
+// is what the map draws as a live load gauge.
 var optionalModeTopics = map[string]string{
 	"bus":   "/hfp/v2/journey/ongoing/vp/bus/#",
 	"metro": "/hfp/v2/journey/ongoing/vp/metro/#",
 	"train": "/hfp/v2/journey/ongoing/vp/train/#",
+	"ferry": "/hfp/v2/journey/ongoing/vp/ferry/#",
 }
 
 // IsOptionalMode reports whether a mode is one clients can switch on and off.
@@ -194,7 +200,7 @@ type IngestionWorker struct {
 	// it tolerates that, so there is no branch here.
 	archive *replay.Archive
 
-	// enabledModes tracks which optional feeds (bus, metro, train) are
+	// enabledModes tracks which optional feeds (bus, metro, train, ferry) are
 	// currently subscribed. Guarded by mu because EnableMode/DisableMode are
 	// called from the WebSocket hub goroutine while OnConnect (reconnect) reads
 	// it from the MQTT client goroutine.
@@ -293,8 +299,8 @@ func (w *IngestionWorker) IsConnected() bool {
 	return w.client != nil && w.client.IsConnected()
 }
 
-// EnableMode starts ingesting positions for an optional mode ("bus", "metro"
-// or "train"). Called when the first client opts in to it. Idempotent, ignores
+// EnableMode starts ingesting positions for an optional mode ("bus", "metro",
+// "train" or "ferry"). Called when the first client opts in to it. Idempotent, ignores
 // unknown modes, and safe to call from another goroutine.
 func (w *IngestionWorker) EnableMode(mode string) {
 	if !IsOptionalMode(mode) {

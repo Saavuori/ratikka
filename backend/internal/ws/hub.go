@@ -27,7 +27,7 @@ func init() {
 
 // ModeController lets the hub turn on-demand ingestion of an optional vehicle
 // mode on and off based on whether any connected client currently wants to see
-// it. Trams always stream; buses, metro and commuter trains are opt-in.
+// it. Trams always stream; buses, metro, commuter trains and ferries are opt-in.
 type ModeController interface {
 	EnableMode(mode string)
 	DisableMode(mode string)
@@ -35,7 +35,7 @@ type ModeController interface {
 
 // optionalModes are the modes a client can switch on and off. Anything else a
 // client asks for is ignored (the ingestion worker rejects unknown modes too).
-var optionalModes = []string{"bus", "metro", "train"}
+var optionalModes = []string{"bus", "metro", "train", "ferry"}
 
 func isOptionalMode(mode string) bool {
 	for _, m := range optionalModes {

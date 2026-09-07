@@ -5,8 +5,8 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
 // The optional feeds a client can ask for. Trams always stream; these are
 // ingested by the backend only while at least one client has opted in, because
-// they are either huge (buses) or of narrower interest (metro, train).
-export type OptionalMode = 'bus' | 'metro' | 'train';
+// they are either huge (buses) or of narrower interest (metro, train, ferry).
+export type OptionalMode = 'bus' | 'metro' | 'train' | 'ferry';
 
 interface UseWebSocketOptions {
   onMessage: (data: PositionsMessage) => void;

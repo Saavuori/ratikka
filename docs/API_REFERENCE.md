@@ -45,7 +45,7 @@ High-frequency vehicle position data streamed from HSL's public MQTT broker.
 
 #### Topic Patterns
 
-Trams are subscribed permanently; buses, metro and commuter trains are
+Trams are subscribed permanently; buses, metro, commuter trains and ferries are
 subscribed on demand, while a connected client asks for them (see the WebSocket
 control message below):
 ```
@@ -53,6 +53,7 @@ control message below):
 /hfp/v2/journey/ongoing/vp/bus/#      (on demand)
 /hfp/v2/journey/ongoing/vp/metro/#    (on demand)
 /hfp/v2/journey/ongoing/vp/train/#    (on demand)
+/hfp/v2/journey/ongoing/vp/ferry/#    (on demand)
 ```
 
 Topic hierarchy (each segment is filterable with `+` wildcard):
@@ -124,6 +125,7 @@ both at it and heading for it.
 | `start` | `string` | Trip start time (`"HH:MM"`) | Trip identification |
 | `oday` | `string` | Operating day (`"YYYY-MM-DD"`) | Trip identification |
 | `dir` | `string` | Direction ID (`"1"` or `"2"`) | Trip identification |
+| `occu` | `int?` | Passenger load, 0–100. A real measurement on the **ferry** only; every road and rail vehicle sends a constant `0`, so on those modes it is a schema placeholder and is not drawn as an occupancy anywhere. | Ferry load gauge (marker, 3D body, schematic, popup meter) |
 
 #### Constructing `gtfsTripId`
 
@@ -337,18 +339,18 @@ All endpoints are served by the Go backend at `http://localhost:8080` and proxie
 
 #### Control Message (Client → Server)
 
-Trams always stream. Buses, metro and commuter trains are opt-in: the backend
-only subscribes to those HFP feeds while at least one connected client wants
-them. A client announces what it wants on connect and whenever the user toggles
-a mode or selects a journey using that mode:
+Trams always stream. Buses, metro, commuter trains and ferries are opt-in: the
+backend only subscribes to those HFP feeds while at least one connected client
+wants them. A client announces what it wants on connect and whenever the user
+toggles a mode or selects a journey using that mode:
 
 ```json
-{ "modes": { "bus": false, "metro": true, "train": true } }
+{ "modes": { "bus": false, "metro": true, "train": true, "ferry": true } }
 ```
 
-Only `bus`, `metro` and `train` are accepted; any other key is ignored. Omitted
-modes keep their current value for that client. The older single-mode form
-`{ "buses": true }` is still accepted and means `{"modes": {"bus": true}}`.
+Only `bus`, `metro`, `train` and `ferry` are accepted; any other key is ignored.
+Omitted modes keep their current value for that client. The older single-mode
+form `{ "buses": true }` is still accepted and means `{"modes": {"bus": true}}`.
 
 #### Message Format (Server → Client)
 

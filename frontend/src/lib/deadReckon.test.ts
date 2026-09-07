@@ -184,7 +184,18 @@ describe('reckonLimits', () => {
 
   it('treats an unknown mode as a tram', () => {
     expect(reckonLimits(undefined)).toEqual(reckonLimits('tram'));
-    expect(reckonLimits('ferry')).toEqual(reckonLimits('tram'));
+    expect(reckonLimits('funicular')).toEqual(reckonLimits('tram'));
+  });
+
+  it('caps the ferry at a speed a Suomenlinna boat can actually make', () => {
+    // About 12 knots in service; the cap sits comfortably above that and well
+    // below every land mode, so a garbage coordinate cannot fling a boat
+    // across the harbour.
+    expect(reckonLimits('ferry').maxSpeed * 3.6).toBeGreaterThan(22);
+    expect(reckonLimits('ferry').maxSpeed).toBeLessThan(reckonLimits('tram').maxSpeed);
+    // Open water, no traffic to stop for: the same surface horizon as the
+    // street modes rather than the metro's long one.
+    expect(reckonLimits('ferry').maxAge).toBe(reckonLimits('bus').maxAge);
   });
 
   it('stops carrying a surface vehicle once its horizon passes', () => {

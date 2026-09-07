@@ -1,6 +1,6 @@
 import React from 'react';
-import { TramFront, Bus, TrainFrontTunnel, TrainFront } from 'lucide-react';
-import { TRAM_GREEN, BUS_BLUE, METRO_ORANGE, TRAIN_PURPLE } from '../lib/routeColors';
+import { TramFront, Bus, TrainFrontTunnel, TrainFront, Ship } from 'lucide-react';
+import { TRAM_GREEN, BUS_BLUE, METRO_ORANGE, TRAIN_PURPLE, FERRY_CYAN } from '../lib/routeColors';
 
 interface ModeTogglesProps {
   /** Faded out and taken out of the tab order while a mobile bottom sheet covers the map. */
@@ -13,12 +13,14 @@ interface ModeTogglesProps {
   setShowMetro: (show: boolean) => void;
   showTrains: boolean;
   setShowTrains: (show: boolean) => void;
+  showFerries: boolean;
+  setShowFerries: (show: boolean) => void;
 }
 
 const ICON_SIZE = 16;
 
 /**
- * Floating corner shortcut for the four vehicle-mode toggles, and the only place
+ * Floating corner shortcut for the five vehicle-mode toggles, and the only place
  * they live: switching a mode on or off is the single most-used control (it is
  * also what makes the backend subscribe to that mode's HFP feed), so it belongs
  * one tap away on the map rather than behind a drawer. ViewToggles mirrors it in
@@ -34,6 +36,8 @@ export const ModeToggles: React.FC<ModeTogglesProps> = ({
   setShowMetro,
   showTrains,
   setShowTrains,
+  showFerries,
+  setShowFerries,
 }) => {
   const modes = [
     {
@@ -67,6 +71,14 @@ export const ModeToggles: React.FC<ModeTogglesProps> = ({
       icon: <TrainFront size={ICON_SIZE} />,
       active: showTrains,
       toggle: () => setShowTrains(!showTrains),
+    },
+    {
+      key: 'ferry',
+      label: 'ferries',
+      color: FERRY_CYAN,
+      icon: <Ship size={ICON_SIZE} />,
+      active: showFerries,
+      toggle: () => setShowFerries(!showFerries),
     },
   ];
 

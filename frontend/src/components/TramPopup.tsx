@@ -5,6 +5,7 @@ import { AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, Chevron
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useTrafficLights } from '../hooks/useTrafficLights';
 import { getRouteColor, getModeAccent } from '../lib/routeColors';
+import { occupancyColor, occupancyFraction, occupancyLabel } from '../lib/occupancy';
 import { classifyStopReason, findJunctionById } from '../lib/trafficLights';
 import {
   describeSignalPriority,
@@ -140,6 +141,10 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   
   // Calculate wheel speed (seconds per rotation)
   const wheelSpeedCss = isMoving ? `${Math.max(0.1, 3.6 / tram.spd)}s` : '0s';
+
+  // How full it is, where the mode actually counts — the ferry and nothing
+  // else. Null everywhere else, and the load card below is simply not drawn.
+  const load = occupancyFraction(tram.mode, tram.occu);
 
   const resolveOperatorName = (id?: number) => {
     if (id === undefined) return 'HSL Operator';
@@ -388,8 +393,40 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                   isDoorsOpen={isDoorsOpen}
                   isMoving={isMoving}
                   wheelSpeedCss={wheelSpeedCss}
+                  occupancy={load}
                 />
               </div>
+
+              {/* How full the boat is. The one mode with a real passenger
+                  count gets it stated in words as well as drawn, because
+                  "will I get on this one?" is the question the number is
+                  actually being asked to answer. */}
+              {load !== null && (
+                <div style={{ marginTop: '10px', textAlign: 'left' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '0.6rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em' }}>
+                      Passenger Load
+                    </span>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: occupancyColor(load) }}>
+                      {occupancyLabel(load)} · {Math.round(load * 100)}%
+                    </span>
+                  </div>
+                  <div
+                    role="meter"
+                    aria-valuenow={Math.round(load * 100)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label="Passenger load"
+                    style={{ height: '8px', borderRadius: '999px', background: 'rgba(148,163,184,0.18)', overflow: 'hidden' }}
+                  >
+                    <div style={{
+                      width: `${Math.round(load * 100)}%`, height: '100%',
+                      background: occupancyColor(load), borderRadius: '999px',
+                      transition: 'width 0.6s ease, background 0.6s ease',
+                    }} />
+                  </div>
+                </div>
+              )}
 
               {/* Door telemetry state string */}
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
@@ -731,6 +768,9 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                 {tram.occu !== undefined && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Users size={11} /> Occupancy</span>
+                    {/* The raw field, whatever the mode. Only the ferry's means
+                        anything (see lib/occupancy), so the telemetry tab draws
+                        the gauge and this stays a plain diagnostic reading. */}
                     <span style={{ fontWeight: 600 }}>{tram.occu}%</span>
                   </div>
                 )}

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.66.0] - 2026-09-07
+
+### Added
+- **The ferry, and how full it is.** The map has had four modes and HSL runs five: the Suomenlinna crossing is the one that was missing, and it is the one worth having, because it is the only mode whose HFP `occu` field means anything. Every tram, bus, metro and commuter train sends a constant `0` there — the schema has the field, nothing on board counts anybody — while the boats report a genuine load percentage. So the ferry is not just a fifth carriage in a fifth colour: it is the one vehicle on the map that can show you whether you will fit on it.
+  It is also the one vehicle that is not a carriage, and it is not drawn as one. The marker is a vessel seen from above — a raked bow, a beam half as wide as the hull is long, a deckhouse set inboard of open decks fore and aft, a wheelhouse forward and a funnel behind it — because that silhouette is what makes the fifth mode identifiable before any colour is read, next to four rectangles with noses. The 3D body follows the same drawing at real scale: a 35 m hull on an 8.5 m beam, a saloon, a bridge, a funnel, a short wake astern while it is making way, and no wheels, no bogies, no pantograph and no articulation, because a boat has none of those.
+  The load goes into both. The marker's deckhouse is a saloon that fills from the stern forward and is ringed in the same colour, so the state survives being shrunk to twenty pixels; the 3D body carries the gauge along its saloon roof, which is the one surface a pitched camera looks straight down on, so it reads from every bearing like a battery meter. The colours run the opposite way to the city-bike gauge and for the same reason — there a full rack is the good news, here an empty deck is: green through amber to red, in the palette the bike gauges already use. The telemetry panel states it in words and a meter (`Filling up · 62%`), and the panel schematic draws the saloon as a glass tank with the water and a bow wave under it.
+  A vessel nobody has counted gets an empty **grey** gauge, never a green one. "No report" is not "nobody aboard", and a mode that does not measure occupancy at all is treated as having none rather than as being empty — which is why a tram's `occu: 0` still draws no gauge anywhere.
+  Everything else the other four modes have, the ferry now has: its own toggle in the corner (a fifth chip, in HSL's ferry cyan `#00b9e4`), the quays as stop discs and as sign boards carrying a vessel over its own wake, the quay as 3D furniture at the pier's own scale, the dashed cyan route line across the water following the toggle instead of being hidden outright, the line filter, the journey planner and the stop departures switching the feed on when a leg or a departure needs it, and its own dead-reckoning ceiling — 10 m/s, set from what a Suomenlinna boat actually does rather than from the feed, on the same two-second horizon the street modes use.
+- **`ferry` as an opt-in stream mode.** The backend subscribes to `/hfp/v2/journey/ongoing/vp/ferry/#` on the same on-demand basis as buses, metro and commuter trains: only while a connected client asks for it. `{"modes": {"ferry": true}}` on the WebSocket is now accepted alongside the other three.
+  The history archive already packs `occu` into its 28-byte record (255 meaning "not reported"), so a deployment that names `ferry` in `REPLAY_MODES` gets the load gauge in the timelapse too, filling and emptying through the week exactly as it did live. The default stays trams alone, for the reason it always was: a mode that is only ingested while somebody is watching would leave holes in its own history.
+
+---
+
 ## [v0.65.0] - 2026-09-07
 
 ### Added

@@ -133,11 +133,17 @@ export interface ReckonLimits {
 // Per mode. The speed caps sit just above each mode's fastest honest reading in
 // the captured feed (tram 75 km/h, bus 100, metro 80, train 160) — high enough
 // never to clip real motion, low enough that the feed's occasional garbage
-// coordinate cannot launch a vehicle across the map.
+// coordinate cannot launch a vehicle across the map. The ferry's cap is the odd
+// one out in being set from the vessels rather than the feed: the Suomenlinna
+// boats do about 12 knots, so 10 m/s (36 km/h) is already generous, and a
+// crossing has no traffic to stop for — open water is where dead reckoning is
+// at its most reliable, which is why it keeps the same two-second horizon as
+// the street modes rather than the metro's.
 export const METRO_LIMITS: ReckonLimits = { maxSpeed: MAX_SPEED, maxAge: MAX_AGE };
 const TRAM_LIMITS: ReckonLimits = { maxSpeed: 22, maxAge: SURFACE_MAX_AGE };
 const BUS_LIMITS: ReckonLimits = { maxSpeed: 28, maxAge: SURFACE_MAX_AGE };
 const TRAIN_LIMITS: ReckonLimits = { maxSpeed: 45, maxAge: SURFACE_MAX_AGE };
+const FERRY_LIMITS: ReckonLimits = { maxSpeed: 10, maxAge: SURFACE_MAX_AGE };
 
 /**
  * The prediction limits for an HFP mode. Anything unrecognised is treated as a
@@ -152,6 +158,8 @@ export function reckonLimits(mode: string | undefined): ReckonLimits {
       return BUS_LIMITS;
     case 'train':
       return TRAIN_LIMITS;
+    case 'ferry':
+      return FERRY_LIMITS;
     default:
       return TRAM_LIMITS;
   }

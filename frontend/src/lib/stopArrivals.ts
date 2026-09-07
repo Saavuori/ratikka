@@ -145,7 +145,7 @@ export function focusedArrival(arrivals: StopArrival[], tripId?: string): StopAr
 
 /** Which live vehicle modes a stop's departures need streamed to be trackable. */
 export function arrivalVehicleModes(departures: StopDepartureInfo[] | undefined): {
-  bus: boolean; metro: boolean; train: boolean; tram: boolean;
+  bus: boolean; metro: boolean; train: boolean; tram: boolean; ferry: boolean;
 } {
   const modes = new Set(departures?.map((departure) => departure.mode));
   return {
@@ -153,6 +153,7 @@ export function arrivalVehicleModes(departures: StopDepartureInfo[] | undefined)
     metro: modes.has('SUBWAY'),
     train: modes.has('RAIL'),
     tram: modes.has('TRAM'),
+    ferry: modes.has('FERRY'),
   };
 }
 

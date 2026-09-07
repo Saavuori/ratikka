@@ -99,12 +99,13 @@ export function findJourneyVehicle(
   }, vehicles, now);
 }
 
-export function journeyVehicleModes(legs: JourneyLeg[] | undefined): { bus: boolean; metro: boolean; train: boolean; tram: boolean } {
+export function journeyVehicleModes(legs: JourneyLeg[] | undefined): { bus: boolean; metro: boolean; train: boolean; tram: boolean; ferry: boolean } {
   const modes = new Set(legs?.filter((leg) => leg.transit).map((leg) => leg.mode));
   return {
     bus: modes.has('BUS'),
     metro: modes.has('SUBWAY'),
     train: modes.has('RAIL'),
     tram: modes.has('TRAM'),
+    ferry: modes.has('FERRY'),
   };
 }

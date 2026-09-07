@@ -28,10 +28,20 @@ import {
   ROUTE_COLORS,
   METRO_COLORS,
   TRAIN_COLORS,
+  FERRY_COLORS,
   TRAM_GREEN,
   METRO_ORANGE,
   TRAIN_PURPLE,
+  FERRY_CYAN,
 } from '../lib/routeColors';
+import {
+  FERRY_ICON_SIZE,
+  FERRY_LOAD_STEPS,
+  ferryIconBucket,
+  ferryIconName,
+  ferryIconVariants,
+} from '../lib/ferryIcon';
+import { occupancyFraction } from '../lib/occupancy';
 import {
   buildPatternTracks,
   distanceBetween,
@@ -236,6 +246,7 @@ interface MapProps {
   showBuses: boolean;
   showMetro: boolean;
   showTrains: boolean;
+  showFerries: boolean;
   showRoutes: boolean;
   selectedTripDetails: TripDetailsResponse | null;
   journeyLegs?: JourneyLeg[] | null;
@@ -290,6 +301,13 @@ interface VehicleFeature {
     acc: number;
     speedNorm: number;
     doorsOpen: boolean;
+    /**
+     * Which load step the vessel is reporting, as an index into
+     * `OCCUPANCY_BUCKETS`; -1 for every mode that does not measure occupancy and
+     * for a ferry whose counter is silent. The vehicle-body layer matches on it
+     * to pick the marker with the right deck gauge.
+     */
+    occuBucket: number;
   };
 }
 
@@ -419,6 +437,7 @@ export const Map: React.FC<MapProps> = ({
   showBuses,
   showMetro,
   showTrains,
+  showFerries,
   showRoutes,
   selectedTripDetails,
   journeyLegs = null,
@@ -486,6 +505,7 @@ export const Map: React.FC<MapProps> = ({
   const showBusesRef = useRef<boolean>(showBuses);
   const showMetroRef = useRef<boolean>(showMetro);
   const showTrainsRef = useRef<boolean>(showTrains);
+  const showFerriesRef = useRef<boolean>(showFerries);
   const showRoutesRef = useRef<boolean>(showRoutes);
   const is3DRef = useRef<boolean>(is3D);
   const always3DVehiclesRef = useRef<boolean>(always3DVehicles);
@@ -604,6 +624,10 @@ export const Map: React.FC<MapProps> = ({
   }, [showTrains]);
 
   useEffect(() => {
+    showFerriesRef.current = showFerries;
+  }, [showFerries]);
+
+  useEffect(() => {
     showRoutesRef.current = showRoutes;
   }, [showRoutes]);
 
@@ -656,7 +680,7 @@ export const Map: React.FC<MapProps> = ({
     'route_rail_case',
     'route_rail',
   ];
-  const otherRouteLayers = [
+  const ferryRouteLayers = [
     'route_ferry',
   ];
   // The highlighted per-line ribbons drawn from the fetched pattern geometry.
@@ -847,6 +871,7 @@ export const Map: React.FC<MapProps> = ({
     buses: boolean,
     metro: boolean,
     trains: boolean,
+    ferries: boolean,
     lines: string[],
     selectedLine: string | null,
     ribbonLines: string[] = [],
@@ -897,7 +922,13 @@ export const Map: React.FC<MapProps> = ({
       setVisible(layerId, routes && trains && !highlighted && !ribboned);
       applyLineFilter(layerId);
     });
-    otherRouteLayers.forEach((layerId) => setVisible(layerId, false));
+    // The ferry route is the style's own dashed cyan line across the water. It
+    // is not ribboned — there is one crossing and the tiles already draw it in
+    // the mode colour the vessels are painted in — so it follows its mode
+    // toggle and the line filter, and nothing else.
+    ferryRouteLayers.forEach((layerId) => {
+      setVisible(layerId, routes && ferries && !highlighted);
+    });
     routeRibbonLayers.forEach((layerId) => setVisible(layerId, routes));
   };
 
@@ -2058,6 +2089,9 @@ export const Map: React.FC<MapProps> = ({
         // so the aura reaches its full, clearly-visible size at ordinary city-tram
         // cruising speeds rather than only when a vehicle is racing.
         const speedNorm = clamp(spd / 8, 0, 1);
+        // Passenger load, where the mode measures it — which today is the ferry
+        // and nothing else. See lib/occupancy.
+        const load = occupancyFraction(tramInfo?.mode, tramInfo?.occu);
 
         features.push({
           type: 'Feature' as const,
@@ -2075,6 +2109,7 @@ export const Map: React.FC<MapProps> = ({
             acc: acc,
             speedNorm: speedNorm,
             doorsOpen: doorsOpen,
+            occuBucket: ferryIconBucket(load),
           },
         });
       });
@@ -2128,6 +2163,10 @@ export const Map: React.FC<MapProps> = ({
                     doorProgress: doors.progress,
                     braking: isVehicleBraking(telemetry?.spd, telemetry?.acc, f.properties.doorsOpen),
                     selected: f.properties.veh === selectedTramIdRef.current,
+                    // The ferry's 3D deck gauge reads the same number the flat
+                    // marker's does, so the two never disagree at the zoom
+                    // where they cross over.
+                    occupancy: occupancyFraction(telemetry?.mode, telemetry?.occu),
                     // A vehicle being drawn along its rails is *built* along
                     // them too: each rigid section of the body sits at its own
                     // point on the track, so an articulated tram bends through
@@ -2470,6 +2509,19 @@ export const Map: React.FC<MapProps> = ({
     if (map && map.getStyle()) updateSignalPriority(map);
   }, [trams, lineFilters]);
 
+  // The `icon-image` sub-expression for one ferry hull colour: pick the marker
+  // for the reported load step, open or shut. Written out here because it is
+  // fourteen images per line and the layer definition is unreadable inline.
+  const ferryBucketMatch = (line: string): unknown[] => {
+    const byBucket = (open: boolean): unknown[] => [
+      'match',
+      ['get', 'occuBucket'],
+      ...FERRY_LOAD_STEPS.flatMap((bucket) => [bucket, ferryIconName(bucket, open, line)]),
+      ferryIconName(-1, open, line),
+    ];
+    return ['case', ['get', 'doorsOpen'], byBucket(true), byBucket(false)];
+  };
+
   // Setup programmatically created sources, layers, and images
   const interactionsBoundMapRef = useRef<maplibregl.Map | null>(null);
   const setupCustomMapElements = (map: maplibregl.Map) => {
@@ -2485,9 +2537,9 @@ export const Map: React.FC<MapProps> = ({
     //    Trams are sleek (large corner radius, HSL green); buses are boxier (HSL
     //    blue). A "-open" variant swaps the flush side windows for amber door
     //    gaps, shown while the real doors are open (`drst === 1`).
-    const registerVehicleImage = (name: string, svg: string) => {
+    const registerVehicleImage = (name: string, svg: string, size = 40) => {
       if (map.hasImage(name)) return;
-      const img = new Image(40, 40);
+      const img = new Image(size, size);
       img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
       // pixelRatio 2 keeps the body crisp on retina; the 40px art shows at ~20 CSS px
       // before the layer's zoom-based icon-size scaling.
@@ -2596,6 +2648,15 @@ export const Map: React.FC<MapProps> = ({
       registerVehicleImage(`train-body-${line}`, trainBody(false, color));
       registerVehicleImage(`train-body-${line}-open`, trainBody(true, color));
     });
+    // Ferries. The vessel art lives in `lib/ferryIcon` rather than inline here,
+    // because unlike the four carriages it carries live data: there is one
+    // marker per load step (and one for a vessel with no count reported), open
+    // and shut, per hull colour. `trams-body` picks between them from the
+    // `occuBucket` property below, so a boat's deck gauge fills on the map as
+    // the feed reports it filling.
+    ferryIconVariants().forEach(({ name, svg }) => {
+      registerVehicleImage(name, svg, FERRY_ICON_SIZE);
+    });
 
     // Rear brake lights: two red lamps on a transparent 40x40 canvas, positioned
     // at the tail of the carriage (bottom of the art). Drawn on top of the body
@@ -2665,6 +2726,17 @@ export const Map: React.FC<MapProps> = ({
         <path d="M15 25 L15 8 L22 17.4 L29 8 L29 25" stroke="#ffffff" stroke-width="3.2"
               stroke-linecap="round" stroke-linejoin="round" fill="none"/>
       `,
+      // A ferry quay: a vessel bow-on above its own reflection in the water.
+      ferry: (color) => `
+        <path d="M22 6.6 C24.6 8.6 26.2 11 26.8 13.8 L26.8 18.4
+                 C26.8 20 25.6 21.2 24 21.2 L20 21.2
+                 C18.4 21.2 17.2 20 17.2 18.4 L17.2 13.8
+                 C17.8 11 19.4 8.6 22 6.6 Z" fill="#ffffff"/>
+        <rect x="19.2" y="11.4" width="5.6" height="3.4" rx="1" fill="${color}"/>
+        <path d="M13.4 24.2 C15.6 25.8 17.8 25.8 20 24.2 C22.2 25.8 24.4 25.8 26.6 24.2
+                 C28 23.2 29.4 23.4 30.6 24.6" stroke="#ffffff" stroke-width="1.6"
+              stroke-linecap="round" fill="none"/>
+      `,
       // A commuter train: rounded cab roof, windscreen, lamps and rails below.
       train: (color) => `
         <path d="M15.4 12.6 C15.4 9.2 18.4 7.4 22 7.4 C25.6 7.4 28.6 9.2 28.6 12.6
@@ -2704,6 +2776,7 @@ export const Map: React.FC<MapProps> = ({
       ['sign-bus-trunk', 'bus', '#CA4300'],
       ['sign-metro', 'metro', METRO_ORANGE],
       ['sign-train', 'train', TRAIN_PURPLE],
+      ['sign-ferry', 'ferry', FERRY_CYAN],
     ] as Array<[string, keyof typeof signGlyphs, string]>).forEach(([name, glyph, color]) => {
       registerStopSign(name, glyph, color, false);
       registerStopSign(`${name}-selected`, glyph, color, true);
@@ -2787,6 +2860,16 @@ export const Map: React.FC<MapProps> = ({
               ['match', ['get', 'desi'],
                 ...Object.keys(TRAIN_COLORS).flatMap((l) => [l, `train-body-${l}`]),
                 'train-body']],
+            // Ferries branch on the load step as well as the line, so the deck
+            // gauge on the marker tracks what the vessel is reporting. -1 is
+            // "no count", which draws the grey track rather than an empty deck.
+            ['==', ['get', 'mode'], 'ferry'],
+            ['match', ['get', 'desi'],
+              ...Object.keys(FERRY_COLORS).flatMap((line) => [
+                line,
+                ferryBucketMatch(line),
+              ]),
+              ferryBucketMatch('')],
             ['get', 'doorsOpen'],
             ['match', ['get', 'desi'],
               ...Object.keys(ROUTE_COLORS).flatMap((l) => [l, `tram-body-${l}-open`]),
@@ -3045,6 +3128,30 @@ export const Map: React.FC<MapProps> = ({
       }, 'trams-circles');
     }
 
+    // Ferry quays, recreated for the themes whose basemap has no `stops_ferry`
+    // of its own — the same guard every other stop layer here uses. A
+    // street-stop-sized disc rather than a station one: a quay is one berth on
+    // one pier, not a concourse.
+    if (!map.getLayer('stops_ferry')) {
+      map.addLayer({
+        id: 'stops_ferry',
+        type: 'circle',
+        source: 'stops',
+        'source-layer': 'stops',
+        minzoom: STOP_CIRCLE_MIN_ZOOM,
+        maxzoom: STOP_CIRCLE_FADE_ZOOM,
+        filter: ['==', STOP_MODE, 'FERRY'] as maplibregl.FilterSpecification,
+        paint: {
+          'circle-color': FERRY_CYAN,
+          'circle-radius': STOP_CIRCLE_RADIUS,
+          'circle-stroke-color': STOP_CIRCLE_STROKE_COLOR,
+          'circle-stroke-width': STOP_CIRCLE_STROKE_WIDTH,
+          'circle-opacity': STOP_CIRCLE_OPACITY,
+          'circle-stroke-opacity': STOP_CIRCLE_OPACITY
+        }
+      }, 'trams-circles');
+    }
+
     // Metro and commuter-train stations, drawn a touch larger than street stops
     // because a station serves a whole neighbourhood, not one kerbside. The two
     // stop tilesets in play name the mode differently — JORE (light theme) calls
@@ -3106,6 +3213,7 @@ export const Map: React.FC<MapProps> = ({
             'BUS', 'sign-bus',
             'SUBWAY', 'sign-metro',
             'RAIL', 'sign-train',
+            'FERRY', 'sign-ferry',
             'sign-bus'
           ],
 
@@ -3805,6 +3913,7 @@ export const Map: React.FC<MapProps> = ({
       showBusesRef.current,
       showMetroRef.current,
       showTrainsRef.current,
+      showFerriesRef.current,
       lineFiltersRef.current,
       selectedLineRef.current,
       Object.keys(routeGeometriesRef.current),
@@ -4399,6 +4508,7 @@ export const Map: React.FC<MapProps> = ({
         showBuses,
         showMetro,
         showTrains,
+        showFerries,
         lineFilters,
         selectedLine,
         Object.keys(routeGeometries),
@@ -4406,7 +4516,7 @@ export const Map: React.FC<MapProps> = ({
       );
       updateMetroSignVisibility(map, showMetro);
     }
-  }, [lineFilters, showTrams, showBuses, showMetro, showTrains, showRoutes, selectedLine, routeGeometries]);
+  }, [lineFilters, showTrams, showBuses, showMetro, showTrains, showFerries, showRoutes, selectedLine, routeGeometries]);
 
   // Dynamic Stop Route Filtering
   useEffect(() => {
@@ -4468,14 +4578,18 @@ export const Map: React.FC<MapProps> = ({
       }
     }
 
-    // 2. Metro and commuter-train stations. Same shape as the tram-stop filter
-    //    above: hidden with their mode toggle off, narrowed to the highlighted
-    //    lines' stations while a line filter or vehicle selection is active.
-    const stationLayers: Array<{ id: string; mode: string; show: boolean }> = [
+    // 2. Metro and commuter-train stations, and the ferry quays. Same shape as
+    //    the tram-stop filter above: hidden with their mode toggle off,
+    //    narrowed to the highlighted lines' stops while a line filter or
+    //    vehicle selection is active. Disc size is not settled here — a quay
+    //    takes the street-stop radius and a station the larger one, both from
+    //    where the layers are styled.
+    const modeStopLayers: Array<{ id: string; mode: string; show: boolean }> = [
       { id: 'stops_metro', mode: 'SUBWAY', show: showMetro },
       { id: 'stops_train', mode: 'RAIL', show: showTrains },
+      { id: 'stops_ferry', mode: 'FERRY', show: showFerries },
     ];
-    stationLayers.forEach(({ id, mode, show }) => {
+    modeStopLayers.forEach(({ id, mode, show }) => {
       if (!map.getLayer(id)) return;
       if (!show) {
         map.setFilter(id, ['==', '1', '2']);
@@ -4530,6 +4644,7 @@ export const Map: React.FC<MapProps> = ({
     if (showBuses) signModes.push('BUS');
     if (showMetro) signModes.push('SUBWAY');
     if (showTrains) signModes.push('RAIL');
+    if (showFerries) signModes.push('FERRY');
 
     if (map.getLayer('stops_signs')) {
       if (signModes.length === 0) {
@@ -4551,7 +4666,7 @@ export const Map: React.FC<MapProps> = ({
         ]);
       }
     }
-  }, [lineFilters, selectedTramId, trams, routeGeometries, showTrams, showBuses, showMetro, showTrains, selectedStopId]);
+  }, [lineFilters, selectedTramId, trams, routeGeometries, showTrams, showBuses, showMetro, showTrains, showFerries, selectedStopId]);
 
   return (
     <div className="map-wrapper">

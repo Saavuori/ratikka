@@ -10,11 +10,11 @@
 // `along` runs with the stop's bearing (the direction of travel past it),
 // `across` is to the right of that bearing, with the kerb side positive.
 
-import { TRAM_GREEN, METRO_ORANGE, TRAIN_PURPLE, BUS_BLUE } from './routeColors';
+import { TRAM_GREEN, METRO_ORANGE, TRAIN_PURPLE, BUS_BLUE, FERRY_CYAN } from './routeColors';
 import { offsetMeters, patchRing, SELECTED_COLOR, DOORS_OPEN_COLOR, GLASS_COLOR } from './vehicleModels';
 import { platformColors, PLATFORM_EXTRUSION_HEIGHT, type MapTheme } from './stopPlatforms';
 
-export type StopMode = 'TRAM' | 'BUS' | 'SUBWAY' | 'RAIL';
+export type StopMode = 'TRAM' | 'BUS' | 'SUBWAY' | 'RAIL' | 'FERRY';
 
 export interface StopModel {
   /**
@@ -35,7 +35,9 @@ export interface StopModel {
 // A Helsinki tram island is a couple of metres wide and long enough for a 27 m
 // Artic to draw up beside it; a kerbside bus stop is shorter and narrower; a
 // metro or commuter-rail stop point marks an entrance, so it gets a wider apron
-// and a canopy rather than a bus shelter.
+// and a canopy rather than a bus shelter. A ferry quay is longer and wider than
+// any of them — a 35 m boat comes alongside it, and the waiting hall at
+// Kauppatori and Suomenlinna is a building rather than a bus shelter.
 export const STOP_MODELS: Record<StopMode, StopModel> = {
   TRAM: {
     pad: { length: 24, halfWidth: 1.3 },
@@ -65,6 +67,13 @@ export const STOP_MODELS: Record<StopMode, StopModel> = {
     board: { width: 1.2, height: 0.8, base: 2.6 },
     color: TRAIN_PURPLE,
   },
+  FERRY: {
+    pad: { length: 38, halfWidth: 4.0 },
+    shelter: { length: 9, depth: 3.4, height: 3.2, glassBase: 1.0 },
+    poleHeight: 3.4,
+    board: { width: 1.1, height: 0.75, base: 2.5 },
+    color: FERRY_CYAN,
+  },
 };
 
 /** The stop tiles name modes two ways (JORE `mode`, Digitransit `type`). */
@@ -78,6 +87,8 @@ export function stopMode(raw: string | null | undefined): StopMode {
     case 'RAIL':
     case 'TRAIN':
       return 'RAIL';
+    case 'FERRY':
+      return 'FERRY';
     default:
       return 'TRAM';
   }

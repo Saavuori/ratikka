@@ -100,7 +100,7 @@ function App() {
   // Which optional feeds the selected stop's own departures need. Selecting a
   // bus stop turns the bus feed on for as long as the stop is open: without it
   // there is no vehicle to match an arrival to in the first place.
-  const [stopModes, setStopModes] = useState({ bus: false, metro: false, train: false, tram: false });
+  const [stopModes, setStopModes] = useState({ bus: false, metro: false, train: false, tram: false, ferry: false });
   // The arrival the map is following, published by the stop panel.
   const [arrivalFocus, setArrivalFocus] = useState<ArrivalFocus | null>(null);
 
@@ -160,6 +160,12 @@ function App() {
   const [showTrains, setShowTrains] = useState<boolean>(() => {
     return readStorage('showTrains') === 'true';
   });
+  // Ferries are the smallest feed of the five — one year-round crossing — but
+  // opt-in on the same principle: the backend subscribes to a mode only while
+  // somebody is looking at it.
+  const [showFerries, setShowFerries] = useState<boolean>(() => {
+    return readStorage('showFerries') === 'true';
+  });
   // Route lines (the JORE background network and the highlighted per-line
   // ribbons) are the map's densest ink: handy for seeing where a line goes,
   // in the way when you only want the vehicles and the streets under them.
@@ -175,9 +181,11 @@ function App() {
       bus: showBuses || journeyModes.bus || stopModes.bus,
       metro: showMetro || journeyModes.metro || stopModes.metro,
       train: showTrains || journeyModes.train || stopModes.train,
+      ferry: showFerries || journeyModes.ferry || stopModes.ferry,
     }),
-    [showBuses, showMetro, showTrains, journeyModes.bus, journeyModes.metro, journeyModes.train,
-      stopModes.bus, stopModes.metro, stopModes.train]
+    [showBuses, showMetro, showTrains, showFerries,
+      journeyModes.bus, journeyModes.metro, journeyModes.train, journeyModes.ferry,
+      stopModes.bus, stopModes.metro, stopModes.train, stopModes.ferry]
   );
   const { status: connectionStatus } = useWebSocket({
     onMessage: (data) => handleUpdate(data.vehicles),
@@ -214,6 +222,10 @@ function App() {
   useEffect(() => {
     writeStorage('showTrains', String(showTrains));
   }, [showTrains]);
+
+  useEffect(() => {
+    writeStorage('showFerries', String(showFerries));
+  }, [showFerries]);
 
   useEffect(() => {
     writeStorage('showRoutes', String(showRoutes));
@@ -497,7 +509,7 @@ function App() {
     setSelectedBikeStation(null);
     setSelectedJunctionId(null);
     setSelectedStopRoutes([]); // Reset selected stop routes!
-    setStopModes({ bus: false, metro: false, train: false, tram: false });
+    setStopModes({ bus: false, metro: false, train: false, tram: false, ferry: false });
     setArrivalFocus(null);
     setSelectedStop({ id: stopId, name, code, lat, lng, mode, isTrunkStop, ...extras });
     setIsDetailCollapsed(false); // Auto-expand detail panel to show schedule
@@ -526,7 +538,7 @@ function App() {
   const handleCloseStop = () => {
     setSelectedStop(null);
     setSelectedStopRoutes([]);
-    setStopModes({ bus: false, metro: false, train: false, tram: false });
+    setStopModes({ bus: false, metro: false, train: false, tram: false, ferry: false });
     setArrivalFocus(null);
   };
 
@@ -609,6 +621,7 @@ function App() {
       if (tram.mode === 'bus' && !wantsModes.bus) return false;
       if (tram.mode === 'metro' && !wantsModes.metro) return false;
       if (tram.mode === 'train' && !wantsModes.train) return false;
+      if (tram.mode === 'ferry' && !wantsModes.ferry) return false;
       if (selectedLines.length > 0 && !selectedLines.includes(tram.desi)) {
         return false;
       }
@@ -782,6 +795,7 @@ function App() {
         showBuses={wantsModes.bus}
         showMetro={wantsModes.metro}
         showTrains={wantsModes.train}
+        showFerries={wantsModes.ferry}
         showRoutes={showRoutes}
         selectedTripDetails={selectedTripDetails}
         journeyLegs={journey?.itinerary.legs ?? null}
@@ -806,6 +820,7 @@ function App() {
         showBuses={showBuses}
         showMetro={showMetro}
         showTrains={showTrains}
+        showFerries={showFerries}
         alerts={alerts}
         selectedTram={liveTram}
         selectedStop={selectedStop}
@@ -921,6 +936,8 @@ function App() {
         setShowMetro={setShowMetro}
         showTrains={showTrains}
         setShowTrains={setShowTrains}
+        showFerries={showFerries}
+        setShowFerries={setShowFerries}
       />
 
       {/* Map view shortcuts: light/dark and 3D (top-left corner) */}
