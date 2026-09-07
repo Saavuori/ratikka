@@ -385,7 +385,7 @@ func TestIngestionWorker_MetroSeparateJourneysKept(t *testing.T) {
 }
 
 func TestIngestionWorker_OptionalModes(t *testing.T) {
-	for _, mode := range []string{"bus", "metro", "train"} {
+	for _, mode := range []string{"bus", "metro", "train", "ferry"} {
 		if !IsOptionalMode(mode) {
 			t.Errorf("expected %q to be an optional mode", mode)
 		}
@@ -393,8 +393,8 @@ func TestIngestionWorker_OptionalModes(t *testing.T) {
 	if IsOptionalMode("tram") {
 		t.Error("trams always stream; they must not be an optional mode")
 	}
-	if IsOptionalMode("ferry") {
-		t.Error("ferry is not ingested, so it must not be an optional mode")
+	if IsOptionalMode("funicular") {
+		t.Error("HSL runs no funicular; unknown modes must not be ingestible")
 	}
 
 	// Enabling/disabling without a live MQTT client must not panic and must be

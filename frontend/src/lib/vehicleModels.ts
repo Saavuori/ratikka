@@ -1,7 +1,8 @@
 // Representative Helsinki vehicles, not fleet-specific engineering drawings.
 // All dimensions are ground metres, including details: zoom never inflates them.
 
-import { ROUTE_COLORS, METRO_COLORS, TRAIN_COLORS, TRAM_GREEN, METRO_ORANGE, TRAIN_PURPLE, BUS_BLUE } from './routeColors';
+import { ROUTE_COLORS, METRO_COLORS, TRAIN_COLORS, FERRY_COLORS, TRAM_GREEN, METRO_ORANGE, TRAIN_PURPLE, BUS_BLUE, FERRY_CYAN } from './routeColors';
+import { occupancyColor } from './occupancy';
 
 /** One rigid section of a body: a box measured from the vehicle's centre. */
 export interface BodySection {
@@ -115,6 +116,69 @@ export const VEHICLE_MODELS: Record<string, VehicleModel> = {
   },
 };
 
+/**
+ * The ferry, which is the one vehicle on the map that is not a carriage.
+ *
+ * `VehicleModel` describes rolling stock — sections on bogies, a pantograph, a
+ * gangway between rigid halves — and none of that is a boat. A vessel is a hull
+ * with a deckhouse standing on it, a wheelhouse on top of that and a funnel
+ * behind it, and it has no wheels to draw at all. So it gets its own dimensions
+ * and its own builder rather than being forced through the carriage one; what
+ * it shares with the others is the thing that matters, which is that every
+ * number here is a ground metre.
+ *
+ * The figures are the Suomenlinna boats: about 35 m long on an 8.5 m beam,
+ * which puts the fifth mode between a bus and a tram in length and makes it by
+ * far the widest thing on the water or the street.
+ */
+export interface FerryModel {
+  hull: BodySection;
+  /** Height of the main deck above the waterline. */
+  deck: number;
+  /** The passenger saloon standing on the deck. */
+  deckhouse: { front: number; back: number; halfWidth: number; height: number };
+  /** Glazing band around the saloon, measured from the deck. */
+  glassBase: number;
+  glassTop: number;
+  /** The bridge, standing on the saloon roof. */
+  wheelhouse: { front: number; back: number; halfWidth: number; height: number };
+  funnel: { front: number; back: number; halfWidth: number; height: number };
+  /** Side boarding ramps, as centres along the hull. */
+  doors: number[];
+  doorWidth: number;
+  /**
+   * The load gauge laid along the saloon roof: a full-length track with the
+   * reported occupancy filled in from the stern forward. Seen from a pitched
+   * 3D view this is the one part of the vessel a reader looks straight down
+   * on, which is why the gauge lives there and not on a flank.
+   */
+  loadGauge: { front: number; back: number; halfWidth: number };
+}
+
+export const FERRY_MODEL: FerryModel = {
+  hull: { front: 17.3, back: -17.3, halfWidth: 4.2, nose: 6.0, tail: 1.0 },
+  deck: 2.2,
+  deckhouse: { front: 9.6, back: -11.2, halfWidth: 3.3, height: 3.0 },
+  glassBase: 1.1,
+  glassTop: 2.4,
+  // The bridge stands *on* the saloon roof rather than out over the foredeck,
+  // and the gauge runs aft of it down the rest of that roof.
+  wheelhouse: { front: 9.2, back: 4.6, halfWidth: 2.1, height: 2.2 },
+  funnel: { front: -7.0, back: -9.2, halfWidth: 0.75, height: 1.8 },
+  doors: [1.5],
+  doorWidth: 2.2,
+  loadGauge: { front: 3.8, back: -10.4, halfWidth: 1.15 },
+};
+
+/** Structural colours for the vessel, distinct from the rolling stock's. */
+const HULL_BOOTTOP = '#0f2a3a';
+const SUPERSTRUCTURE = '#f1f5f9';
+const WHEELHOUSE_GLASS = '#9fd8f2';
+const FUNNEL = '#334155';
+/** The gauge track the load fills, and the colour of a load never reported. */
+const GAUGE_TRACK = '#28323f';
+const GAUGE_UNKNOWN = '#94a3b8';
+
 export function vehicleModel(mode: string | null | undefined): VehicleModel {
   return VEHICLE_MODELS[mode ?? ''] ?? VEHICLE_MODELS.tram;
 }
@@ -133,6 +197,8 @@ export function vehicleBodyColor(mode: string | null | undefined, desi: string |
       return METRO_COLORS[line] ?? METRO_ORANGE;
     case 'train':
       return TRAIN_COLORS[line] ?? TRAIN_PURPLE;
+    case 'ferry':
+      return FERRY_COLORS[line] ?? FERRY_CYAN;
     default:
       return ROUTE_COLORS[line] ?? TRAM_GREEN;
   }
@@ -310,11 +376,18 @@ export interface VehicleState {
    * about `lng`/`lat`/`hdg`, exactly as before.
    */
   spine?: BodySpine;
+  /**
+   * Reported passenger load, 0…1, or null/undefined where the mode does not
+   * measure it. Only the ferry does; see `lib/occupancy`.
+   */
+  occupancy?: number | null;
 }
 
 export type VehiclePart = 'body' | 'glass' | 'pillar' | 'doorway' | 'door' | 'cab' | 'roof'
   | 'gangway' | 'bogie' | 'wheel' | 'wheel-hub' | 'hvac' | 'pantograph' | 'lamp-housing'
-  | 'headlight' | 'taillight' | 'brake-indicator' | 'bumper' | 'destination';
+  | 'headlight' | 'taillight' | 'brake-indicator' | 'bumper' | 'destination'
+  // Ferry-only parts (see `ferryExtrusions`).
+  | 'hull' | 'deckhouse' | 'wheelhouse' | 'funnel' | 'load-track' | 'load-fill' | 'wake';
 
 export interface ExtrusionFeature {
   type: 'Feature';
@@ -328,10 +401,161 @@ const DOORWAY_PROUD = 0.10;
 const DOOR_PROUD = 0.18;
 
 /**
+ * The vessel: hull, saloon, bridge, funnel — and the load gauge that is the
+ * reason the ferry gets a drawing of its own rather than a recoloured tram.
+ *
+ * The gauge is a track running the length of the saloon roof with the reported
+ * occupancy filled in from the stern forward, in the load colour. It sits on
+ * the roof because that is the surface a pitched 3D camera looks straight down
+ * on: a bar on a flank is edge-on and unreadable from half the compass, while
+ * this one reads from every bearing, at every rotation, as plainly as a battery
+ * meter. A vessel with no reported count gets an empty grey track rather than a
+ * green one, because "nobody has said" is not "nobody aboard".
+ *
+ * No wheels, no bogies, no pantograph, no articulation. The `detailed` flag
+ * drops the same kind of small furniture it drops on a carriage.
+ */
+export function ferryExtrusions(v: VehicleState, detailed = true): ExtrusionFeature[] {
+  const model = FERRY_MODEL;
+  const hullColor = v.selected ? SELECTED_COLOR : vehicleBodyColor(v.mode, v.desi);
+  const progress = Number.isFinite(v.doorProgress)
+    ? Math.max(0, Math.min(1, v.doorProgress!))
+    : v.doorsOpen ? 1 : 0;
+  const out: ExtrusionFeature[] = [];
+
+  const push = (
+    part: VehiclePart,
+    ring: [number, number][],
+    color: string,
+    base: number,
+    top: number,
+  ) => {
+    out.push({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [ring] },
+      properties: { veh: v.veh, part, color, base, top },
+    });
+  };
+
+  const patch = (
+    part: VehiclePart,
+    along: [number, number],
+    across: [number, number],
+    color: string,
+    base: number,
+    top: number,
+  ) => push(part, patchRing(v.lng, v.lat, v.hdg, along, across), color, base, top);
+
+  const box = (
+    part: VehiclePart,
+    b: { front: number; back: number; halfWidth: number },
+    color: string,
+    base: number,
+    top: number,
+  ) => patch(part, [b.back, b.front], [-b.halfWidth, b.halfWidth], color, base, top);
+
+  // Hull, from the waterline to the main deck, with the raked bow the
+  // `sectionRing` chamfer already draws. A boat is a rigid body, so unlike a
+  // tram there is no spine to bend it along.
+  push('hull', sectionRing(v.lng, v.lat, v.hdg, model.hull), hullColor, 0, model.deck);
+  // Boot-top: a dark band at the waterline, standing a little proud of the
+  // topsides so it is not swallowed by the hull above it.
+  push('hull', sectionRing(v.lng, v.lat, v.hdg, model.hull, 0.06), HULL_BOOTTOP, 0, 0.45);
+
+  // Saloon, its glazing band, and the bridge and funnel standing on its roof.
+  const houseTop = model.deck + model.deckhouse.height;
+  box('deckhouse', model.deckhouse, SUPERSTRUCTURE, model.deck, houseTop);
+  box(
+    'glass',
+    { ...model.deckhouse, halfWidth: model.deckhouse.halfWidth + 0.05 },
+    GLASS_COLOR,
+    model.deck + model.glassBase,
+    model.deck + model.glassTop,
+  );
+  box('wheelhouse', model.wheelhouse, SUPERSTRUCTURE, houseTop, houseTop + model.wheelhouse.height);
+  box(
+    'glass',
+    { ...model.wheelhouse, halfWidth: model.wheelhouse.halfWidth + 0.05 },
+    WHEELHOUSE_GLASS,
+    houseTop + 0.7,
+    houseTop + model.wheelhouse.height - 0.35,
+  );
+  if (detailed) {
+    box('funnel', model.funnel, FUNNEL, houseTop, houseTop + model.funnel.height);
+  }
+
+  // The load gauge on the saloon roof: the full track, then the reported share
+  // of it filled from the stern forward.
+  const gauge = model.loadGauge;
+  const length = gauge.front - gauge.back;
+  patch('load-track', [gauge.back, gauge.front], [-gauge.halfWidth, gauge.halfWidth],
+    GAUGE_TRACK, houseTop, houseTop + 0.06);
+  const load = typeof v.occupancy === 'number' && Number.isFinite(v.occupancy)
+    ? Math.max(0, Math.min(1, v.occupancy))
+    : null;
+  if (load === null) {
+    // Nothing reported: a thin grey rail down the middle of the track, which is
+    // visibly not a reading rather than visibly an empty boat.
+    patch('load-fill', [gauge.back, gauge.front], [-0.12, 0.12],
+      GAUGE_UNKNOWN, houseTop + 0.06, houseTop + 0.12);
+  } else if (load > 0) {
+    patch('load-fill', [gauge.back, gauge.back + length * load],
+      [-gauge.halfWidth, gauge.halfWidth],
+      occupancyColor(load), houseTop + 0.06, houseTop + 0.22);
+  }
+
+  // Side boarding ramps, one per flank, drawn like every other doorway on the
+  // map: the amber opening shows as the leaves slide clear of it.
+  const half = model.doorWidth / 2;
+  (detailed ? model.doors : []).forEach((centre) => {
+    for (const side of [1, -1]) {
+      const flank = (proud: number): [number, number] => [
+        side * (model.hull.halfWidth - 0.05),
+        side * (model.hull.halfWidth + proud),
+      ];
+      if (progress > 0) {
+        patch('doorway', [centre - half, centre + half], flank(DOORWAY_PROUD),
+          DOORS_OPEN_COLOR, model.deck * 0.4, model.deck + model.glassTop);
+      }
+      const slide = half * progress;
+      patch('door', [centre - half - slide, centre - slide], flank(DOOR_PROUD),
+        DOOR_COLOR, model.deck * 0.4, model.deck + model.glassTop);
+      patch('door', [centre + slide, centre + half + slide], flank(DOOR_PROUD),
+        DOOR_COLOR, model.deck * 0.4, model.deck + model.glassTop);
+    }
+  });
+
+  // Navigation lights: white at the masthead forward, red aft. The same
+  // convention the carriages use for head and tail lamps, and on a vessel it is
+  // also the truthful one.
+  patch('headlight', [model.hull.front - 0.5, model.hull.front - 0.1], [-0.35, 0.35],
+    HEADLIGHT_COLOR, model.deck + 0.5, model.deck + 0.9);
+  patch('taillight', [model.hull.back + 0.1, model.hull.back + 0.5], [-0.35, 0.35],
+    TAILLIGHT_COLOR, model.deck + 0.5, model.deck + 0.9);
+
+  // A short wake off the transom while the vessel is making way. It is the only
+  // motion cue a boat has — there are no wheels to turn and no brake lamps to
+  // light — and it is drawn flat on the water, a third of the hull's length and
+  // no more, so it reads as disturbed water astern rather than as more boat.
+  if (detailed && !v.doorsOpen && !v.braking) {
+    for (const step of [0, 1, 2]) {
+      const from = model.hull.back - 1.6 - step * 3.4;
+      patch('wake', [from - 2.6, from], [-model.hull.halfWidth * (0.7 + step * 0.22),
+        model.hull.halfWidth * (0.7 + step * 0.22)], '#cfe9f5', 0, 0.05);
+    }
+  }
+
+  return out;
+}
+
+/**
  * Sectioned bodies, window pillars, running gear, roof equipment, mounted lamps,
  * and sliding door leaves. Selected bodies and pillars match the gold ring.
+ *
+ * A ferry is not a carriage and is built by `ferryExtrusions` instead.
  */
 export function vehicleExtrusions(v: VehicleState, detailed = true): ExtrusionFeature[] {
+  if (v.mode === 'ferry') return ferryExtrusions(v, detailed);
   const model = vehicleModel(v.mode);
   const bodyColor = v.selected ? SELECTED_COLOR : vehicleBodyColor(v.mode, v.desi);
   const progress = Number.isFinite(v.doorProgress)

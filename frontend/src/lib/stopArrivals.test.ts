@@ -134,10 +134,12 @@ describe('arrivalVehicleModes', () => {
   it('maps OTP modes to the stream’s mode switches', () => {
     expect(arrivalVehicleModes([
       departure({ mode: 'TRAM' }), departure({ mode: 'SUBWAY' }), departure({ mode: 'RAIL' }),
-    ])).toEqual({ bus: false, metro: true, train: true, tram: true });
-    expect(arrivalVehicleModes(undefined)).toEqual({ bus: false, metro: false, train: false, tram: false });
+    ])).toEqual({ bus: false, metro: true, train: true, tram: true, ferry: false });
+    expect(arrivalVehicleModes([departure({ mode: 'FERRY' })]))
+      .toEqual({ bus: false, metro: false, train: false, tram: false, ferry: true });
+    expect(arrivalVehicleModes(undefined)).toEqual({ bus: false, metro: false, train: false, tram: false, ferry: false });
     expect(arrivalVehicleModes([departure({ mode: undefined })]))
-      .toEqual({ bus: false, metro: false, train: false, tram: false });
+      .toEqual({ bus: false, metro: false, train: false, tram: false, ferry: false });
   });
 });
 

@@ -9,8 +9,8 @@ when you open this page on GitHub.
 > live map the same art is drawn with a transparent background.
 
 Colour language: tram green `#00985f`, bus blue `#007ac9` / `#0984e3`, trunk-bus
-orange `#CA4300`, selection gold `#fdcb6e`, boarding amber `#ffb020`, brake-light red
-`#ff2d2d`. Source: [`Map.tsx`](../frontend/src/components/Map.tsx),
+orange `#CA4300`, ferry cyan `#00b9e4`, selection gold `#fdcb6e`, boarding amber
+`#ffb020`, brake-light red `#ff2d2d`. Source: [`Map.tsx`](../frontend/src/components/Map.tsx),
 [`TramPopup.tsx`](../frontend/src/components/TramPopup.tsx),
 [`TramCard.tsx`](../frontend/src/components/TramCard.tsx),
 [`lib/routeColors.ts`](../frontend/src/lib/routeColors.ts),
@@ -45,6 +45,36 @@ match. Unlisted lines get a stable hashed colour.
 |:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | <img src="screenshots/icons/tram-body-7.svg" height="48"> | <img src="screenshots/icons/tram-body-8.svg" height="48"> | <img src="screenshots/icons/tram-body-9.svg" height="48"> | <img src="screenshots/icons/tram-body-10.svg" height="48"> | <img src="screenshots/icons/tram-body-13.svg" height="48"> | <img src="screenshots/icons/tram-body-15.svg" height="48"> | <img src="screenshots/icons/tram-body.svg" height="48"> |
 
+### The ferry, and the load it is carrying
+
+The fifth mode is the one vehicle on the map that is not a carriage, so it is not
+drawn as one: a hull with a raked bow on a wide beam, open decks fore and aft, a
+deckhouse inset between them with the wheelhouse forward and the funnel behind.
+That silhouette is what makes it identifiable before any colour is read.
+
+It is also the only mode whose `occu` field is a measurement rather than a schema
+placeholder — the Suomenlinna boats count passengers, every road and rail vehicle
+sends a constant `0` — so the deckhouse is drawn as a **saloon that fills**. The
+gauge runs from the stern forward, takes the load colour with it, and rings the
+deckhouse in the same colour so the state survives being shrunk to twenty pixels.
+Someone deciding whether to walk down to the quay can see whether the boat coming
+in has room on it.
+
+| No count | Empty | Quiet | Room aboard | Filling up | Busy | Full |
+|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| <img src="screenshots/icons/ferry-body-ou.svg" height="56"> | <img src="screenshots/icons/ferry-body-o0.svg" height="56"> | <img src="screenshots/icons/ferry-body-o1.svg" height="56"> | <img src="screenshots/icons/ferry-body-o2.svg" height="56"> | <img src="screenshots/icons/ferry-body-o3.svg" height="56"> | <img src="screenshots/icons/ferry-body-o4.svg" height="56"> | <img src="screenshots/icons/ferry-body-o5.svg" height="56"> |
+
+A vessel nobody has counted gets an empty **grey** track, not a green one: "no
+report" is not "nobody aboard". Alongside with the side ramps down, the doorways
+show in the same boarding amber every other mode uses:
+
+| Ramps down (no count) | Ramps down (filling up) |
+|:--:|:--:|
+| <img src="screenshots/icons/ferry-body-ou-open.svg" height="56"> | <img src="screenshots/icons/ferry-body-o3-open.svg" height="56"> |
+
+Source: [`lib/ferryIcon.ts`](../frontend/src/lib/ferryIcon.ts) for the art,
+[`lib/occupancy.ts`](../frontend/src/lib/occupancy.ts) for the scale.
+
 ---
 
 ## 2. Map stop-sign icons
@@ -53,9 +83,11 @@ From zoom **15.5** the map swaps flat stop dots for sign-on-a-pole symbols,
 colour-coded per mode. The gold-bordered variants mark the **selected stop** and a
 selected vehicle's **next stop**, and are drawn at every zoom level.
 
-| Tram | Bus | Trunk bus | Tram (selected) | Bus (selected) | Trunk (selected) |
-|:--:|:--:|:--:|:--:|:--:|:--:|
-| <img src="screenshots/icons/sign-tram.svg" height="60"> | <img src="screenshots/icons/sign-bus.svg" height="60"> | <img src="screenshots/icons/sign-bus-trunk.svg" height="60"> | <img src="screenshots/icons/sign-tram-selected.svg" height="60"> | <img src="screenshots/icons/sign-bus-selected.svg" height="60"> | <img src="screenshots/icons/sign-bus-trunk-selected.svg" height="60"> |
+| Tram | Bus | Trunk bus | Ferry | Tram (selected) | Bus (selected) | Trunk (selected) |
+|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| <img src="screenshots/icons/sign-tram.svg" height="60"> | <img src="screenshots/icons/sign-bus.svg" height="60"> | <img src="screenshots/icons/sign-bus-trunk.svg" height="60"> | <img src="screenshots/icons/sign-ferry.svg" height="60"> | <img src="screenshots/icons/sign-tram-selected.svg" height="60"> | <img src="screenshots/icons/sign-bus-selected.svg" height="60"> | <img src="screenshots/icons/sign-bus-trunk-selected.svg" height="60"> |
+
+The ferry board carries a vessel bow-on above its own wake — a quay, not a kerb.
 
 ---
 
@@ -138,6 +170,13 @@ wheels that spin at a rate proportional to velocity (all animated below).
 - **Indicator lights** turn green and blink (0.8 s pulse) while boarding, and show
   static red when the doors are secured.
 
+The metro, commuter train and ferry get their own drawings on the same principles —
+a coupled two-unit metro, a nose-and-pantograph commuter train, and, for the ferry, a
+hull in the water with a bridge over its saloon. The ferry schematic has no wheels to
+spin: its motion cue is the bow wave it pushes, and its saloon is a glass tank that
+fills with the reported load and states it in words underneath
+(`Filling up · 62%`), in the same colour the map marker's deck gauge is using.
+
 ### Gauges
 
 Below the schematic, two radial dials and a bidirectional bar read the live telemetry.
@@ -186,6 +225,11 @@ badges throughout the UI:
 | Bus blue (map sign) | `#007ac9` | Bus stop sign, bus/trunk stop dots |
 | Bus blue (vehicle) | `#0984e3` | Bus carriage body, bus schematic, bus dials |
 | Trunk-bus orange | `#CA4300` | Trunk-bus stop sign |
+| Ferry cyan | `#00b9e4` | Ferry hull, ferry quay sign, ferry route line |
+| Load green | `#20bf6b` | Ferry deck gauge, up to about half full |
+| Load amber | `#fcbc19` / `#f0932b` | Ferry deck gauge, filling up and busy |
+| Load red | `#ef4444` | Ferry deck gauge, full |
+| Load grey | `#94a3b8` | Ferry deck gauge with no count reported |
 | Selection gold | `#fdcb6e` | Selected/next-stop signs, selection ring, follow accent |
 | Boarding amber | `#ffb020` | Doors-open body gaps, door-pulse ring |
 | Brake-light red | `#ff2d2d` | Rear brake lamps (stopped/braking), "Stopped" legend swatch |
@@ -201,7 +245,8 @@ badges throughout the UI:
 | `spd === 0` \|\| `drst === 1` | Stopped | Rear brake lights |
 | `dl` | Schedule deviation (s) | Delay colour, deviation dial |
 | `desi` | Line short name | Per-line body tint, line badges, map label |
-| `mode` | `tram` / `bus` | Body / sign / schematic selection, mode colours |
+| `occu` | Passenger load (%) — a real measurement on the **ferry only** | Ferry deck gauge (marker, 3D body, schematic, popup meter) |
+| `mode` | `tram` / `bus` / `metro` / `train` / `ferry` | Body / sign / schematic selection, mode colours |
 
 ---
 
