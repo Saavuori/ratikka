@@ -52,7 +52,7 @@ const bundle = await rolldown({
 await bundle.write({ dir: outDir, format: 'esm', entryFileNames: 'vehicleModels.mjs' });
 await bundle.close();
 const libSource = fs.readFileSync(path.join(outDir, 'vehicleModels.mjs'), 'utf8');
-const { VEHICLE_MODELS, VEHICLE_3D_MIN_ZOOM, VEHICLE_3D_FULL_ZOOM, vehicleExtrusions } = await import(
+const { VEHICLE_MODELS, FERRY_MODEL, VEHICLE_3D_MIN_ZOOM, VEHICLE_3D_FULL_ZOOM, vehicleExtrusions } = await import(
   pathToFileURL(path.join(outDir, 'vehicleModels.mjs')).href
 );
 
@@ -129,11 +129,13 @@ const CENTER = [24.94, 60.17];
  * bounding box of them, and — for the height check — the topmost row of the
  * projected ground footprint. All in CSS pixels.
  */
-const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorProgress, braking = false, flat = false, focus, capture = false, onCorner = false }) =>
+const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorProgress, braking = false, flat = false, focus, capture = false, onCorner = false, occupancy = null, hue = null }) =>
   page.evaluate(
-    async ({ mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, capture, center, minZoom, onCorner }) => {
-      const { vehicleExtrusionCollection, VEHICLE_3D_FADE_IN, vehicleModel, offsetMeters } = window.vehicleModels;
-      const model = vehicleModel(mode);
+    async ({ mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, capture, center, minZoom, onCorner, occupancy, hue }) => {
+      const { vehicleExtrusionCollection, VEHICLE_3D_FADE_IN, vehicleModel, FERRY_MODEL, offsetMeters } = window.vehicleModels;
+      const model = mode === 'ferry'
+        ? { sections: [FERRY_MODEL.hull] }
+        : vehicleModel(mode);
       const cameraCenter = focus
         ? offsetMeters(...center, hdg, focus === 'front' ? model.sections[0].front : model.sections.at(-1).back, 0)
         : center;
@@ -169,7 +171,7 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorP
       }
 
       const data = vehicleExtrusionCollection([
-        { veh: 'v', lng: center[0], lat: center[1], hdg, mode, desi: '', doorsOpen, doorProgress, braking, spine },
+        { veh: 'v', lng: center[0], lat: center[1], hdg, mode, desi: '', doorsOpen, doorProgress, braking, spine, occupancy },
       ], zoom >= 16);
       map.addSource('vehicles-3d', { type: 'geojson', data });
       map.addLayer({
@@ -203,6 +205,15 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorP
       let red = 0;
       let head = 0;
       let redStrength = 0;
+      // Pixels whose colour points the same way as `hue` (a target #rrggbb).
+      // MapLibre's extrusion lighting scales a face's RGB roughly uniformly, so
+      // a direction comparison finds the load gauge's colour under any shading
+      // while still telling green from amber from red.
+      let hueMatch = 0;
+      const target = hue ? [
+        parseInt(hue.slice(1, 3), 16), parseInt(hue.slice(3, 5), 16), parseInt(hue.slice(5, 7), 16),
+      ] : null;
+      const targetLen = target ? Math.hypot(...target) : 0;
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (let y = 0; y < scan.height; y++) {
         for (let x = 0; x < scan.width; x++) {
@@ -218,6 +229,13 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorP
             redStrength += px[i];
           }
           if (px[i] > 170 && px[i + 1] > 160 && px[i + 2] > 95 && px[i + 2] < px[i + 1] * 0.8) head++;
+          if (target) {
+            const len = Math.hypot(px[i], px[i + 1], px[i + 2]);
+            if (len > 40) {
+              const dot = (px[i] * target[0] + px[i + 1] * target[1] + px[i + 2] * target[2]) / (len * targetLen);
+              if (dot > 0.995) hueMatch++;
+            }
+          }
           minX = Math.min(minX, x / dpr); maxX = Math.max(maxX, x / dpr);
           minY = Math.min(minY, y / dpr); maxY = Math.max(maxY, y / dpr);
         }
@@ -240,9 +258,9 @@ const render = ({ mode, hdg = 90, zoom = 17, pitch = 0, doorsOpen = false, doorP
 
       const image = capture ? glCanvas.toDataURL('image/png') : undefined;
       map.remove();
-      return { painted, amber, cab, red, head, redStrength, minX, maxX, minY, maxY, groundTop, metersPerPixel, image };
+      return { painted, amber, cab, red, head, redStrength, hueMatch, minX, maxX, minY, maxY, groundTop, metersPerPixel, image };
     },
-    { mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, capture, center: CENTER, minZoom: VEHICLE_3D_MIN_ZOOM, onCorner }
+    { mode, hdg, zoom, pitch, doorsOpen, doorProgress, braking, flat, focus, capture, center: CENTER, minZoom: VEHICLE_3D_MIN_ZOOM, onCorner, occupancy, hue }
   );
 
 const failures = [];
@@ -374,6 +392,58 @@ check(
     `closed ${shut.amber}, half ${halfway.amber}, open ${open.amber} amber px`);
 }
 
+// 6b. The ferry. It is the one body that is not a carriage — a hull with a
+//     saloon on it and a load gauge along the saloon roof — and the gauge is
+//     the whole point: it has to be visible from a map camera and it has to
+//     change with the number the feed reports. Neither is checkable from the
+//     geometry alone, which is why it is measured here in pixels.
+{
+  const hull = FERRY_MODEL.hull;
+  const expected = hull.front - hull.back;
+  // Measured alongside with the ramps down, because a vessel under way paints a
+  // wake astern as well as a hull and the two together are not the boat.
+  const moored = await render({ mode: 'ferry', hdg: 90, zoom: 17, doorsOpen: true });
+  const paintedMeters = (moored.maxX - moored.minX) * moored.metersPerPixel;
+  check(
+    'ferry hull is drawn at its real length',
+    moored.painted > 0 && Math.abs(paintedMeters - expected) / expected < 0.15,
+    `${paintedMeters.toFixed(1)} m painted vs ${expected.toFixed(1)} m modelled`
+  );
+
+  // And a vessel making way pushes water: the one motion cue a boat has, since
+  // it has no wheels to turn and no brake lamps to light.
+  const underway = await render({ mode: 'ferry', hdg: 90, zoom: 17 });
+  const wakeMeters = (underway.maxX - underway.minX) * underway.metersPerPixel - paintedMeters;
+  check(
+    'a ferry under way trails a wake, and a moored one does not',
+    wakeMeters > 4 && wakeMeters < expected * 0.6,
+    `${wakeMeters.toFixed(1)} m of wake astern`
+  );
+
+  // Looking down at a pitched view, which is how the gauge is actually read.
+  const GREEN = '#20bf6b';
+  const RED = '#ef4444';
+  const view = { mode: 'ferry', hdg: 110, zoom: 18, pitch: 55 };
+  const quarter = await render({ ...view, occupancy: 0.2, hue: GREEN });
+  const roomy = await render({ ...view, occupancy: 0.4, hue: GREEN });
+  const emptyBoat = await render({ ...view, occupancy: 0, hue: GREEN });
+  const unknown = await render({ ...view, occupancy: null, hue: GREEN });
+  const full = await render({ ...view, occupancy: 1, hue: RED });
+  const fullGreen = await render({ ...view, occupancy: 1, hue: GREEN });
+
+  check('the ferry load gauge is visible from a map camera',
+    quarter.hueMatch > 5, `${quarter.hueMatch} px of gauge fill at 20%`);
+  check('the gauge fills further the fuller the boat is',
+    roomy.hueMatch > quarter.hueMatch, `20% ${quarter.hueMatch} px, 40% ${roomy.hueMatch} px`);
+  check('an empty boat fills none of it',
+    emptyBoat.hueMatch === 0, `${emptyBoat.hueMatch} px`);
+  check('a boat with no reported count is not drawn as an empty one',
+    unknown.hueMatch === 0, `${unknown.hueMatch} px of "room aboard" green`);
+  check('a full boat turns the gauge red rather than lengthening a green one',
+    full.hueMatch > 5 && fullGreen.hueMatch === 0,
+    `${full.hueMatch} px red, ${fullGreen.hueMatch} px green`);
+}
+
 // 7. The cab patch marks the driving end on the roof, which is where a map
 //    camera can see it — it is what says which way the vehicle faces once the
 //    flat icon's nose nub has faded out.
@@ -427,10 +497,12 @@ for (const [mode, model] of Object.entries(VEHICLE_MODELS)) {
 // Opt-in visual artifacts; normal verification leaves no images behind.
 if (process.env.VEHICLE_SCREENSHOTS === '1') {
   const screenshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ratikka-vehicle-previews-'));
-  for (const mode of Object.keys(VEHICLE_MODELS)) {
+  for (const mode of [...Object.keys(VEHICLE_MODELS), 'ferry']) {
     const shot = await render({
-      mode, zoom: mode === 'bus' ? 20 : mode === 'tram' ? 19 : 17.5,
+      mode, zoom: mode === 'bus' ? 20 : mode === 'tram' || mode === 'ferry' ? 19 : 17.5,
       pitch: 60, hdg: 110, doorsOpen: true, braking: true, capture: true,
+      // A half-full boat, so the preview shows the load gauge doing its job.
+      occupancy: mode === 'ferry' ? 0.55 : null,
     });
     const filename = path.join(screenshotDir, `vehicle-3d-preview-${mode}.png`);
     fs.writeFileSync(filename, Buffer.from(shot.image.split(',')[1], 'base64'));

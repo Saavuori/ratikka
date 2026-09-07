@@ -135,8 +135,8 @@ func TestHub_ModeDemand(t *testing.T) {
 	}
 }
 
-// Only bus, metro and train can be switched on; anything else is ignored rather
-// than passed through to the ingestion worker.
+// Only bus, metro, train and ferry can be switched on; anything else is ignored
+// rather than passed through to the ingestion worker.
 func TestHub_IgnoresUnknownModes(t *testing.T) {
 	ctl := &recordingController{}
 	hub := NewHub(cache.NewMemoryCache())
@@ -146,7 +146,7 @@ func TestHub_IgnoresUnknownModes(t *testing.T) {
 	hub.addClient(client)
 
 	hub.setClientModePref(client, "tram", true)
-	hub.setClientModePref(client, "ferry", true)
+	hub.setClientModePref(client, "funicular", true)
 	hub.setClientModePref(client, "../hfp", true)
 
 	if len(ctl.enabled) != 0 {

@@ -8,6 +8,8 @@ import {
   vehicleExtrusionCollection,
   vehicleBodyColor,
   vehicleModel,
+  ferryExtrusions,
+  FERRY_MODEL,
   VEHICLE_MODELS,
   GLASS_COLOR,
   DOOR_COLOR,
@@ -22,7 +24,8 @@ import {
   VEHICLE_3D_FADE_IN,
   VEHICLE_ICON_FADE_OUT,
 } from './vehicleModels';
-import { METRO_ORANGE, TRAIN_PURPLE, BUS_BLUE, TRAM_GREEN, ROUTE_COLORS } from './routeColors';
+import { METRO_ORANGE, TRAIN_PURPLE, BUS_BLUE, TRAM_GREEN, FERRY_CYAN, FERRY_COLORS, ROUTE_COLORS } from './routeColors';
+import { occupancyColor } from './occupancy';
 
 const HELSINKI: [number, number] = [24.94, 60.17];
 
@@ -408,5 +411,116 @@ describe('vehicleExtrusions', () => {
       expect(vehicleExtrusionCollection([normal], false).features.filter((p) => p.properties.part === 'body'))
         .toEqual(vehicleExtrusionCollection([normal]).features.filter((p) => p.properties.part === 'body'));
     }
+  });
+});
+
+describe('the ferry', () => {
+  const boat = {
+    veh: 'f1', lng: HELSINKI[0], lat: HELSINKI[1], hdg: 0,
+    mode: 'ferry', desi: '19', doorsOpen: false,
+  };
+
+  it('is a vessel, not a carriage: no wheels, no bogies, no pantograph', () => {
+    const parts = vehicleExtrusions(boat);
+    for (const absent of ['wheel', 'wheel-hub', 'bogie', 'pantograph', 'gangway']) {
+      expect(parts.filter((p) => p.properties.part === absent)).toHaveLength(0);
+    }
+    expect(parts.filter((p) => p.properties.part === 'hull').length).toBeGreaterThan(0);
+    expect(parts.filter((p) => p.properties.part === 'deckhouse')).toHaveLength(1);
+    expect(parts.filter((p) => p.properties.part === 'wheelhouse')).toHaveLength(1);
+    expect(parts.filter((p) => p.properties.part === 'funnel')).toHaveLength(1);
+  });
+
+  it('is routed through the vessel builder rather than the carriage one', () => {
+    expect(vehicleExtrusions(boat)).toEqual(ferryExtrusions(boat));
+  });
+
+  it('is a Suomenlinna boat at real scale: about 35 m on an 8.5 m beam', () => {
+    const { hull } = FERRY_MODEL;
+    expect(hull.front - hull.back).toBeGreaterThan(30);
+    expect(hull.front - hull.back).toBeLessThan(40);
+    expect(hull.halfWidth * 2).toBeGreaterThan(7);
+    expect(hull.halfWidth * 2).toBeLessThan(10);
+    // Wider than anything on rails or road, which is what makes it read as a
+    // boat from above rather than as an unusually fat tram.
+    for (const mode of ['tram', 'bus', 'metro', 'train']) {
+      expect(hull.halfWidth).toBeGreaterThan(vehicleModel(mode).sections[0].halfWidth);
+    }
+  });
+
+  it('takes its line colour, and the mode cyan for a line without one', () => {
+    expect(vehicleBodyColor('ferry', '19')).toBe(FERRY_COLORS['19']);
+    expect(vehicleBodyColor('ferry', '99')).toBe(FERRY_CYAN);
+    const hulls = vehicleExtrusions(boat).filter((p) => p.properties.part === 'hull');
+    expect(hulls.some((p) => p.properties.color === FERRY_COLORS['19'])).toBe(true);
+  });
+
+  it('fills its deck gauge from the stern forward as the load is reported', () => {
+    const lengthOf = (occupancy: number | null) => {
+      const parts = ferryExtrusions({ ...boat, occupancy });
+      const fill = parts.find((p) => p.properties.part === 'load-fill');
+      if (!fill) return 0;
+      const lngs = fill.geometry.coordinates[0].map(([lng]) => lng);
+      return metersBetween([Math.min(...lngs), HELSINKI[1]], [Math.max(...lngs), HELSINKI[1]]);
+    };
+    // Heading north, so "along the hull" runs in latitude and the fill's own
+    // extent along the boat is what grows; measured across the gauge instead it
+    // would be constant. Compare the along-axis extents directly.
+    const along = (occupancy: number | null) => {
+      const parts = ferryExtrusions({ ...boat, occupancy });
+      const fill = parts.find((p) => p.properties.part === 'load-fill');
+      if (!fill) return 0;
+      const lats = fill.geometry.coordinates[0].map(([, lat]) => lat);
+      return metersBetween([HELSINKI[0], Math.min(...lats)], [HELSINKI[0], Math.max(...lats)]);
+    };
+    expect(lengthOf(0.5)).toBeGreaterThan(0);
+    expect(along(0.25)).toBeGreaterThan(0);
+    expect(along(0.5)).toBeGreaterThan(along(0.25));
+    expect(along(1)).toBeGreaterThan(along(0.5));
+    // The gauge never outgrows its own track.
+    const gauge = FERRY_MODEL.loadGauge;
+    expect(along(1)).toBeLessThanOrEqual(gauge.front - gauge.back + 0.5);
+  });
+
+  it('colours the gauge by how full it is', () => {
+    const colorAt = (occupancy: number) =>
+      ferryExtrusions({ ...boat, occupancy })
+        .find((p) => p.properties.part === 'load-fill')!.properties.color;
+    expect(colorAt(0.4)).toBe(occupancyColor(0.4));
+    expect(colorAt(1)).toBe(occupancyColor(1));
+    expect(colorAt(1)).not.toBe(colorAt(0.2));
+  });
+
+  it('shows an unreported load as a grey rail, never as an empty deck', () => {
+    const unknown = ferryExtrusions({ ...boat, occupancy: null })
+      .find((p) => p.properties.part === 'load-fill')!;
+    const empty = ferryExtrusions({ ...boat, occupancy: 0 })
+      .find((p) => p.properties.part === 'load-fill');
+    expect(unknown.properties.color).not.toBe(occupancyColor(0));
+    // A boat reported empty has nothing filled in at all, which is a different
+    // drawing again from a boat nobody has counted.
+    expect(empty).toBeUndefined();
+    // Both still get the track, so the gauge is always visibly there.
+    expect(ferryExtrusions({ ...boat, occupancy: null })
+      .filter((p) => p.properties.part === 'load-track')).toHaveLength(1);
+  });
+
+  it('keeps the gauge, hull and saloon when the small furniture is dropped', () => {
+    const distant = ferryExtrusions({ ...boat, occupancy: 0.6 }, false);
+    const full = ferryExtrusions({ ...boat, occupancy: 0.6 });
+    expect(distant.length).toBeLessThan(full.length);
+    for (const part of ['hull', 'deckhouse', 'load-track', 'load-fill']) {
+      expect(distant.filter((p) => p.properties.part === part))
+        .toEqual(full.filter((p) => p.properties.part === part));
+    }
+    expect(distant.filter((p) => p.properties.part === 'door')).toHaveLength(0);
+  });
+
+  it('opens its side ramps on both flanks', () => {
+    const shut = ferryExtrusions(boat).filter((p) => p.properties.part === 'doorway');
+    const open = ferryExtrusions({ ...boat, doorsOpen: true })
+      .filter((p) => p.properties.part === 'doorway');
+    expect(shut).toHaveLength(0);
+    expect(open).toHaveLength(FERRY_MODEL.doors.length * 2);
   });
 });

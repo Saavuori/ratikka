@@ -59,7 +59,9 @@ describe('findJourneyVehicle', () => {
 
 describe('journeyVehicleModes', () => {
   it('requests only the modes needed by transit legs', () => {
-    expect(journeyVehicleModes([leg])).toEqual({ bus: true, metro: false, train: false, tram: false });
+    expect(journeyVehicleModes([leg])).toEqual({ bus: true, metro: false, train: false, tram: false, ferry: false });
+    expect(journeyVehicleModes([{ ...leg, mode: 'FERRY' }]))
+      .toEqual({ bus: false, metro: false, train: false, tram: false, ferry: true });
     expect(journeyVehicleModes([{ ...leg, transit: false }])).toEqual(journeyVehicleModes(undefined));
   });
 });

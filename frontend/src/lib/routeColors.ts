@@ -57,12 +57,31 @@ export const TRAIN_COLORS: Record<string, string> = {
   'Z': '#4E3B84', // dark indigo
 };
 
+// Ferries. HSL runs one year-round water route — the Suomenlinna crossing,
+// line 19 — plus the seasonal 20 to Vallisaari and Lonna, and paints both in
+// the cyan its own map style already uses for `route_ferry`. There are too few
+// lines to need a family: 19 takes the mode cyan itself and 20 a deeper shade
+// of it, so the two are tellable apart without either stopping reading as
+// "water".
+//
+// These are plain line numbers, so a bus numbered 19 or 20 borrows the colour
+// where a badge is coloured from the line alone. That is no worse than the hash
+// colour it would otherwise draw — both are arbitrary, both are stable — and
+// nothing that knows the vehicle's mode is affected: the map icon and the 3D
+// body resolve their colour per mode, not per number.
+export const FERRY_COLORS: Record<string, string> = {
+  '19': '#00A2C7', // Suomenlinna
+  '20': '#0077A3', // Vallisaari / Lonna, deep water blue
+};
+
 // HSL's mode green — used as the last-resort fallback when even the hash colour
 // is undesirable (e.g. an empty line identifier).
 export const TRAM_GREEN = '#00985F';
 export const METRO_ORANGE = '#FF6319';
 export const TRAIN_PURPLE = '#8C4799';
 export const BUS_BLUE = '#0984E3';
+// The cyan the HSL vector style paints its own ferry routes and quays in.
+export const FERRY_CYAN = '#00B9E4';
 
 /**
  * Accent colour for a whole mode, used where a UI element belongs to a vehicle
@@ -76,6 +95,8 @@ export function getModeAccent(mode: string | null | undefined): string {
       return METRO_ORANGE;
     case 'train':
       return TRAIN_PURPLE;
+    case 'ferry':
+      return FERRY_CYAN;
     default:
       return '#00B894'; // tram / light rail
   }
@@ -115,10 +136,10 @@ function fallbackColor(shortName: string): string {
 
 /**
  * Resolve the display colour for a line by its short name (e.g. "4", "6T",
- * "M1", "R"). Returns a curated colour when available — tram, metro and
- * commuter-train short names never collide, so one lookup serves all three —
- * otherwise a deterministic hash colour, and the HSL tram green for empty
- * input.
+ * "M1", "R", "19"). Returns a curated colour when available — tram, metro,
+ * commuter-train and ferry short names never collide, so one lookup serves all
+ * four — otherwise a deterministic hash colour, and the HSL tram green for
+ * empty input.
  */
 export function getRouteColor(shortName: string | null | undefined): string {
   if (!shortName) return TRAM_GREEN;
@@ -126,6 +147,7 @@ export function getRouteColor(shortName: string | null | undefined): string {
     ROUTE_COLORS[shortName] ??
     METRO_COLORS[shortName] ??
     TRAIN_COLORS[shortName] ??
+    FERRY_COLORS[shortName] ??
     fallbackColor(shortName)
   );
 }

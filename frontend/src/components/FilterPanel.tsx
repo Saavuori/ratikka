@@ -18,6 +18,7 @@ interface FilterPanelProps {
   showBuses: boolean;
   showMetro: boolean;
   showTrains: boolean;
+  showFerries: boolean;
   alerts: Alert[];
   selectedTram: VehiclePosition | null;
   selectedStop: { id: string; name: string; code: string; } | null;
@@ -36,6 +37,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   showBuses,
   showMetro,
   showTrains,
+  showFerries,
   alerts = [],
   selectedTram = null,
   selectedStop = null,
@@ -146,6 +148,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           if (t.mode === 'bus' && !showBuses) return false;
           if (t.mode === 'metro' && !showMetro) return false;
           if (t.mode === 'train' && !showTrains) return false;
+          if (t.mode === 'ferry' && !showFerries) return false;
           return true;
         })
         .map((t) => t.desi)

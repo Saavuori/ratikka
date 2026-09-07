@@ -41,11 +41,13 @@ describe('stopMode', () => {
     expect(stopMode('RAIL')).toBe('RAIL');
     expect(stopMode('TRAIN')).toBe('RAIL');
     expect(stopMode('bus')).toBe('BUS');
+    expect(stopMode('FERRY')).toBe('FERRY');
+    expect(stopMode('ferry')).toBe('FERRY');
   });
 
   it('falls back to tram rather than throwing on an unknown mode', () => {
     expect(stopMode(undefined)).toBe('TRAM');
-    expect(stopMode('FERRY')).toBe('TRAM');
+    expect(stopMode('FUNICULAR')).toBe('TRAM');
     expect(stopModel(null)).toBe(STOP_MODELS.TRAM);
   });
 });

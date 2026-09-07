@@ -1,13 +1,19 @@
 import React from 'react';
 import { getModeAccent } from '../lib/routeColors';
+import { occupancyColor, occupancyLabel } from '../lib/occupancy';
 
 interface VehicleSchematicProps {
-  /** Vehicle mode as the feed reports it: `tram`, `bus`, `metro` or `train`. */
+  /** Vehicle mode as the feed reports it: `tram`, `bus`, `metro`, `train` or `ferry`. */
   mode: string | null | undefined;
   isDoorsOpen: boolean;
   isMoving: boolean;
   /** Wheel rotation period as a CSS duration, e.g. `0.4s`. */
   wheelSpeedCss: string;
+  /**
+   * Reported passenger load, 0…1, or null where the mode does not measure it.
+   * Only the ferry does, and only the ferry schematic draws it.
+   */
+  occupancy?: number | null;
 }
 
 /** Sliding door leaves — they part when the real doors are open. */
@@ -63,6 +69,7 @@ export const VehicleSchematic: React.FC<VehicleSchematicProps> = ({
   isDoorsOpen,
   isMoving,
   wheelSpeedCss,
+  occupancy = null,
 }) => {
   const accent = getModeAccent(mode);
   const glass = { fill: 'rgba(56, 189, 248, 0.15)', stroke: '#38bdf8', strokeWidth: 1 };
@@ -161,6 +168,67 @@ export const VehicleSchematic: React.FC<VehicleSchematicProps> = ({
         <Wheel cx={72} r={6} moving={isMoving} speed={wheelSpeedCss} />
         <Wheel cx={158} r={6} moving={isMoving} speed={wheelSpeedCss} />
         <Wheel cx={176} r={6} moving={isMoving} speed={wheelSpeedCss} />
+      </svg>
+    );
+  }
+
+  if (mode === 'ferry') {
+    // The Suomenlinna boat, seen from the quay: a hull sitting in the water with
+    // a bow wave when it is making way, a saloon with the bridge above it, and
+    // a funnel aft. No wheels — the "moving" cue is the water, which is what it
+    // is on the real thing too.
+    //
+    // The saloon is drawn as a glass tank rather than a solid band, because this
+    // is the one mode that reports how full it is: the reported load fills the
+    // saloon from the stern forward in the load colour, and the reading is
+    // written underneath in the same colour. A vessel with no count reported
+    // gets an empty saloon and no caption rather than a green one.
+    const loaded = typeof occupancy === 'number' && Number.isFinite(occupancy);
+    const load = loaded ? Math.max(0, Math.min(1, occupancy!)) : 0;
+    const saloon = { x: 34, y: 20, width: 150, height: 20 };
+    const fill = saloon.width * load;
+    const loadTint = loaded ? occupancyColor(load) : '#64748b';
+
+    return (
+      <svg width="220" height="70" viewBox="0 0 220 70" fill="none">
+        {/* Waterline, and the wake the hull pushes while under way. */}
+        <line x1="10" y1="58" x2="210" y2="58" stroke="rgba(56,189,248,0.25)" strokeWidth="2" />
+        {isMoving && (
+          // The bow wave. Static, and deliberately so: nothing here spins, and
+          // a wake animated by the wheel-rotation period would be a wheel with
+          // a boat drawn over it. Its presence is the motion cue.
+          <g stroke="rgba(56,189,248,0.5)" strokeWidth="1.5" fill="none" strokeLinecap="round">
+            <path d="M198,52 C204,50 209,52 213,55" />
+            <path d="M196,57 C202,57 207,58 211,60" />
+          </g>
+        )}
+
+        {/* Hull: raked stem forward (right), transom aft (left). */}
+        <path
+          d="M26,40 L186,40 C196,40 202,45 204,50 C205,54 202,57 197,57 L33,57
+             C28,57 25,54 25,49 L25,43 C25,41 25,40 26,40 Z"
+          fill={bodyFill} stroke={accent} strokeWidth="2"
+        />
+        {/* Saloon: the tank the load fills, from the stern (left) forward. */}
+        <rect x={saloon.x} y={saloon.y} width={saloon.width} height={saloon.height}
+              rx="3" fill="rgba(15,23,42,0.35)" stroke={accent} strokeWidth="2" />
+        {fill > 0 && (
+          <rect x={saloon.x} y={saloon.y} width={fill} height={saloon.height} rx="3" fill={loadTint} opacity="0.75" />
+        )}
+        {/* Bridge on the saloon roof, and the funnel behind it. */}
+        <path d="M150,20 L176,20 L180,10 L154,10 Z" fill={bodyFill} stroke={accent} strokeWidth="2" />
+        <path d="M156,18 L176,18 L178,12 L158,12 Z" {...glass} />
+        <rect x="60" y="12" width="9" height="8" rx="2" fill="#334155" stroke="#1e293b" strokeWidth="1" />
+
+        {/* Side boarding ramp, amidships. */}
+        <DoorPair x={100} open={isDoorsOpen} height={17} />
+        <DoorLight cx={106} open={isDoorsOpen} />
+
+        {loaded && (
+          <text x="110" y="68" textAnchor="middle" fontSize="8" fontWeight="700" fill={loadTint}>
+            {`${occupancyLabel(load)} — ${Math.round(load * 100)}%`}
+          </text>
+        )}
       </svg>
     );
   }

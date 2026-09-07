@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
+      <!-- Hull: a raked stem drawn as two curves into the sheer, straight
+           topsides on a wide beam, and a transom stern with rounded quarters. -->
+      <path d="M20 2.2 C23.3 4.9 25.6 8.0 26.6 11.6 L26.6 31.2
+               C26.6 33.4 25.2 34.8 23.0 34.8 L17.0 34.8
+               C14.8 34.8 13.4 33.4 13.4 31.2 L13.4 11.6
+               C14.4 8.0 16.7 4.9 20 2.2 Z"
+            fill="#00B9E4" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+      <!-- Foredeck rail across the open deck ahead of the superstructure. -->
+      <path d="M16.4 10.2 L23.6 10.2" stroke="rgba(255,255,255,0.6)" stroke-width="0.9" stroke-linecap="round"/>
+      <!-- Wheelhouse, glazed, standing forward on the deckhouse. -->
+      <rect x="17.2" y="7.4" width="5.6" height="3.4" rx="1.2" fill="#dbeeff" stroke="rgba(255,255,255,0.75)" stroke-width="0.6"/>
+      <!-- Deckhouse, ringed in the load colour so the state reads at icon size. -->
+      <rect x="16.2" y="10.4" width="7.6" height="18.0" rx="2" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+      <!-- The saloon gauge: a dark track, filled from the stern forward. -->
+      <rect class="ferry-load-track" x="17.4" y="11.6" width="5.2" height="15.6"
+            rx="2.6" fill="rgba(15,23,42,0.16)"/>
+      
+      <!-- Funnel, aft on the deckhouse roof. -->
+      <rect x="19.1" y="25.0" width="1.8" height="2.8" rx="0.7" fill="#334155"/>
+      <rect x="12.2" y="17.6" width="4.4" height="6.4" rx="1.2" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
+           <rect x="23.4" y="17.6" width="4.4" height="6.4" rx="1.2" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
+      <!-- Boot-top band along the transom. -->
+      <rect x="16.0" y="31.4" width="8.0" height="2.2" rx="1" fill="rgba(15,23,42,0.32)"/>
+    </svg>
