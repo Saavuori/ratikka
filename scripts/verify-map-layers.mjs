@@ -88,8 +88,14 @@ await page.route('**/api/v1/**', (r) => r.fulfill({ json: {} }));
 await page.route('**/api/v1/alerts', (r) => r.fulfill({ json: { alerts: [] } }));
 await page.route('**/api/v1/bike-station/**', (r) =>
   r.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
+// One real junction, so the marker layer has something to draw and the
+// junction panel has something to open onto.
 await page.route('**/api/v1/traffic-lights', (r) =>
-  r.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
+  r.fulfill({ json: { type: 'FeatureCollection', features: [{
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [24.94, 60.17] },
+    properties: { id: 75, type: 'traffic_light', junction: 'Testikatu/Koekuja' },
+  }] } }));
 await page.route('**/api/v1/route/**', (r) =>
   r.fulfill({ json: { geometries: [], stops: [] } }));
 // VersionBadge does info.git_sha.substring(0, 7) unguarded, so an incomplete
@@ -255,6 +261,43 @@ assert.equal(afterOrtho.lateRoads, 'visible', 'the vector ground must come back 
 assert.equal(afterOrtho.source, false, 'the orthophoto source must not outlive the mode');
 assert.equal(afterOrtho.stored, 'dark');
 console.log('satellite basemap: tiles signed, under the labels, over the vector ground: PASS');
+
+// Selecting a junction: the other side of the priority exchange. The vehicle
+// panel says what one tram is asking; clicking the lights says who is asking
+// *this crossing* and who it has answered. Both halves come from the `tlp`
+// field on the positions, so this drives the whole path — websocket message,
+// junction index, marker state, click, panel.
+await page.getByRole('button', { name: 'Disable 3D map', exact: true }).click().catch(() => {});
+await page.evaluate(() => window.__mlMap.jumpTo({ center: [24.94, 60.17], zoom: 17, pitch: 0 }));
+vehicle.tlp = { status: 'granted', junction: 75, requestType: 'NORMAL', level: 'normal', attempts: 1, ts: Math.floor(Date.now() / 1000) };
+sendVehicle();
+
+// The marker takes the state before anything is clicked.
+await page.waitForFunction(async () => {
+  const data = await window.__mlMap.getSource('traffic-lights').getData();
+  return data.features.some((f) => f.properties.id === 75 && f.properties.priority === 'granted');
+}, null, { timeout: 15000 });
+
+const junctionPoint = await page.evaluate(() => {
+  const p = window.__mlMap.project([24.94, 60.17]);
+  const rect = window.__mlMap.getCanvas().getBoundingClientRect();
+  // The marker is bottom-anchored, so its body sits above the junction point.
+  return { x: rect.left + p.x, y: rect.top + p.y - 8 };
+});
+await page.mouse.click(junctionPoint.x, junctionPoint.y);
+
+const panel = page.getByText('Testikatu/Koekuja', { exact: true });
+await panel.waitFor({ state: 'visible', timeout: 10000 });
+await page.getByText('Priority granted · 1', { exact: true }).waitFor({ timeout: 10000 });
+// The line that was granted it, named.
+assert.ok(await page.getByText('4', { exact: true }).count() > 0, 'the granted line is listed');
+
+// The selected junction is picked out on the map, and only that one.
+assert.deepEqual(
+  await page.evaluate(() => window.__mlMap.getFilter('traffic-lights-selected')),
+  ['==', ['get', 'id'], 75],
+);
+console.log('junction selection: marker state, click-through and the who-asked-what panel: PASS');
 
 const canvas = await page.locator('canvas.maplibregl-canvas').count();
 const webgl2 = await page.evaluate(() => {
