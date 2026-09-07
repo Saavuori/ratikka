@@ -10,26 +10,15 @@ import {
   trafficLightIconSvg,
   trafficLightIconName,
   warningLightIconSvg,
-  trafficLightExtrusions,
-  trafficLightCollection,
-  trafficLightStates,
-  SIGNAL,
   SIGNAL_RED,
   SIGNAL_AMBER,
   SIGNAL_GREEN,
   TRAFFIC_LIGHT_ICON_VARIANTS,
   TRAFFIC_LIGHT_MIN_ZOOM,
   TRAFFIC_LIGHT_FULL_ZOOM,
-  TRAFFIC_LIGHT_3D_MIN_ZOOM,
-  TRAFFIC_LIGHT_3D_FULL_ZOOM,
-  TRAFFIC_LIGHT_3D_FADE_IN,
   TRAFFIC_LIGHT_ICON_OPACITY,
-  TRAFFIC_LIGHT_ICON_OPACITY_3D,
 } from './trafficLightModels';
-import type { TrafficLightState, JunctionActivity } from './trafficLightModels';
-import { metersBetween } from './stopModels';
-import { SELECTED_COLOR } from './vehicleModels';
-import type { VehiclePosition, TrafficLightFeature, SignalPriority } from '../types';
+import type { VehiclePosition, SignalPriority } from '../types';
 
 const HELSINKI: [number, number] = [24.94, 60.17];
 
@@ -56,27 +45,6 @@ const tlp = (over: Partial<SignalPriority> = {}): SignalPriority => ({
   ts: 1788721718,
   ...over,
 });
-
-const light = (over: Partial<TrafficLightState> = {}): TrafficLightState => ({
-  junctionId: 75,
-  lng: HELSINKI[0],
-  lat: HELSINKI[1],
-  kind: 'traffic_light',
-  bearing: 0,
-  ...over,
-});
-
-/** One vehicle in an exchange with a junction, as the index hands it over. */
-const activity = (status: SignalPriority['status']): JunctionActivity => ({
-  status,
-  vehicles: [{
-    status, desi: '10B', veh: '0040-407', mode: 'tram',
-    lat: HELSINKI[1], lng: HELSINKI[0], spd: 0, drst: 0, ts: 1,
-  }],
-});
-
-const partsOf = (s: TrafficLightState) =>
-  trafficLightExtrusions(s).map((f) => f.properties.part);
 
 describe('signalPriorityIndex', () => {
   it('keys the exchanges by the junction the vehicle named', () => {
@@ -241,169 +209,21 @@ describe('warningLightIconSvg', () => {
   });
 });
 
-describe('trafficLightExtrusions', () => {
-  it('builds a mast with an arm and two heads', () => {
-    const parts = partsOf(light());
-    expect(parts).toContain('foot');
-    expect(parts).toContain('mast');
-    expect(parts).toContain('arm');
-    // Two heads, three lenses each, a hood over every lens.
-    expect(parts.filter((p) => p === 'case').length).toBe(2);
-    expect(parts.filter((p) => p === 'lens').length).toBe(6);
-    expect(parts.filter((p) => p === 'hood').length).toBe(6);
-  });
-
-  it('draws the state disc only while something is being asked', () => {
-    expect(partsOf(light())).not.toContain('halo');
-    expect(partsOf(light({
-      priority: activity('requesting'),
-    }))).toContain('halo');
-    // A vehicle deciding not to ask lights nothing, so there is no disc.
-    expect(partsOf(light({
-      priority: activity('norequest'),
-    }))).not.toContain('halo');
-  });
-
-  it('lights the lens matching the state, on both heads', () => {
-    const lit = (status: 'requesting' | 'granted' | 'denied', color: string) =>
-      trafficLightExtrusions(light({ priority: activity(status) }))
-        .filter((f) => f.properties.part === 'lens' && f.properties.color === color).length;
-    expect(lit('granted', SIGNAL_GREEN)).toBe(2);
-    expect(lit('requesting', SIGNAL_AMBER)).toBe(2);
-    expect(lit('denied', SIGNAL_RED)).toBe(2);
-  });
-
-  it('leaves every lens dark when nothing is being asked', () => {
-    const colors = trafficLightExtrusions(light())
-      .filter((f) => f.properties.part === 'lens')
-      .map((f) => f.properties.color);
-    expect(colors).not.toContain(SIGNAL_GREEN);
-    expect(colors).not.toContain(SIGNAL_RED);
-    expect(colors).not.toContain(SIGNAL_AMBER);
-  });
-
-  it('stands the mast off the junction point rather than in the crossing', () => {
-    const mast = trafficLightExtrusions(light())
-      .find((f) => f.properties.part === 'mast')!;
-    const ring = mast.geometry.coordinates[0];
-    const centre: [number, number] = [
-      (ring[0][0] + ring[2][0]) / 2,
-      (ring[0][1] + ring[2][1]) / 2,
-    ];
-    expect(metersBetween(HELSINKI, centre)).toBeCloseTo(SIGNAL.offset, 0);
-  });
-
-  it('rings the junction itself, where the marker was, and leaves the middle clear', () => {
-    const halo = trafficLightExtrusions(light({
-      priority: activity('granted'),
-    })).find((f) => f.properties.part === 'halo')!;
-    // Two rings: the band, and the hole punched out of it. A single ring would
-    // be a filled disc, which buries the junction it is meant to mark.
-    expect(halo.geometry.coordinates.length).toBe(2);
-    for (const point of halo.geometry.coordinates[0]) {
-      expect(metersBetween(HELSINKI, point)).toBeCloseTo(SIGNAL.halo.radius, 0);
-    }
-    for (const point of halo.geometry.coordinates[1]) {
-      expect(metersBetween(HELSINKI, point)).toBeCloseTo(SIGNAL.halo.innerRadius, 0);
-    }
-  });
-
-  it('draws a warning light as one lamp on a short pole', () => {
-    const parts = partsOf(light({ kind: 'warning_light' }));
-    expect(parts.filter((p) => p === 'lens').length).toBe(1);
-    expect(parts).not.toContain('arm');
-  });
-
-  it('keeps every box above the ground and the right way up', () => {
-    for (const feature of trafficLightCollection([
-      light(),
-      light({ kind: 'warning_light', bearing: null }),
-    ]).features) {
-      expect(feature.properties.base).toBeGreaterThanOrEqual(0);
-      expect(feature.properties.top).toBeGreaterThan(feature.properties.base);
-      expect(feature.properties.top).toBeLessThanOrEqual(SIGNAL.mastHeight + 0.1);
-    }
-  });
-
-  it('takes the selection gold on its structure but never on its lenses', () => {
-    const picked = trafficLightExtrusions(light({ highlighted: true, priority: activity('granted') }));
-    const mast = picked.find((f) => f.properties.part === 'mast')!;
-    expect(mast.properties.color).toBe(SELECTED_COLOR);
-    // The lit lens still says what was asked. Recolouring it to mean
-    // "selected" would overwrite the one thing the signal exists to show.
-    expect(picked.filter((f) => f.properties.part === 'lens')
-      .map((f) => f.properties.color)).toContain(SIGNAL_GREEN);
-    expect(picked.filter((f) => f.properties.part === 'lens')
-      .some((f) => f.properties.color === SELECTED_COLOR)).toBe(false);
-  });
-
-  it('draws a signal with no known street bearing rather than dropping it', () => {
-    expect(partsOf(light({ bearing: null })).length).toBeGreaterThan(0);
-  });
-});
-
-describe('trafficLightStates', () => {
-  const feature = (id: number, type: 'traffic_light' | 'warning_light' = 'traffic_light'):
-    TrafficLightFeature => ({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: HELSINKI },
-      properties: { id, type, junction: `Junction ${id}` },
-    });
-
-  it('attaches the live exchange to the junction it names, and nothing to the rest', () => {
-    const priorities = signalPriorityIndex([vehicle({ tlp: tlp({ junction: 75 }) })]);
-    const states = trafficLightStates([feature(75), feature(76)], priorities, () => 90);
-    expect(states[0].priority?.status).toBe('requesting');
-    expect(states[0].priority?.vehicles).toHaveLength(1);
-    expect(states[0].bearing).toBe(90);
-    expect(states[1].priority).toBeNull();
-  });
-
-  it('marks only the selected junction as the one open in the panel', () => {
-    const states = trafficLightStates(
-      [feature(75), feature(76)], signalPriorityIndex([]), () => null, 76,
-    );
-    expect(states[0].highlighted).toBe(false);
-    expect(states[1].highlighted).toBe(true);
-  });
-});
-
 // The layer paint expressions are only validated by MapLibre at runtime, in a
 // browser; one bad ramp silently drops the layer, and takes the layers anchored
 // to it with it. Same guard the stop and bike styles carry.
 describe('zoom ramps', () => {
   const evaluate = (expression: unknown, property: string, zoom: number) => {
-    const spec = (property === 'icon-opacity'
-      ? v8['paint_symbol']['icon-opacity']
-      : v8['paint_fill-extrusion']['fill-extrusion-opacity']) as StylePropertySpecification;
+    const spec = v8['paint_symbol']['icon-opacity'] as StylePropertySpecification;
     const compiled = createPropertyExpression(expression, property, spec);
     if (compiled.result === 'error') throw new Error(`invalid ${property} expression`);
     return compiled.value.evaluate({ zoom }, {} as never);
   };
 
-  it('fades the masts in over the band where a metre is worth a pixel', () => {
-    expect(evaluate(TRAFFIC_LIGHT_3D_FADE_IN, 'fill-extrusion-opacity', TRAFFIC_LIGHT_3D_MIN_ZOOM))
-      .toBe(0);
-    expect(evaluate(TRAFFIC_LIGHT_3D_FADE_IN, 'fill-extrusion-opacity', TRAFFIC_LIGHT_3D_FULL_ZOOM))
-      .toBeGreaterThan(0.9);
-  });
-
-  it('brings the marker in at street level on the flat map and leaves it there', () => {
+  it('brings the marker in at street level and leaves it there, at every zoom above', () => {
     expect(evaluate(TRAFFIC_LIGHT_ICON_OPACITY, 'icon-opacity', TRAFFIC_LIGHT_MIN_ZOOM)).toBe(0);
     expect(evaluate(TRAFFIC_LIGHT_ICON_OPACITY, 'icon-opacity', TRAFFIC_LIGHT_FULL_ZOOM)).toBe(1);
     expect(evaluate(TRAFFIC_LIGHT_ICON_OPACITY, 'icon-opacity', 18)).toBe(1);
   });
 
-  it('hands the marker over to the mast in 3D rather than stacking the two', () => {
-    expect(evaluate(TRAFFIC_LIGHT_ICON_OPACITY_3D, 'icon-opacity', TRAFFIC_LIGHT_FULL_ZOOM)).toBe(1);
-    expect(evaluate(TRAFFIC_LIGHT_ICON_OPACITY_3D, 'icon-opacity', TRAFFIC_LIGHT_3D_MIN_ZOOM))
-      .toBe(1);
-    expect(evaluate(TRAFFIC_LIGHT_ICON_OPACITY_3D, 'icon-opacity', TRAFFIC_LIGHT_3D_FULL_ZOOM))
-      .toBe(0);
-  });
-
-  it('brings the mast in after the marker is fully up', () => {
-    expect(TRAFFIC_LIGHT_FULL_ZOOM).toBeLessThan(TRAFFIC_LIGHT_3D_MIN_ZOOM);
-    expect(TRAFFIC_LIGHT_3D_MIN_ZOOM).toBeLessThan(TRAFFIC_LIGHT_3D_FULL_ZOOM);
-  });
 });
