@@ -756,6 +756,13 @@ function App() {
   // sitting on top of the sheet's own header.
   const mobileSheetOpen = isMobile && activeMobileTab !== null;
 
+  // The timelapse takes the whole map over. Everything that belongs to *now* —
+  // the line filters, the mode and view chips, the journey planner, the
+  // departures board, the phone's tab bar — steps aside while history plays, so
+  // the scrubber is the only control on screen and nothing offers a live answer
+  // beside an hour-old tram. They all come back on exit.
+  const replayActive = replay.active;
+
   // Every bar button toggles: tapping the open sheet closes it back to the map.
   const handleMobileTabSelect = (tab: MobileTab) => {
     if (tab === 'details') {
@@ -807,25 +814,27 @@ function App() {
         timeScale={replay.timeScale}
       />
 
-      {/* Sidebar Filters Panel */}
-      <FilterPanel
-        trams={trams}
-        selectedLines={selectedLines}
-        onToggleLine={handleToggleLine}
-        onClearFilters={handleClearFilters}
-        connectionStatus={connectionStatus}
-        isCollapsed={isFilterCollapsed}
-        onToggleCollapse={() => setIsFilterCollapsed(!isFilterCollapsed)}
-        showTrams={showTrams}
-        showBuses={showBuses}
-        showMetro={showMetro}
-        showTrains={showTrains}
-        showFerries={showFerries}
-        alerts={alerts}
-        selectedTram={liveTram}
-        selectedStop={selectedStop}
-        selectedStopRoutes={selectedStopRoutes}
-      />
+      {/* Sidebar Filters Panel — hidden while the timelapse owns the screen */}
+      {!replayActive && (
+        <FilterPanel
+          trams={trams}
+          selectedLines={selectedLines}
+          onToggleLine={handleToggleLine}
+          onClearFilters={handleClearFilters}
+          connectionStatus={connectionStatus}
+          isCollapsed={isFilterCollapsed}
+          onToggleCollapse={() => setIsFilterCollapsed(!isFilterCollapsed)}
+          showTrams={showTrams}
+          showBuses={showBuses}
+          showMetro={showMetro}
+          showTrains={showTrains}
+          showFerries={showFerries}
+          alerts={alerts}
+          selectedTram={liveTram}
+          selectedStop={selectedStop}
+          selectedStopRoutes={selectedStopRoutes}
+        />
+      )}
 
       {/* Floating top-center tram telemetry card */}
       {liveTram && liveTram.veh !== '0' && (
@@ -908,7 +917,7 @@ function App() {
       <JourneySearch
         onSelectionChange={setJourney}
         onOpenChange={handleJourneyOpenChange}
-        hidden={departuresOpen || !!(liveTram && liveTram.veh !== '0')}
+        hidden={replayActive || departuresOpen || !!(liveTram && liveTram.veh !== '0')}
         isMobile={isMobile}
         alerts={alerts}
         vehicles={vehicles}
@@ -919,7 +928,7 @@ function App() {
       />
       <DeparturesPanel
         isMobile={isMobile}
-        hidden={journeyOpen || !!(liveTram && liveTram.veh !== '0')}
+        hidden={replayActive || journeyOpen || !!(liveTram && liveTram.veh !== '0')}
         onOpenChange={setDeparturesOpen}
         onSelectStop={(stop, extras) =>
           handleSelectStop(stop.gtfsId, stop.name, stop.code, stop.lat, stop.lon, undefined, undefined, extras)}
@@ -927,7 +936,7 @@ function App() {
 
       {/* Quick vehicle-mode shortcuts (top-right corner) */}
       <ModeToggles
-        hidden={mobileSheetOpen}
+        hidden={mobileSheetOpen || replayActive}
         showTrams={showTrams}
         setShowTrams={setShowTrams}
         showBuses={showBuses}
@@ -942,7 +951,7 @@ function App() {
 
       {/* Map view shortcuts: light/dark and 3D (top-left corner) */}
       <ViewToggles
-        hidden={mobileSheetOpen}
+        hidden={mobileSheetOpen || replayActive}
         mapTheme={mapTheme}
         setMapTheme={setMapTheme}
         satelliteAvailable={satelliteAvailable}
@@ -954,10 +963,13 @@ function App() {
         setShowRoutes={setShowRoutes}
       />
 
-      {/* Version Badge — double-clicking it reveals the timelapse controls */}
-      <VersionBadge onReveal={replay.available ? () => replay.controls.enter() : undefined} />
+      {/* Version Badge — clicking it reveals the timelapse controls. Once they
+          are open the panel carries its own exit, so the badge steps aside too. */}
+      {!replayActive && (
+        <VersionBadge onReveal={replay.available ? () => replay.controls.enter() : undefined} />
+      )}
 
-      {replay.active && (
+      {replayActive && (
         <TimelapsePanel
           cursor={replay.cursor}
           range={replay.range}
@@ -976,7 +988,7 @@ function App() {
       )}
 
       {/* Mobile bottom tab bar: toggles the settings, lines, and details sheets */}
-      {isMobile && (
+      {isMobile && !replayActive && (
         <BottomNav
           active={activeMobileTab}
           hasDetails={hasDetailSelection}

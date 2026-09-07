@@ -68,6 +68,14 @@ describe('TimelapsePanel', () => {
     expect(markup).not.toContain('Loading history');
   });
 
+  it('says nothing at all when there is nothing to report', () => {
+    // The status line is a row of the map; it is spent only on a gap, a load or
+    // an error, never on standing text.
+    const markup = render();
+    expect(markup).not.toContain('timelapse-panel__status');
+    expect(markup).toContain('timelapse-panel__track'); // the panel did render
+  });
+
   it('always offers a way back to the live map', () => {
     expect(render()).toContain('Live');
   });
