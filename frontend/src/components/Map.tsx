@@ -1742,8 +1742,21 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     timeScaleRef.current = timeScale;
   }, [timeScale]);
+  // How many seconds of *history* the current window carries. At one times this
+  // is the window itself; at two hundred and forty times a window an eighth of
+  // a second long carries half a minute of travel, which is what the teleport
+  // guard has to be measured against.
+  const stepSecRef = useRef<number>(1);
   const MIN_WINDOW_SEC = 0.7;
   const MAX_WINDOW_SEC = 2.5;
+  // The floor above exists because the live feed speaks once a second and a
+  // window measured shorter than that is a hiccup, not a cadence. A fast replay
+  // genuinely does deliver a snapshot every eighth of a second, and holding it
+  // to seven tenths would mean every glide is cut off at a fifth of its length
+  // by the next one — vehicles crawling a step behind the map and then jumping
+  // to catch up, which is exactly what a fast timelapse looked like. So at
+  // speed the floor is only there to keep the division below finite.
+  const MIN_REPLAY_WINDOW_SEC = 0.03;
 
   /**
    * Where a vehicle should be drawn at the end of the current glide window,
@@ -1915,20 +1928,30 @@ export const Map: React.FC<MapProps> = ({
         // spoke. `easeByAccel` remains the fallback for a vehicle with no
         // anchor: one that has only just appeared, or a metro too far off its
         // tracks to place.
+        //
+        // None of that shaping survives a fast replay, though, and it should
+        // not: past a couple of seconds of history per window the two ends of
+        // the glide are both *measured* positions, several hundred metres
+        // apart, and the honest way between them is a straight constant-rate
+        // line. Easing one in and out of every one of eight windows a second
+        // would make the whole city pulse.
+        const longStep = stepSecRef.current > MAX_WINDOW_SEC;
         const glide = glideRef.current[id];
-        const tPos = glide
-          ? glideFraction(
-              glide.spd,
-              glide.acc,
-              glide.ageStart,
-              t,
-              glide.limits,
-              windowSecRef.current
-            )
-          : easeByAccel(t, acc);
+        const tPos = longStep
+          ? t
+          : glide
+            ? glideFraction(
+                glide.spd,
+                glide.acc,
+                glide.ageStart,
+                t,
+                glide.limits,
+                stepSecRef.current
+              )
+            : easeByAccel(t, acc);
         let lat = lerp(prev.lat, target.lat, tPos);
         let lng = lerp(prev.lng, target.lng, tPos);
-        let hdg = lerpAngle(prev.hdg, target.hdg, smoothstep(t));
+        let hdg = lerpAngle(prev.hdg, target.hdg, longStep ? t : smoothstep(t));
         let renderTrack: TrackPlacement | undefined;
 
         // A rail vehicle that stayed on the same track between two snapshots is
@@ -2247,12 +2270,18 @@ export const Map: React.FC<MapProps> = ({
     // standing still until it catches up.
     if (lastUpdateRef.current > 0) {
       const wallSec = (now - lastUpdateRef.current) / 1000;
-      windowSecRef.current = clamp(wallSec, MIN_WINDOW_SEC, MAX_WINDOW_SEC);
+      const scale = Math.max(timeScaleRef.current, 0.1);
+      const floor = scale > 1 ? MIN_REPLAY_WINDOW_SEC : MIN_WINDOW_SEC;
+      windowSecRef.current = clamp(wallSec, floor, MAX_WINDOW_SEC);
+      // The travel this window covers, which at speed is the step the replay
+      // advanced by rather than the sliver of wall clock it took.
+      stepSecRef.current = windowSecRef.current * scale;
       // Prediction is still bounded by MAX_WINDOW_SEC: a fast replay may hand
       // over eight seconds of travel at a time, but carrying a vehicle eight
-      // seconds forward on a stale speed invents more than it draws.
+      // seconds forward on a stale speed invents more than it draws. Nor is it
+      // ever carried further than the window itself covers.
       dataWindowSecRef.current = clamp(
-        wallSec * Math.max(timeScaleRef.current, 0.1),
+        Math.min(stepSecRef.current, MAX_WINDOW_SEC),
         MIN_WINDOW_SEC,
         MAX_WINDOW_SEC
       );
@@ -2375,9 +2404,14 @@ export const Map: React.FC<MapProps> = ({
       // dead reckoning exists to smooth. At four times it fires on 0.4% of
       // metro steps, 0.04% of tram steps, 0.02% of train steps and no bus step
       // at all — the outliers, and nothing else.
+      // Measured against the history the window covers, not against the wall
+      // clock it took: at sixty times a perfectly ordinary tram moves eight
+      // seconds' worth between snapshots, and a guard sized for one second
+      // would call every one of those a teleport and snap it into place —
+      // turning the whole replay into a slideshow.
       const leap =
         distanceBetween(from, target) >
-        limits.maxSpeed * 4 * Math.max(dataWindowSecRef.current, MIN_WINDOW_SEC);
+        limits.maxSpeed * 4 * Math.max(stepSecRef.current, MIN_WINDOW_SEC);
       newPrev[id] = leap ? target : from;
       newTarget[id] = target;
     });

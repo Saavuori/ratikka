@@ -88,32 +88,44 @@ interface BufferEntry {
  * live map holds, built from history instead of a socket. Seeking backwards
  * rebuilds from the start of what is buffered, which is bounded because the
  * player prunes behind itself.
+ *
+ * Everything here is on the playback tick's critical path, and at two hundred
+ * and forty times a fetch lands several thousand readings twice a second into a
+ * buffer holding tens of thousands. Rebuilding the whole thing on each of those
+ * — re-sorting, re-keying, replaying the cursor from zero — is what a smooth
+ * playback cannot afford, so appends merge and prunes slice.
  */
 export class ReplayBuffer {
   private entries: BufferEntry[] = [];
   private cursor = 0;
   private live = new Map<string, VehiclePosition>();
   private lastTs = Number.NEGATIVE_INFINITY;
+  // The readings held, so a repeat can be recognised without walking the
+  // buffer. Kept in step with `entries` through every path that changes it.
+  private keys = new Set<string>();
 
   /** Adds readings, keeping the buffer sorted and free of repeats. */
   append(samples: VehiclePosition[]): void {
     if (samples.length === 0) return;
 
-    const seen = new Set(this.entries.map((e) => `${e.vehicle.veh}@${e.ts}`));
     const added: BufferEntry[] = [];
+    let earliest = Number.POSITIVE_INFINITY;
     for (const vehicle of samples) {
       const key = `${vehicle.veh}@${vehicle.ts}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      if (this.keys.has(key)) continue;
+      this.keys.add(key);
       added.push({ ts: vehicle.ts, vehicle });
+      if (vehicle.ts < earliest) earliest = vehicle.ts;
     }
     if (added.length === 0) return;
 
-    this.entries = this.entries.concat(added).sort((a, b) => a.ts - b.ts);
-    // A reading may have landed before the cursor — a window that arrived out
-    // of order, or a gap filled in late — so the snapshot is rebuilt rather
-    // than continued.
-    this.reset();
+    added.sort((a, b) => a.ts - b.ts);
+    this.entries = merge(this.entries, added);
+    // A reading may have landed at a moment already played — a window that
+    // arrived out of order, or a gap filled in late — and only then does the
+    // snapshot have to be rebuilt. Readings for moments still ahead of the
+    // cursor land ahead of it in the merge too, and cost nothing.
+    if (earliest <= this.lastTs) this.reset();
   }
 
   /** Every vehicle whose newest reading at or before `ts` is still fresh. */
@@ -146,17 +158,38 @@ export class ReplayBuffer {
    * Drops readings older than `ts`, so a long playback does not accumulate the
    * whole day. Kept generously behind the cursor: a vehicle's last reading has
    * to survive as long as it is still drawn.
+   *
+   * Playback prunes behind a cursor that has already passed the cutoff, and
+   * there the snapshot the buffer holds is still exactly right — only its index
+   * has moved, so it is moved rather than rebuilt, which at speed would
+   * otherwise happen on every tick.
    */
   prune(ts: number): void {
     const cutoff = ts - REPLAY_STALE_SECONDS * 2;
     if (this.entries.length === 0 || this.entries[0].ts >= cutoff) return;
-    this.entries = this.entries.filter((entry) => entry.ts >= cutoff);
-    this.reset();
+
+    let drop = 0;
+    while (drop < this.entries.length && this.entries[drop].ts < cutoff) drop += 1;
+    // Rewriting the buffer is O(n), and at speed the cutoff moves on every
+    // tick, so it is worth doing only once a real share of the buffer is
+    // behind rather than for the handful of readings one tick leaves.
+    if (drop === 0 || (drop < 256 && drop * 4 < this.entries.length)) return;
+
+    for (let i = 0; i < drop; i += 1) {
+      this.keys.delete(`${this.entries[i].vehicle.veh}@${this.entries[i].ts}`);
+    }
+    const consumed = drop <= this.cursor;
+    this.entries = this.entries.slice(drop);
+    // A prune reaching past where the cursor has read invalidates the snapshot
+    // rather than merely shifting it, and that one rebuilds.
+    if (consumed) this.cursor -= drop;
+    else this.reset();
   }
 
   /** Forgets everything, for a seek to somewhere else entirely. */
   clear(): void {
     this.entries = [];
+    this.keys.clear();
     this.reset();
   }
 
@@ -169,6 +202,28 @@ export class ReplayBuffer {
     this.live.clear();
     this.lastTs = Number.NEGATIVE_INFINITY;
   }
+}
+
+/** Two timestamp-sorted runs of readings, merged into one. */
+function merge(left: BufferEntry[], right: BufferEntry[]): BufferEntry[] {
+  if (left.length === 0) return right;
+  if (right.length === 0) return left;
+  // The ordinary case: a fetch that lands entirely after everything held.
+  if (left[left.length - 1].ts <= right[0].ts) return left.concat(right);
+
+  const out: BufferEntry[] = new Array(left.length + right.length);
+  let i = 0;
+  let j = 0;
+  for (let k = 0; k < out.length; k += 1) {
+    if (j >= right.length || (i < left.length && left[i].ts <= right[j].ts)) {
+      out[k] = left[i];
+      i += 1;
+    } else {
+      out[k] = right[j];
+      j += 1;
+    }
+  }
+  return out;
 }
 
 /**
@@ -193,6 +248,39 @@ export function nextFetchSpan(
     return { from: blockFrom, to: blockTo };
   }
   return null;
+}
+
+/**
+ * How many window fetches may be in flight at once.
+ *
+ * One at a time is enough at real time, where a fetch covers two minutes of
+ * playback; at two hundred and forty times it covers half a second, and a
+ * player that spends a round trip idle between requests never builds a runway
+ * and plays into history it does not hold yet — which on the map reads as trams
+ * blinking out. Requests are small and the archive answers them from the page
+ * cache on a second viewing, so a few in parallel is the cheap fix. Kept low
+ * because playback is linear: the runway is short and there is little point
+ * asking for more of it than the next few seconds need.
+ */
+export const MAX_INFLIGHT_FETCHES = 3;
+
+/**
+ * How far past `ts` the fetched spans reach without a hole in them.
+ *
+ * This is what tells playback whether the next step is history it actually
+ * holds. A player that advances regardless draws whatever happens to be in the
+ * buffer — which, running ahead of the data, is a thinning crowd of vehicles
+ * going stale one by one until the fetch lands. Waiting instead is what a video
+ * player does, and it looks like what it is: a pause, not a disappearance.
+ */
+export function coveredUntil(spans: Array<{ from: number; to: number }>, ts: number): number {
+  let reach = ts;
+  const sorted = [...spans].sort((a, b) => a.from - b.from);
+  for (const span of sorted) {
+    if (span.from > reach) break;
+    if (span.to > reach) reach = span.to;
+  }
+  return reach;
 }
 
 /** The instants a replay may be scrubbed between, from the server's index. */
