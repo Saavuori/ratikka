@@ -21,6 +21,9 @@
   - [REST — Traffic Lights (All)](#rest--traffic-lights-all)
   - [REST — Destination Search (Geocode)](#rest--destination-search-geocode)
   - [REST — Journey Plan](#rest--journey-plan)
+  - [REST — Replay Index](#rest--replay-index)
+  - [REST — Replay Window](#rest--replay-window)
+  - [REST — Timelapse](#rest--timelapse)
   - [REST — Health Check](#rest--health-check)
   - [REST — Version Info](#rest--version-info)
 
@@ -370,7 +373,19 @@ form `{ "buses": true }` is still accepted and means `{"modes": {"bus": true}}`.
       "nextStop": "HSL:1203420",
       "ts": 1781461815,
       "tripId": "HSL:1009_20260616_Mo_1_0915",
-      "mode": "tram"
+      "mode": "tram",
+      "tlp": {
+        "status": "granted",
+        "junction": 75,
+        "signalGroup": 673,
+        "signalGroupNbr": 14,
+        "requestId": 219,
+        "requestType": "NORMAL",
+        "level": "normal",
+        "attempts": 1,
+        "protocol": "KAR-MQTT",
+        "ts": 1781461815
+      }
     },
     "18-1245": {
       "veh": "18-1245",
@@ -437,6 +452,26 @@ mode: metro positions come from the signalling system (`loc: "MAN"`), so `dl`,
 `odo`/`drst`. Both units of a coupled metro train publish the same journey
 under different vehicle numbers; the backend keeps one of them, so a metro
 journey appears once.
+
+`tlp` is the vehicle's newest **traffic light priority** exchange, folded in
+from the HFP `tlr` and `tla` event feeds — a tram or bus asking a signalised
+junction for a green, and the junction's answer. It is **omitted entirely**
+unless the vehicle has had such an exchange in the last 25 seconds, which is
+most vehicles most of the time. Only trams and buses carry the equipment; metro
+and commuter trains never report it.
+
+| Field | Description |
+|---|---|
+| `status` | `requesting` — asked, not yet answered. `granted` / `denied` — the junction answered (HFP `ACK`/`NAK`). `norequest` — the vehicle reached a junction it is equipped to ask and deliberately did not; `reason` says why. |
+| `junction` | Signal junction ID (HFP `sid`). **The same number as the `id` on a feature from `/api/v1/traffic-lights`** — both are Helsinki's own junction numbering — so the two can be joined directly to place the exchange on the map. |
+| `signalGroup` / `signalGroupNbr` | The group of lights within the junction the request was aimed at, and the specific light in that group. `signalGroupNbr` may be negative. |
+| `requestId` | Ties a request to its answer; `[0, 255]`. |
+| `requestType` | `NORMAL` (on approach), `DOOR_CLOSE`, `DOOR_OPEN` or `ADVANCE`. |
+| `level` | Priority asked for: `normal`, `high`, or `norequest`. |
+| `reason` | Why no request was sent: `GLOBAL`, `AHEAD`, `LINE` or `PRIOEXEP`. |
+| `attempts` | Attempt sequence number of the current request. |
+| `protocol` | Radio protocol used: `MQTT` or `KAR-MQTT`. |
+| `ts` | The vehicle's own Unix timestamp for the newest event in the exchange. |
 
 The `vehicles` map is keyed by vehicle ID. The frontend replaces its entire state each tick and uses the previous + current positions to lerp.
 
@@ -760,6 +795,11 @@ not say whether a given light is red right now, only where signalized
 junctions exist. Changes rarely, so it's cached for 24 hours server-side
 rather than refetched per request.
 
+What *is* live is what the vehicles ask of these junctions: the `tlp` object on
+a vehicle position (see the WebSocket section above) names a junction by the
+same `id` these features carry, so the two join on equality. That is where "a
+tram is requesting priority at Mannerheimintie/Runeberginkatu" comes from.
+
 | Property | Value |
 |---|---|
 | **Method** | `GET` |
@@ -937,6 +977,118 @@ Transfer warnings subtract walking time from the interval between transit legs.
 They are estimates, not guaranteed connections; scheduled or stale data is
 identified separately. Invalid requests return `400`; upstream errors return
 `502`.
+
+---
+
+### REST — Replay Index
+
+What history the server holds, and where its gaps are. The client draws the
+timeline's shaded stretches from `days`, and scrubs against `serverTime` rather
+than the browser's own clock — a browser running fast would otherwise let the
+scrubber run past the end of the archive.
+
+Coverage is reported per hour rather than per minute: a week is 10,080 minutes,
+and the timeline only needs to know where the gaps are.
+
+| Property | Value |
+|---|---|
+| **Method** | `GET` |
+| **Path** | `/api/v1/replay/index` |
+| **Cache** | `public, max-age=15` |
+
+**Response** `200 OK`:
+
+```json
+{
+  "enabled": true,
+  "modes": ["tram"],
+  "retentionDays": 7,
+  "serverTime": 1757174400,
+  "days": [
+    {
+      "date": "2026-09-06",
+      "hours": { "tram": [60, 60, 0, 0, 0, 0, 12, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60] }
+    }
+  ]
+}
+```
+
+`enabled` is `false` when no archive is configured (`REPLAY_DIR` unset). The
+frontend hides the timelapse gesture entirely in that case rather than offering
+a control that does nothing.
+
+---
+
+### REST — Replay Window
+
+A slice of recorded history for playback. Every sample carries the same field
+names as a live vehicle on the WebSocket, so the map draws a replayed tram with
+the code it already uses for a running one.
+
+| Property | Value |
+|---|---|
+| **Method** | `GET` |
+| **Path** | `/api/v1/replay/window` |
+| **Query** | `from`, `to` (Unix seconds, max 15 minutes apart), `step`, `modes`, `bbox` |
+
+`step` thins the result to at most one reading per vehicle per that many
+seconds, and is how fast playback stays affordable: sixty times real time draws
+the same number of steps as one times, each covering sixty times the ground, so
+it fetches an eighth of the readings rather than sixty times as many. Capped at
+60.
+
+**Response** `200 OK`:
+
+```json
+{
+  "from": 1757174400,
+  "to": 1757174520,
+  "truncated": false,
+  "scanned": 9840,
+  "samples": [
+    {
+      "veh": "0040-456", "desi": "9", "lat": 60.171234, "lng": 24.941234,
+      "hdg": 187, "spd": 8.42, "acc": -0.31, "dl": -45, "drst": 0,
+      "route": "1009", "stop": null, "nextStop": "HSL:1020450",
+      "ts": 1757174401, "tripId": "HSL:1009_20260906_Su_1_1736", "mode": "tram"
+    }
+  ]
+}
+```
+
+A window that finished more than two minutes ago can never change and is served
+`public, max-age=86400, immutable`; one running up to now is still being
+appended to and is `no-store`. `truncated` reports that the server's sample cap
+was reached and later readings in the window are missing.
+
+`503` when no archive is configured; `400` for a reversed, zero-length or
+over-long span.
+
+---
+
+### REST — Timelapse
+
+Every reading that passed through one place over a long span — the query the
+packed archive exists for. A junction over a week is on the order of a hundred
+thousand readings out of tens of millions, so the bounding box is what makes
+the span affordable, and it is required here rather than optional.
+
+| Property | Value |
+|---|---|
+| **Method** | `GET` |
+| **Path** | `/api/v1/replay/timelapse` |
+| **Query** | `from`, `to` (up to the whole retention window), `bbox` (**required**), `step`, `modes` |
+
+`bbox` is `west,south,east,north` in degrees, and may cover at most 0.04 square
+degrees — comfortably more than the tram network, and far less than "the whole
+world for a week".
+
+The response is shaped exactly like [Replay Window](#rest--replay-window).
+`scanned` counts every reading walked, hits and misses together: the filter
+rejects rather than skips, which is what the fixed-width record makes cheap —
+eight bytes are read per rejected reading and nothing is decoded.
+
+`400` for a missing, malformed, inverted or over-large box.
 
 ---
 

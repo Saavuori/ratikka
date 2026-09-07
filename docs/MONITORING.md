@@ -50,6 +50,9 @@ These metrics reflect the internal business logic and ingestion health of the HS
 * `ratikka_active_websocket_clients` (Gauge): The count of active browsers currently streaming live vehicle coordinates. Used to track app usage.
 * `ratikka_mqtt_messages_received_total` (Counter Vec, labeled by `route`): The total count of raw position updates received from the HSL MQTT broker. Used to track ingestion load.
 * `ratikka_mqtt_parse_errors_total` (Counter): The number of MQTT payloads that failed JSON unmarshaling, indicating upstream data structure drift.
+* `ratikka_replay_readings_recorded_total` (Counter Vec, labeled by `mode`): Readings appended to the replay archive. Paired with the ingestion counter above it says whether recording is keeping up with the feed.
+* `ratikka_replay_archive_bytes` (Gauge): What the rolling history occupies on disk, refreshed on each retention sweep. **Alert on this rather than on the sweep running**: a sweep that runs and deletes nothing looks perfectly healthy right up until the volume is full. A week of trams should sit near 1.1 GB.
+* `ratikka_replay_query_duration_seconds` (Histogram Vec, labeled by `kind`): How long archive reads take, split into `window` (playback) and `timelapse` (bounding-box). The packed layout's whole claim is that a boxed scan of a week stays interactive, and this is where that claim is checked in production.
 
 ### Container Resource Metrics
 Collected by cAdvisor to track resource efficiency and isolation across the container network:

@@ -12,6 +12,7 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/prometheus/client_golang/prometheus"
 	"ratikka/internal/cache"
+	"ratikka/internal/replay"
 )
 
 const tramTopic = "/hfp/v2/journey/ongoing/vp/tram/#"
@@ -181,12 +182,23 @@ type VehiclePosition struct {
 	Dir    string   `json:"dir,omitempty"`
 	Oday   string   `json:"oday,omitempty"`
 	Start  string   `json:"start,omitempty"`
+	// Tlp is the vehicle's newest traffic light priority exchange, folded in
+	// from the tlr/tla feeds; see signal_priority.go. Null whenever the
+	// vehicle has not asked a junction for anything recently, which is most
+	// of the time.
+	Tlp *SignalPriority `json:"tlp,omitempty"`
 }
 
 type IngestionWorker struct {
 	client mqtt.Client
 	cache  cache.Cache
 	broker string
+
+	// archive keeps a rolling history of the readings that reach the cache, so
+	// the map can be wound back through it. Nil — the default, and what an
+	// instance with no writable volume gets — records nothing; every method on
+	// it tolerates that, so there is no branch here.
+	archive *replay.Archive
 
 	// enabledModes tracks which optional feeds (bus, metro, train, ferry) are
 	// currently subscribed. Guarded by mu because EnableMode/DisableMode are
@@ -206,12 +218,20 @@ type IngestionWorker struct {
 	// concurrently.
 	dedupeMu     sync.Mutex
 	lastReadings map[string]lastReading
+
+	// tlp holds the newest traffic light priority exchange per vehicle, folded
+	// into that vehicle's next position update; see signal_priority.go.
+	tlp *tlpStore
 }
 
 type metroUnit struct {
 	veh  int
 	seen time.Time
 }
+
+// SetArchive wires the replay archive that records readings as they are
+// ingested. Call once before Start.
+func (w *IngestionWorker) SetArchive(a *replay.Archive) { w.archive = a }
 
 func NewIngestionWorker(broker string, cache cache.Cache) *IngestionWorker {
 	return &IngestionWorker{
@@ -220,6 +240,7 @@ func NewIngestionWorker(broker string, cache cache.Cache) *IngestionWorker {
 		enabledModes: make(map[string]bool),
 		metroUnits:   make(map[string]metroUnit),
 		lastReadings: make(map[string]lastReading),
+		tlp:          newTLPStore(),
 	}
 }
 
@@ -245,6 +266,8 @@ func (w *IngestionWorker) Start(ctx context.Context) error {
 		} else {
 			log.Println("Subscribed to tram topic")
 		}
+		// Trams stream always, and so does what they ask of the traffic lights.
+		w.subscribeTLP(client, "tram")
 
 		w.mu.Lock()
 		wanted := make([]string, 0, len(w.enabledModes))
@@ -319,6 +342,7 @@ func (w *IngestionWorker) DisableMode(mode string) {
 		if token := w.client.Unsubscribe(optionalModeTopics[mode]); token.Wait() && token.Error() != nil {
 			log.Printf("Failed to unsubscribe from %s topic: %v\n", mode, token.Error())
 		}
+		w.unsubscribeTLP(w.client, mode)
 	}
 }
 
@@ -332,6 +356,9 @@ func (w *IngestionWorker) subscribeMode(client mqtt.Client, mode string) {
 	} else {
 		log.Printf("Subscribed to %s topic\n", mode)
 	}
+	// A mode's priority events come and go with its positions: there is
+	// nothing to attach them to while the mode is not being ingested.
+	w.subscribeTLP(client, mode)
 }
 
 func (w *IngestionWorker) Stop() {
@@ -399,7 +426,7 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 	if len(parts) > topicOperator {
 		operator = parts[topicOperator]
 	}
-	vehicleID := fmt.Sprintf("%s-%d", operator, vp.Veh)
+	vehicleID := vehicleKey(operator, vp.Veh)
 
 	nextStop, eol := parseNextStop(parts)
 
@@ -438,6 +465,7 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 		Dir:      vp.Dir,
 		Oday:     vp.Oday,
 		Start:    vp.Start,
+		Tlp:      w.tlp.get(vehicleID, time.Now()),
 	}
 
 	thinnedJSON, err := json.Marshal(thinned)
@@ -452,6 +480,36 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 
 	if err := w.cache.SetPosition(ctx, vehicleID, thinnedJSON); err != nil {
 		log.Printf("Error caching vehicle %s position: %v\n", vehicleID, err)
+	}
+
+	w.archiveReading(thinned, nextStop, eol, stopStr != nil)
+}
+
+// archiveReading files the reading in the replay archive. It is handed the same
+// values the cache was given, after dedupe and after the metro's coupled units
+// have been paired down, so the history holds exactly what the live map showed
+// rather than the raw feed.
+//
+// Errors are logged and swallowed: a full disk or a bad chunk must cost the
+// history, never the live map.
+func (w *IngestionWorker) archiveReading(pos VehiclePosition, nextStop *string, eol, atStop bool) {
+	if !w.archive.Records(pos.Mode) {
+		return
+	}
+
+	next := ""
+	if nextStop != nil {
+		next = *nextStop
+	}
+
+	if err := w.archive.Record(replay.Position{
+		Veh: pos.Veh, Desi: pos.Desi, Route: pos.Route, Dir: pos.Dir,
+		Oday: pos.Oday, Start: pos.Start, TripID: pos.TripId, Mode: pos.Mode,
+		Lat: pos.Lat, Lng: pos.Lng, Hdg: pos.Hdg, Spd: pos.Spd, Acc: pos.Acc,
+		Dl: pos.Dl, Drst: pos.Drst, AtStop: atStop, NextStop: next, EOL: eol,
+		Ts: pos.Ts, Odo: pos.Odo, Oper: pos.Oper, Jrn: pos.Jrn, Occu: pos.Occu,
+	}); err != nil {
+		log.Printf("Error recording vehicle %s to the replay archive: %v\n", pos.Veh, err)
 	}
 }
 
@@ -577,6 +635,14 @@ func nextStopKey(nextStop *string, eol bool) string {
 // from.
 func normalizeDelay(dl int) int {
 	return -dl
+}
+
+// vehicleKey is the identity every feed shares: the operator that owns the
+// vehicle, from the topic, plus the vehicle number painted on its side. It is
+// what joins a priority request on the tlr topic to the position stream of the
+// tram that made it.
+func vehicleKey(operator string, veh int) string {
+	return fmt.Sprintf("%s-%d", operator, veh)
 }
 
 func constructGTFSTripID(route, oday, dir, start string) string {

@@ -6,7 +6,13 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { useTrafficLights } from '../hooks/useTrafficLights';
 import { getRouteColor, getModeAccent } from '../lib/routeColors';
 import { occupancyColor, occupancyFraction, occupancyLabel } from '../lib/occupancy';
-import { classifyStopReason } from '../lib/trafficLights';
+import { classifyStopReason, findJunctionById } from '../lib/trafficLights';
+import {
+  describeSignalPriority,
+  describeRequestType,
+  priorityAccent,
+  SIGNAL_AMBER,
+} from '../lib/trafficLightModels';
 import { tripProgress } from '../lib/nextStop';
 import { VehicleSchematic } from './VehicleSchematic';
 
@@ -126,6 +132,12 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   // a confirmed one.
   const trafficLightFeatures = useTrafficLights();
   const stopReason = classifyStopReason(tram, trafficLightFeatures);
+  // What this tram is asking of the traffic lights right now, from the HFP
+  // tlr/tla feeds. Unlike the junction dataset, this is not an inference: it is
+  // the vehicle's own request and the junction's own answer.
+  const priority = tram.tlp;
+  const priorityColor = priority ? (priorityAccent(priority.status) ?? '#94a3b8') : null;
+  const priorityJunction = findJunctionById(priority?.junction, trafficLightFeatures);
   
   // Calculate wheel speed (seconds per rotation)
   const wheelSpeedCss = isMoving ? `${Math.max(0.1, 3.6 / tram.spd)}s` : '0s';
@@ -428,6 +440,25 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                 </span>
               </div>
 
+              {/* What the tram is asking of the lights, when it is asking */}
+              {priority && priorityColor && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                  marginTop: '6px', padding: '4px 10px', borderRadius: '999px',
+                  background: `${priorityColor}1f`, border: `1px solid ${priorityColor}55`,
+                }}>
+                  <span style={{
+                    width: '6px', height: '6px', borderRadius: '50%',
+                    backgroundColor: priorityColor,
+                    boxShadow: `0 0 6px ${priorityColor}`,
+                  }}/>
+                  <span style={{ fontSize: '0.68rem', fontWeight: 600, color: priorityColor }}>
+                    {describeSignalPriority(priority)}
+                    {priorityJunction ? ` — ${priorityJunction.properties.junction}` : ''}
+                  </span>
+                </div>
+              )}
+
               {/* Why the tram is stopped, when it's not simply at a stop */}
               {stopReason.reason === 'traffic_light' && (
                 <div style={{
@@ -437,7 +468,8 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                 }}>
                   <span style={{ fontSize: '0.7rem' }}>🚦</span>
                   <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#fcbc19' }}>
-                    Likely waiting at traffic lights — {stopReason.junction!.properties.junction}
+                    {stopReason.confirmed ? 'Waiting at traffic lights' : 'Likely waiting at traffic lights'}
+                    {' — '}{stopReason.junction!.properties.junction}
                   </span>
                 </div>
               )}
@@ -744,6 +776,75 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                 )}
               </div>
             </div>
+
+            {/* Traffic light priority, straight off the HFP tlr/tla events */}
+            {priority && (
+              <div style={{
+                background: 'var(--bg-card)', padding: '10px 12px', borderRadius: '10px',
+                border: `1px solid ${priorityColor}33`, fontSize: '0.7rem', color: '#cbd5e1'
+              }}>
+                <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+                  Traffic Light Priority (HFP tlr/tla)
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={11} /> Status</span>
+                    <span style={{ fontWeight: 700, color: priorityColor ?? SIGNAL_AMBER, textTransform: 'uppercase' }}>{priority.status}</span>
+                  </div>
+                  {priority.junction !== undefined && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Compass size={11} /> Junction</span>
+                      <span style={{ textAlign: 'right' }}>
+                        {priorityJunction ? priorityJunction.properties.junction : 'Unknown junction'}
+                        <span style={{ fontFamily: 'monospace', color: '#64748b' }}> #{priority.junction}</span>
+                      </span>
+                    </div>
+                  )}
+                  {priority.requestType && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Request Type</span>
+                      <span>
+                        {priority.requestType}
+                        {describeRequestType(priority.requestType) ? ` (${describeRequestType(priority.requestType)})` : ''}
+                      </span>
+                    </div>
+                  )}
+                  {priority.level && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Priority Level</span>
+                      <span>{priority.level}</span>
+                    </div>
+                  )}
+                  {priority.reason && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Withheld Because</span>
+                      <span style={{ fontFamily: 'monospace' }}>{priority.reason}</span>
+                    </div>
+                  )}
+                  {priority.attempts !== undefined && priority.attempts > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Attempt</span>
+                      <span>#{priority.attempts}</span>
+                    </div>
+                  )}
+                  {priority.signalGroup !== undefined && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Signal Group</span>
+                      <span style={{ fontFamily: 'monospace' }}>
+                        {priority.signalGroup}
+                        {priority.signalGroupNbr !== undefined ? ` / ${priority.signalGroupNbr}` : ''}
+                      </span>
+                    </div>
+                  )}
+                  {priority.protocol && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Radio Protocol</span>
+                      <span style={{ fontFamily: 'monospace' }}>{priority.protocol}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* GPS Telemetry Grid */}
             <div style={{

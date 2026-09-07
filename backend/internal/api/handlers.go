@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 	"ratikka/internal/cache"
+	"ratikka/internal/replay"
 )
 
 var (
@@ -83,6 +84,10 @@ type Handlers struct {
 	// Caching and request coalescing for upstream API queries
 	apiCache *ResponseCache
 	sfGroup  *singleflight.Group
+	// archive is the rolling history the replay endpoints read. Nil when no
+	// history is being recorded, which those endpoints report rather than
+	// failing on.
+	archive *replay.Archive
 }
 
 func NewHandlers(c cache.Cache, gql *GraphQLClient, mqtt interface{ IsConnected() bool }) *Handlers {
