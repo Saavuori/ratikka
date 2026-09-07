@@ -22,7 +22,7 @@
 //     the stop shelters and bike racks are built from, so a signal standing on
 //     a corner belongs to the same scene as the tram waiting at it.
 
-import { offsetMeters, patchRing } from './vehicleModels';
+import { offsetMeters, patchRing, SELECTED_COLOR } from './vehicleModels';
 import { platformColors, type MapTheme } from './stopPlatforms';
 import type { TrafficLightFeature, VehiclePosition, SignalPriority } from '../types';
 
@@ -44,12 +44,19 @@ export type JunctionPriorityStatus = SignalPriority['status'];
 
 export interface JunctionPriority {
   status: JunctionPriorityStatus;
-  /** The vehicle doing the asking, so the marker can name it. */
+  /** The vehicle doing the asking, so the junction can name it. */
   desi: string;
   veh: string;
+  mode: string;
+  /** Where it is and how fast, so "still coming" and "sitting at the line" read differently. */
+  lat: number;
+  lng: number;
+  spd: number;
+  drst: number;
   requestType?: string;
   level?: string;
   reason?: string;
+  attempts?: number;
   ts: number;
 }
 
@@ -57,6 +64,8 @@ export interface JunctionPriority {
 // state wins the marker: an answer outranks a request, and a request outranks
 // a vehicle that decided not to make one. Showing "granted" while another
 // tram is still waiting is the honest summary — the junction *has* answered.
+// It is only the marker that has to pick, though; the junction's own panel
+// lists every vehicle, which is the whole reason the index keeps them all.
 const STATUS_RANK: Record<JunctionPriorityStatus, number> = {
   norequest: 0,
   requesting: 1,
@@ -64,8 +73,26 @@ const STATUS_RANK: Record<JunctionPriorityStatus, number> = {
   granted: 3,
 };
 
+/** Everything currently being asked of one junction. */
+export interface JunctionActivity {
+  /**
+   * Every vehicle in an exchange with this junction right now, most advanced
+   * state first and newest first within a state. A junction on a corner two
+   * tram lines share routinely has more than one.
+   */
+  vehicles: JunctionPriority[];
+  /** The state the junction is drawn in: the leading vehicle's. */
+  status: JunctionPriorityStatus;
+}
+
 /** Live exchanges by junction ID. */
-export type JunctionPriorityIndex = Map<number, JunctionPriority>;
+export type JunctionPriorityIndex = Map<number, JunctionActivity>;
+
+/** Sorts an exchange list the way a junction's panel reads it. */
+function byPrecedence(a: JunctionPriority, b: JunctionPriority): number {
+  const rank = STATUS_RANK[b.status] - STATUS_RANK[a.status];
+  return rank !== 0 ? rank : b.ts - a.ts;
+}
 
 /**
  * Fold the priority exchanges reported by vehicles onto the junctions they
@@ -75,29 +102,51 @@ export type JunctionPriorityIndex = Map<number, JunctionPriority>;
 export function signalPriorityIndex(
   vehicles: Iterable<VehiclePosition>,
 ): JunctionPriorityIndex {
-  const index = new Map<number, JunctionPriority>();
+  const byJunction = new Map<number, JunctionPriority[]>();
   for (const vehicle of vehicles) {
     const tlp = vehicle.tlp;
     if (!tlp || typeof tlp.junction !== 'number') continue;
-    const next: JunctionPriority = {
+    const entry: JunctionPriority = {
       status: tlp.status,
       desi: vehicle.desi,
       veh: vehicle.veh,
+      mode: vehicle.mode,
+      lat: vehicle.lat,
+      lng: vehicle.lng,
+      spd: vehicle.spd,
+      drst: vehicle.drst,
       requestType: tlp.requestType,
       level: tlp.level,
       reason: tlp.reason,
+      attempts: tlp.attempts,
       ts: tlp.ts,
     };
-    const current = index.get(tlp.junction);
-    if (
-      !current ||
-      STATUS_RANK[next.status] > STATUS_RANK[current.status] ||
-      (STATUS_RANK[next.status] === STATUS_RANK[current.status] && next.ts > current.ts)
-    ) {
-      index.set(tlp.junction, next);
-    }
+    const list = byJunction.get(tlp.junction);
+    if (list) list.push(entry);
+    else byJunction.set(tlp.junction, [entry]);
+  }
+
+  const index: JunctionPriorityIndex = new Map();
+  for (const [junction, list] of byJunction) {
+    list.sort(byPrecedence);
+    index.set(junction, { vehicles: list, status: list[0].status });
   }
   return index;
+}
+
+/**
+ * The vehicles at a junction split the way the panel shows them: the ones the
+ * junction has answered, and the ones still asking. A vehicle that decided not
+ * to ask is in neither — it is at the junction, not negotiating with it.
+ */
+export function splitByOutcome(activity: JunctionActivity | null | undefined) {
+  const vehicles = activity?.vehicles ?? [];
+  return {
+    granted: vehicles.filter((v) => v.status === 'granted'),
+    denied: vehicles.filter((v) => v.status === 'denied'),
+    requesting: vehicles.filter((v) => v.status === 'requesting'),
+    silent: vehicles.filter((v) => v.status === 'norequest'),
+  };
 }
 
 /** Which lens a state lights, and the accent the marker is ringed in. */
@@ -256,8 +305,10 @@ export interface TrafficLightState {
    * north-south, because a signal at a guessed angle is still a signal.
    */
   bearing: number | null;
-  /** The live exchange at this junction, if a vehicle is having one. */
-  priority?: JunctionPriority | null;
+  /** The live exchanges at this junction, if any vehicle is having one. */
+  priority?: JunctionActivity | null;
+  /** This junction is the one open in the panel. */
+  highlighted?: boolean;
 }
 
 export type TrafficLightPart =
@@ -360,6 +411,11 @@ export function trafficLightExtrusions(
   const hdg = light.bearing ?? DEFAULT_SIGNAL_BEARING;
   const status = light.priority?.status ?? null;
   const accent = priorityAccent(status);
+  // The selected junction takes the same gold a selected stop or vehicle does,
+  // on the structure only: the lenses go on saying what was asked, because
+  // that is the one thing about a signal that must not be recoloured to mean
+  // "you clicked me".
+  const structure = light.highlighted ? SELECTED_COLOR : MAST;
 
   // The mast stands beside the street rather than on the junction point, so
   // the signals of a crossroads do not pile up on top of each other.
@@ -417,7 +473,7 @@ export function trafficLightExtrusions(
     // stack and nothing to say about priority.
     patch('foot', [-SIGNAL.footRadius, SIGNAL.footRadius], [-SIGNAL.footRadius, SIGNAL.footRadius],
       palette.extrusion, 0, SIGNAL.footHeight);
-    patch('mast', [-0.06, 0.06], [-0.06, 0.06], MAST, SIGNAL.footHeight, 2.6);
+    patch('mast', [-0.06, 0.06], [-0.06, 0.06], structure, SIGNAL.footHeight, 2.6);
     patch('case', [-0.2, 0.2], [-0.14, 0.14], HEAD_DARK, 2.15, 2.75);
     patch('lens', [-0.1, 0.1], [-0.14 - SIGNAL.lens.proud, -0.14], SIGNAL_AMBER, 2.32, 2.58);
     return out;
@@ -427,12 +483,12 @@ export function trafficLightExtrusions(
   patch('foot', [-SIGNAL.footRadius, SIGNAL.footRadius], [-SIGNAL.footRadius, SIGNAL.footRadius],
     palette.extrusion, 0, SIGNAL.footHeight);
   patch('mast', [-SIGNAL.mastWidth / 2, SIGNAL.mastWidth / 2],
-    [-SIGNAL.mastWidth / 2, SIGNAL.mastWidth / 2], MAST, SIGNAL.footHeight, SIGNAL.mastHeight);
+    [-SIGNAL.mastWidth / 2, SIGNAL.mastWidth / 2], structure, SIGNAL.footHeight, SIGNAL.mastHeight);
 
   // 3. The cantilever arm reaching out over the carriageway, with the second
   //    head hanging off its end — the one a driver actually reads.
   patch('arm', [-SIGNAL.arm.thickness / 2, SIGNAL.arm.thickness / 2],
-    [-SIGNAL.arm.length, 0], MAST, SIGNAL.arm.height - SIGNAL.arm.thickness, SIGNAL.arm.height);
+    [-SIGNAL.arm.length, 0], structure, SIGNAL.arm.height - SIGNAL.arm.thickness, SIGNAL.arm.height);
 
   const h = SIGNAL.head;
   // Two heads: one on the mast facing the street, one under the arm.
@@ -488,6 +544,7 @@ export function trafficLightStates(
   features: TrafficLightFeature[],
   priorities: JunctionPriorityIndex,
   bearingOf: (lngLat: [number, number]) => number | null,
+  selectedJunctionId: number | null = null,
 ): TrafficLightState[] {
   return features.map((feature) => {
     const [lng, lat] = feature.geometry.coordinates;
@@ -498,6 +555,7 @@ export function trafficLightStates(
       kind: feature.properties.type,
       bearing: bearingOf([lng, lat]),
       priority: priorities.get(feature.properties.id) ?? null,
+      highlighted: selectedJunctionId !== null && feature.properties.id === selectedJunctionId,
     };
   });
 }
@@ -553,5 +611,6 @@ export const TRAFFIC_LIGHT_LIMIT = 40;
 
 export const TRAFFIC_LIGHT_SOURCE = 'traffic-lights';
 export const TRAFFIC_LIGHT_ICON_LAYER = 'traffic-lights-icons';
+export const TRAFFIC_LIGHT_SELECTION_LAYER = 'traffic-lights-selected';
 export const TRAFFIC_LIGHT_3D_SOURCE = 'traffic-light-furniture';
 export const TRAFFIC_LIGHT_3D_LAYER = 'traffic-lights-3d';

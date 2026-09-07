@@ -3,6 +3,7 @@ import { createPropertyExpression, v8 } from '@maplibre/maplibre-gl-style-spec';
 import type { StylePropertySpecification } from '@maplibre/maplibre-gl-style-spec';
 import {
   signalPriorityIndex,
+  splitByOutcome,
   priorityAccent,
   describeSignalPriority,
   describeRequestType,
@@ -25,8 +26,9 @@ import {
   TRAFFIC_LIGHT_ICON_OPACITY,
   TRAFFIC_LIGHT_ICON_OPACITY_3D,
 } from './trafficLightModels';
-import type { TrafficLightState } from './trafficLightModels';
+import type { TrafficLightState, JunctionActivity } from './trafficLightModels';
 import { metersBetween } from './stopModels';
+import { SELECTED_COLOR } from './vehicleModels';
 import type { VehiclePosition, TrafficLightFeature, SignalPriority } from '../types';
 
 const HELSINKI: [number, number] = [24.94, 60.17];
@@ -64,6 +66,15 @@ const light = (over: Partial<TrafficLightState> = {}): TrafficLightState => ({
   ...over,
 });
 
+/** One vehicle in an exchange with a junction, as the index hands it over. */
+const activity = (status: SignalPriority['status']): JunctionActivity => ({
+  status,
+  vehicles: [{
+    status, desi: '10B', veh: '0040-407', mode: 'tram',
+    lat: HELSINKI[1], lng: HELSINKI[0], spd: 0, drst: 0, ts: 1,
+  }],
+});
+
 const partsOf = (s: TrafficLightState) =>
   trafficLightExtrusions(s).map((f) => f.properties.part);
 
@@ -73,7 +84,7 @@ describe('signalPriorityIndex', () => {
       vehicle({ tlp: tlp({ junction: 75 }) }),
       vehicle({ veh: '0040-408', desi: '3', tlp: tlp({ junction: 80, status: 'granted' }) }),
     ]);
-    expect(index.get(75)?.desi).toBe('10B');
+    expect(index.get(75)?.vehicles[0].desi).toBe('10B');
     expect(index.get(80)?.status).toBe('granted');
   });
 
@@ -88,7 +99,7 @@ describe('signalPriorityIndex', () => {
       vehicle({ veh: 'b', tlp: tlp({ status: 'granted', ts: 10 }) }),
     ]);
     expect(index.get(75)?.status).toBe('granted');
-    expect(index.get(75)?.veh).toBe('b');
+    expect(index.get(75)?.vehicles[0].veh).toBe('b');
   });
 
   it('breaks a tie between equal states on the newer one', () => {
@@ -96,7 +107,52 @@ describe('signalPriorityIndex', () => {
       vehicle({ veh: 'old', tlp: tlp({ ts: 10 }) }),
       vehicle({ veh: 'new', tlp: tlp({ ts: 20 }) }),
     ]);
-    expect(index.get(75)?.veh).toBe('new');
+    expect(index.get(75)?.vehicles[0].veh).toBe('new');
+  });
+});
+
+describe('signalPriorityIndex keeps every vehicle', () => {
+  // The marker can only show one state, but the junction's own panel has to
+  // list everyone: a corner two tram lines share routinely has more than one
+  // vehicle negotiating with it at the same moment.
+  const index = () => signalPriorityIndex([
+    vehicle({ veh: 'a', desi: '10', tlp: tlp({ status: 'granted', ts: 10 }) }),
+    vehicle({ veh: 'b', desi: '3', tlp: tlp({ status: 'requesting', ts: 30 }) }),
+    vehicle({ veh: 'c', desi: '7', tlp: tlp({ status: 'granted', ts: 20 }) }),
+    vehicle({ veh: 'd', desi: '9', tlp: tlp({ status: 'norequest', reason: 'AHEAD', ts: 40 }) }),
+  ]);
+
+  it('lists them all at the junction, most advanced state first', () => {
+    const activity = index().get(75)!;
+    expect(activity.vehicles.map((v) => v.veh)).toEqual(['c', 'a', 'b', 'd']);
+    // The junction is drawn in the leading vehicle's state.
+    expect(activity.status).toBe('granted');
+  });
+
+  it('carries what the panel needs to describe each vehicle', () => {
+    const first = index().get(75)!.vehicles[0];
+    expect(first.desi).toBe('7');
+    expect(first.mode).toBe('tram');
+    expect(first.lat).toBe(HELSINKI[1]);
+    expect(typeof first.spd).toBe('number');
+  });
+
+  it('splits them into what was granted, asked and refused', () => {
+    const split = splitByOutcome(index().get(75)!);
+    expect(split.granted.map((v) => v.veh)).toEqual(['c', 'a']);
+    expect(split.requesting.map((v) => v.veh)).toEqual(['b']);
+    expect(split.denied).toEqual([]);
+    // A vehicle that decided not to ask is at the junction, not negotiating
+    // with it, so it is in neither of the first two.
+    expect(split.silent.map((v) => v.veh)).toEqual(['d']);
+  });
+
+  it('splits nothing into empty lists rather than throwing', () => {
+    const split = splitByOutcome(null);
+    expect(split.granted).toEqual([]);
+    expect(split.requesting).toEqual([]);
+    expect(split.denied).toEqual([]);
+    expect(split.silent).toEqual([]);
   });
 });
 
@@ -200,17 +256,17 @@ describe('trafficLightExtrusions', () => {
   it('draws the state disc only while something is being asked', () => {
     expect(partsOf(light())).not.toContain('halo');
     expect(partsOf(light({
-      priority: { status: 'requesting', desi: '10B', veh: 'a', ts: 1 },
+      priority: activity('requesting'),
     }))).toContain('halo');
     // A vehicle deciding not to ask lights nothing, so there is no disc.
     expect(partsOf(light({
-      priority: { status: 'norequest', desi: '10B', veh: 'a', ts: 1 },
+      priority: activity('norequest'),
     }))).not.toContain('halo');
   });
 
   it('lights the lens matching the state, on both heads', () => {
     const lit = (status: 'requesting' | 'granted' | 'denied', color: string) =>
-      trafficLightExtrusions(light({ priority: { status, desi: '10B', veh: 'a', ts: 1 } }))
+      trafficLightExtrusions(light({ priority: activity(status) }))
         .filter((f) => f.properties.part === 'lens' && f.properties.color === color).length;
     expect(lit('granted', SIGNAL_GREEN)).toBe(2);
     expect(lit('requesting', SIGNAL_AMBER)).toBe(2);
@@ -239,7 +295,7 @@ describe('trafficLightExtrusions', () => {
 
   it('rings the junction itself, where the marker was, and leaves the middle clear', () => {
     const halo = trafficLightExtrusions(light({
-      priority: { status: 'granted', desi: '10B', veh: 'a', ts: 1 },
+      priority: activity('granted'),
     })).find((f) => f.properties.part === 'halo')!;
     // Two rings: the band, and the hole punched out of it. A single ring would
     // be a filled disc, which buries the junction it is meant to mark.
@@ -269,6 +325,18 @@ describe('trafficLightExtrusions', () => {
     }
   });
 
+  it('takes the selection gold on its structure but never on its lenses', () => {
+    const picked = trafficLightExtrusions(light({ highlighted: true, priority: activity('granted') }));
+    const mast = picked.find((f) => f.properties.part === 'mast')!;
+    expect(mast.properties.color).toBe(SELECTED_COLOR);
+    // The lit lens still says what was asked. Recolouring it to mean
+    // "selected" would overwrite the one thing the signal exists to show.
+    expect(picked.filter((f) => f.properties.part === 'lens')
+      .map((f) => f.properties.color)).toContain(SIGNAL_GREEN);
+    expect(picked.filter((f) => f.properties.part === 'lens')
+      .some((f) => f.properties.color === SELECTED_COLOR)).toBe(false);
+  });
+
   it('draws a signal with no known street bearing rather than dropping it', () => {
     expect(partsOf(light({ bearing: null })).length).toBeGreaterThan(0);
   });
@@ -286,8 +354,17 @@ describe('trafficLightStates', () => {
     const priorities = signalPriorityIndex([vehicle({ tlp: tlp({ junction: 75 }) })]);
     const states = trafficLightStates([feature(75), feature(76)], priorities, () => 90);
     expect(states[0].priority?.status).toBe('requesting');
+    expect(states[0].priority?.vehicles).toHaveLength(1);
     expect(states[0].bearing).toBe(90);
     expect(states[1].priority).toBeNull();
+  });
+
+  it('marks only the selected junction as the one open in the panel', () => {
+    const states = trafficLightStates(
+      [feature(75), feature(76)], signalPriorityIndex([]), () => null, 76,
+    );
+    expect(states[0].highlighted).toBe(false);
+    expect(states[1].highlighted).toBe(true);
   });
 });
 
