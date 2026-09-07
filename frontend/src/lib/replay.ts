@@ -289,6 +289,38 @@ export function coverageMarks(
 }
 
 /**
+ * The most recent moment the archive holds anything for, or null when it holds
+ * nothing at all.
+ *
+ * A replay opened without a moment in mind starts an hour back, which is the
+ * right place in a week of history and the wrong one in an archive that has
+ * been recording for ten minutes — there the panel would open onto an empty map
+ * and read as broken. Landing on the newest recorded hour instead means the
+ * first thing a reader sees is trams moving.
+ *
+ * Resolved to the middle of that hour: coverage is reported per hour, and its
+ * final minutes are the ones a recording still in progress may not have written
+ * yet.
+ */
+export function newestCoverage(days: ReplayDayCoverage[] | null): number | null {
+  if (!days?.length) return null;
+
+  let newest: number | null = null;
+  for (const day of days) {
+    const midnight = Date.parse(`${day.date}T00:00:00${helsinkiOffset(day.date)}`) / 1000;
+    if (!Number.isFinite(midnight)) continue;
+
+    for (let hour = 23; hour >= 0; hour -= 1) {
+      if (!Object.values(day.hours).some((hours) => (hours[hour] ?? 0) > 0)) continue;
+      const mid = midnight + hour * 3600 + 1800;
+      if (newest === null || mid > newest) newest = mid;
+      break;
+    }
+  }
+  return newest;
+}
+
+/**
  * Helsinki's UTC offset on a given date: +03:00 through summer time, +02:00
  * outside it. Derived from the zone itself rather than from a rule, so it stays
  * right when the changeover dates move.
