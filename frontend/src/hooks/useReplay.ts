@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchReplayIndex, fetchReplayWindow } from '../lib/api';
 import {
   hasCoverage,
+  newestCoverage,
   nextFetchSpan,
   playbackPlan,
   prefetchHorizon,
@@ -136,8 +137,18 @@ export function useReplay(): ReplayState & { controls: ReplayControls } {
       if (!index?.enabled) return;
       const bounds = replayRange(serverNow(), index.retentionDays);
       // Opened without a moment in mind, a replay starts an hour back: recent
-      // enough to recognise, long enough ago to be worth watching.
-      const start = at ?? Math.max(bounds.from, bounds.to - 3600);
+      // enough to recognise, long enough ago to be worth watching. An archive
+      // younger than that hour has nothing there, though — a server that
+      // started recording this morning, or ten minutes ago — and a panel
+      // opening onto an empty map reads as a broken feature rather than as a
+      // young one. Where the hour is empty, it opens on the newest hour that
+      // holds anything.
+      const hourBack = Math.max(bounds.from, bounds.to - 3600);
+      const start =
+        at ??
+        (hasCoverage(index.days, hourBack)
+          ? hourBack
+          : newestCoverage(index.days) ?? hourBack);
       seek(Math.min(Math.max(start, bounds.from), bounds.to));
       setActive(true);
       setPlaying(true);

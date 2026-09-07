@@ -18,11 +18,15 @@ type Config struct {
 	NoRedis           bool
 
 	// ReplayDir is where the rolling history of vehicle positions is written.
-	// Empty — the default — records nothing, because an instance without a
-	// volume mounted for it would otherwise fill its own container layer.
+	// Recording is on by default, into DefaultReplayDir: an instance that never
+	// sets the variable still has a timelapse, which is the whole point of the
+	// feature. REPLAY_DIR=off records nothing.
 	ReplayDir string
 	// ReplayRetentionDays is how far back the history reaches. A week of trams
-	// is about 1.1 GB.
+	// is about 1.1 GB — which is why an instance that named no directory keeps
+	// DefaultUnconfiguredRetentionDays instead: with no volume mounted the
+	// archive lands in the container's own layer, and a day of trams (~160 MB)
+	// is a size that layer can carry and a deploy can afford to lose.
 	ReplayRetentionDays int
 	// ReplayModes are the vehicle modes recorded. Trams only by default: they
 	// are the one mode ingested unconditionally, so theirs is the only history
@@ -109,6 +113,25 @@ func parseModes(raw string) []string {
 	return modes
 }
 
+// DefaultReplayDir is where history goes when REPLAY_DIR says nothing. The
+// deployment's compose file mounts a volume here; an instance without one still
+// records, into its own container layer, at the shorter retention below.
+const DefaultReplayDir = "/data/replay"
+
+// DefaultUnconfiguredRetentionDays is how much history an instance keeps when it
+// never named a directory to keep it in.
+const DefaultUnconfiguredRetentionDays = 1
+
+// ReplayOff reports whether REPLAY_DIR is the explicit opt-out. Recording is on
+// by default, so switching it off takes a word rather than an empty string.
+func ReplayOff(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "off", "none", "no", "false", "0", "-":
+		return true
+	}
+	return false
+}
+
 func LoadConfig() *Config {
 	loadDotEnv()
 
@@ -121,6 +144,20 @@ func LoadConfig() *Config {
 		ReplayDir:           os.Getenv("REPLAY_DIR"),
 		ReplayRetentionDays: parsePositiveInt(os.Getenv("REPLAY_RETENTION_DAYS"), 7),
 		ReplayModes:         parseModes(os.Getenv("REPLAY_MODES")),
+	}
+
+	// Recording defaults on. An instance that named no directory gets the
+	// default one and a day of history rather than a week, because with no
+	// volume mounted there the archive is writing into the container's own
+	// layer. An explicit REPLAY_DIR is a deployment that has decided where its
+	// history lives, and keeps whatever retention it asked for.
+	if ReplayOff(os.Getenv("REPLAY_DIR")) {
+		cfg.ReplayDir = ""
+	} else if cfg.ReplayDir == "" {
+		cfg.ReplayDir = DefaultReplayDir
+		if os.Getenv("REPLAY_RETENTION_DAYS") == "" {
+			cfg.ReplayRetentionDays = DefaultUnconfiguredRetentionDays
+		}
 	}
 
 	// Fallback/defaults

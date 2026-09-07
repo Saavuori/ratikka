@@ -1026,9 +1026,13 @@ and the timeline only needs to know where the gaps are.
 }
 ```
 
-`enabled` is `false` when no archive is configured (`REPLAY_DIR` unset). The
-frontend hides the timelapse gesture entirely in that case rather than offering
-a control that does nothing.
+`enabled` is `false` only where recording was turned off (`REPLAY_DIR=off`) or
+the archive could not be opened. Recording is otherwise on by default, into
+`/data/replay`: an instance that says nothing about replay still has a
+timelapse, and one that names no directory keeps a day rather than a week,
+because with no volume mounted there the archive is writing into the
+container's own layer. Where `enabled` is `false` the frontend hides the
+timelapse entirely rather than offering a control that does nothing.
 
 ---
 

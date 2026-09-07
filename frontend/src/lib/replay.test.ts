@@ -6,6 +6,7 @@ import {
   coverageMarks,
   FETCH_SPAN_SECONDS,
   hasCoverage,
+  newestCoverage,
   nextFetchSpan,
   playbackPlan,
   prefetchHorizon,
@@ -265,6 +266,34 @@ describe('coverageMarks', () => {
   it('draws nothing when there is no history', () => {
     expect(coverageMarks(null, dayRange)).toEqual([]);
     expect(coverageMarks([], dayRange)).toEqual([]);
+  });
+});
+
+describe('newestCoverage', () => {
+  it('finds nothing in an archive that holds nothing', () => {
+    expect(newestCoverage(null)).toBeNull();
+    expect(newestCoverage([])).toBeNull();
+    expect(newestCoverage([day('2026-09-06', {})])).toBeNull();
+  });
+
+  it('lands in the middle of the newest recorded hour', () => {
+    const at = newestCoverage([day('2026-09-06', { 12: 60, 14: 3 })]);
+    expect(at).toBe(Date.parse('2026-09-06T14:30:00+03:00') / 1000);
+  });
+
+  it('takes the newest hour across days, whichever order they arrive in', () => {
+    const at = newestCoverage([
+      day('2026-09-05', { 23: 60 }),
+      day('2026-09-06', { 6: 60 }),
+    ]);
+    expect(at).toBe(Date.parse('2026-09-06T06:30:00+03:00') / 1000);
+  });
+
+  it('reaches a server that has only been recording for minutes', () => {
+    // The case this exists for: an archive younger than the hour a replay
+    // otherwise opens at.
+    const at = newestCoverage([day('2026-09-06', { 9: 4 })]);
+    expect(at).toBe(Date.parse('2026-09-06T09:30:00+03:00') / 1000);
   });
 });
 

@@ -48,7 +48,8 @@ services:
       - MQTT_BROKER=tls://mqtt.hsl.fi:8883
       - PORT=8080
       # Rolling history for the timelapse. A week of trams is about 1.1 GB;
-      # unset REPLAY_DIR to record nothing. Buses, metro and trains are
+      # REPLAY_DIR=off records nothing, and leaving it unset records into
+      # /data/replay anyway, keeping a day. Buses, metro and trains are
       # ingested only while somebody is watching them, so recording them would
       # leave a history full of holes — hence trams alone.
       - REPLAY_DIR=/data/replay

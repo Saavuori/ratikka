@@ -61,3 +61,72 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 		t.Errorf("expected NoRedis true, got %t", cfg.NoRedis)
 	}
 }
+
+// Recording is on by default. An instance that says nothing about replay is the
+// case this matters for: the deployment whose compose file predates the feature
+// still records, and still has a timelapse to open.
+func TestLoadConfig_ReplayDefaultsToRecording(t *testing.T) {
+	os.Unsetenv("REPLAY_DIR")
+	os.Unsetenv("REPLAY_RETENTION_DAYS")
+	os.Unsetenv("REPLAY_MODES")
+
+	cfg := LoadConfig()
+
+	if cfg.ReplayDir != DefaultReplayDir {
+		t.Errorf("expected default replay dir %q, got %q", DefaultReplayDir, cfg.ReplayDir)
+	}
+	// A day, not a week: with no volume mounted this is the container's own
+	// layer, and a week of trams is about 1.1 GB.
+	if cfg.ReplayRetentionDays != DefaultUnconfiguredRetentionDays {
+		t.Errorf("expected %d days unconfigured, got %d",
+			DefaultUnconfiguredRetentionDays, cfg.ReplayRetentionDays)
+	}
+	if len(cfg.ReplayModes) != 1 || cfg.ReplayModes[0] != "tram" {
+		t.Errorf("expected trams alone, got %v", cfg.ReplayModes)
+	}
+}
+
+// A deployment that named a directory has decided where its history lives, and
+// keeps the retention it asked for rather than the cautious default.
+func TestLoadConfig_ReplayDirKeepsItsOwnRetention(t *testing.T) {
+	os.Setenv("REPLAY_DIR", "/data/replay")
+	defer os.Unsetenv("REPLAY_DIR")
+	os.Unsetenv("REPLAY_RETENTION_DAYS")
+
+	cfg := LoadConfig()
+
+	if cfg.ReplayDir != "/data/replay" {
+		t.Errorf("expected the configured dir, got %q", cfg.ReplayDir)
+	}
+	if cfg.ReplayRetentionDays != 7 {
+		t.Errorf("expected a week where the dir was configured, got %d", cfg.ReplayRetentionDays)
+	}
+}
+
+func TestLoadConfig_ReplayCanBeTurnedOff(t *testing.T) {
+	for _, off := range []string{"off", "none", "false", "0", " OFF "} {
+		os.Setenv("REPLAY_DIR", off)
+		cfg := LoadConfig()
+		if cfg.ReplayDir != "" {
+			t.Errorf("REPLAY_DIR=%q should record nothing, got %q", off, cfg.ReplayDir)
+		}
+	}
+	os.Unsetenv("REPLAY_DIR")
+}
+
+// An explicit retention survives the default-directory path, so an instance can
+// keep more (or less) history without naming a directory for it.
+func TestLoadConfig_ReplayRetentionOverridesDefault(t *testing.T) {
+	os.Unsetenv("REPLAY_DIR")
+	os.Setenv("REPLAY_RETENTION_DAYS", "3")
+	defer os.Unsetenv("REPLAY_RETENTION_DAYS")
+
+	cfg := LoadConfig()
+
+	if cfg.ReplayDir != DefaultReplayDir {
+		t.Errorf("expected default replay dir, got %q", cfg.ReplayDir)
+	}
+	if cfg.ReplayRetentionDays != 3 {
+		t.Errorf("expected the asked-for 3 days, got %d", cfg.ReplayRetentionDays)
+	}
+}
