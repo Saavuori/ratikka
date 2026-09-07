@@ -368,7 +368,19 @@ modes keep their current value for that client. The older single-mode form
       "nextStop": "HSL:1203420",
       "ts": 1781461815,
       "tripId": "HSL:1009_20260616_Mo_1_0915",
-      "mode": "tram"
+      "mode": "tram",
+      "tlp": {
+        "status": "granted",
+        "junction": 75,
+        "signalGroup": 673,
+        "signalGroupNbr": 14,
+        "requestId": 219,
+        "requestType": "NORMAL",
+        "level": "normal",
+        "attempts": 1,
+        "protocol": "KAR-MQTT",
+        "ts": 1781461815
+      }
     },
     "18-1245": {
       "veh": "18-1245",
@@ -435,6 +447,26 @@ mode: metro positions come from the signalling system (`loc: "MAN"`), so `dl`,
 `odo`/`drst`. Both units of a coupled metro train publish the same journey
 under different vehicle numbers; the backend keeps one of them, so a metro
 journey appears once.
+
+`tlp` is the vehicle's newest **traffic light priority** exchange, folded in
+from the HFP `tlr` and `tla` event feeds — a tram or bus asking a signalised
+junction for a green, and the junction's answer. It is **omitted entirely**
+unless the vehicle has had such an exchange in the last 25 seconds, which is
+most vehicles most of the time. Only trams and buses carry the equipment; metro
+and commuter trains never report it.
+
+| Field | Description |
+|---|---|
+| `status` | `requesting` — asked, not yet answered. `granted` / `denied` — the junction answered (HFP `ACK`/`NAK`). `norequest` — the vehicle reached a junction it is equipped to ask and deliberately did not; `reason` says why. |
+| `junction` | Signal junction ID (HFP `sid`). **The same number as the `id` on a feature from `/api/v1/traffic-lights`** — both are Helsinki's own junction numbering — so the two can be joined directly to place the exchange on the map. |
+| `signalGroup` / `signalGroupNbr` | The group of lights within the junction the request was aimed at, and the specific light in that group. `signalGroupNbr` may be negative. |
+| `requestId` | Ties a request to its answer; `[0, 255]`. |
+| `requestType` | `NORMAL` (on approach), `DOOR_CLOSE`, `DOOR_OPEN` or `ADVANCE`. |
+| `level` | Priority asked for: `normal`, `high`, or `norequest`. |
+| `reason` | Why no request was sent: `GLOBAL`, `AHEAD`, `LINE` or `PRIOEXEP`. |
+| `attempts` | Attempt sequence number of the current request. |
+| `protocol` | Radio protocol used: `MQTT` or `KAR-MQTT`. |
+| `ts` | The vehicle's own Unix timestamp for the newest event in the exchange. |
 
 The `vehicles` map is keyed by vehicle ID. The frontend replaces its entire state each tick and uses the previous + current positions to lerp.
 
@@ -757,6 +789,11 @@ traffic lights" near a matching junction.
 not say whether a given light is red right now, only where signalized
 junctions exist. Changes rarely, so it's cached for 24 hours server-side
 rather than refetched per request.
+
+What *is* live is what the vehicles ask of these junctions: the `tlp` object on
+a vehicle position (see the WebSocket section above) names a junction by the
+same `id` these features carry, so the two join on equality. That is where "a
+tram is requesting priority at Mannerheimintie/Runeberginkatu" comes from.
 
 | Property | Value |
 |---|---|

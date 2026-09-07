@@ -46,22 +46,39 @@ export function findNearestJunction(
   return nearest;
 }
 
+/** The junction a vehicle names in its own priority request, by ID. */
+export function findJunctionById(
+  junctionId: number | undefined,
+  features: TrafficLightFeature[]
+): TrafficLightFeature | null {
+  if (typeof junctionId !== 'number') return null;
+  return features.find((f) => f.properties.id === junctionId) ?? null;
+}
+
 export type StopReason = 'at_stop' | 'traffic_light' | 'stopped' | 'moving';
 
 export interface StopReasonInfo {
   reason: StopReason;
   junction?: TrafficLightFeature;
+  /**
+   * True when the vehicle itself named this junction — it has a live priority
+   * request there — rather than us having found it by looking for the nearest
+   * one. That is the difference between knowing and guessing, and the popup
+   * says which it is.
+   */
+  confirmed?: boolean;
 }
 
 /**
- * Classify why a tram appears stopped, using only what's actually knowable:
- * door state (definitive for "at a stop"), reported speed, and proximity to
- * a known signalized junction. This dataset only records where junctions
- * are, not live signal state, so "traffic_light" is a plausible explanation
- * for the stop, not a confirmed one.
+ * Classify why a tram appears stopped. Door state is definitive for "at a
+ * stop", and after that there are two grades of answer about traffic lights:
+ * the tram's own live priority request, which names the junction it is dealing
+ * with, and — where there is no request to read — proximity to a known
+ * signalized junction, which is a plausible explanation for the stop rather
+ * than a confirmed one. `confirmed` says which of the two this is.
  */
 export function classifyStopReason(
-  tram: Pick<VehiclePosition, 'spd' | 'drst' | 'lat' | 'lng'>,
+  tram: Pick<VehiclePosition, 'spd' | 'drst' | 'lat' | 'lng' | 'tlp'>,
   trafficLights: TrafficLightFeature[]
 ): StopReasonInfo {
   if (tram.drst === 1) {
@@ -70,9 +87,16 @@ export function classifyStopReason(
   if (tram.spd !== 0) {
     return { reason: 'moving' };
   }
+  // The vehicle's own priority exchange outranks the geometry: a tram standing
+  // still while asking junction 75 for a green is not "probably near some
+  // traffic lights", it is waiting at those ones, and it said so itself.
+  const named = findJunctionById(tram.tlp?.junction, trafficLights);
+  if (named) {
+    return { reason: 'traffic_light', junction: named, confirmed: true };
+  }
   const nearest = findNearestJunction(tram.lat, tram.lng, trafficLights);
   if (nearest) {
-    return { reason: 'traffic_light', junction: nearest.feature };
+    return { reason: 'traffic_light', junction: nearest.feature, confirmed: false };
   }
   return { reason: 'stopped' };
 }

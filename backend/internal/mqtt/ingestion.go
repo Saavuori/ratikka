@@ -175,6 +175,11 @@ type VehiclePosition struct {
 	Dir    string   `json:"dir,omitempty"`
 	Oday   string   `json:"oday,omitempty"`
 	Start  string   `json:"start,omitempty"`
+	// Tlp is the vehicle's newest traffic light priority exchange, folded in
+	// from the tlr/tla feeds; see signal_priority.go. Null whenever the
+	// vehicle has not asked a junction for anything recently, which is most
+	// of the time.
+	Tlp *SignalPriority `json:"tlp,omitempty"`
 }
 
 type IngestionWorker struct {
@@ -200,6 +205,10 @@ type IngestionWorker struct {
 	// concurrently.
 	dedupeMu     sync.Mutex
 	lastReadings map[string]lastReading
+
+	// tlp holds the newest traffic light priority exchange per vehicle, folded
+	// into that vehicle's next position update; see signal_priority.go.
+	tlp *tlpStore
 }
 
 type metroUnit struct {
@@ -214,6 +223,7 @@ func NewIngestionWorker(broker string, cache cache.Cache) *IngestionWorker {
 		enabledModes: make(map[string]bool),
 		metroUnits:   make(map[string]metroUnit),
 		lastReadings: make(map[string]lastReading),
+		tlp:          newTLPStore(),
 	}
 }
 
@@ -239,6 +249,8 @@ func (w *IngestionWorker) Start(ctx context.Context) error {
 		} else {
 			log.Println("Subscribed to tram topic")
 		}
+		// Trams stream always, and so does what they ask of the traffic lights.
+		w.subscribeTLP(client, "tram")
 
 		w.mu.Lock()
 		wanted := make([]string, 0, len(w.enabledModes))
@@ -313,6 +325,7 @@ func (w *IngestionWorker) DisableMode(mode string) {
 		if token := w.client.Unsubscribe(optionalModeTopics[mode]); token.Wait() && token.Error() != nil {
 			log.Printf("Failed to unsubscribe from %s topic: %v\n", mode, token.Error())
 		}
+		w.unsubscribeTLP(w.client, mode)
 	}
 }
 
@@ -326,6 +339,9 @@ func (w *IngestionWorker) subscribeMode(client mqtt.Client, mode string) {
 	} else {
 		log.Printf("Subscribed to %s topic\n", mode)
 	}
+	// A mode's priority events come and go with its positions: there is
+	// nothing to attach them to while the mode is not being ingested.
+	w.subscribeTLP(client, mode)
 }
 
 func (w *IngestionWorker) Stop() {
@@ -393,7 +409,7 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 	if len(parts) > topicOperator {
 		operator = parts[topicOperator]
 	}
-	vehicleID := fmt.Sprintf("%s-%d", operator, vp.Veh)
+	vehicleID := vehicleKey(operator, vp.Veh)
 
 	nextStop, eol := parseNextStop(parts)
 
@@ -432,6 +448,7 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 		Dir:      vp.Dir,
 		Oday:     vp.Oday,
 		Start:    vp.Start,
+		Tlp:      w.tlp.get(vehicleID, time.Now()),
 	}
 
 	thinnedJSON, err := json.Marshal(thinned)
@@ -571,6 +588,14 @@ func nextStopKey(nextStop *string, eol bool) string {
 // from.
 func normalizeDelay(dl int) int {
 	return -dl
+}
+
+// vehicleKey is the identity every feed shares: the operator that owns the
+// vehicle, from the topic, plus the vehicle number painted on its side. It is
+// what joins a priority request on the tlr topic to the position stream of the
+// tram that made it.
+func vehicleKey(operator string, veh int) string {
+	return fmt.Sprintf("%s-%d", operator, veh)
 }
 
 func constructGTFSTripID(route, oday, dir, start string) string {

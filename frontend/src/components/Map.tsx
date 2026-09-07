@@ -133,6 +133,28 @@ import type { BikeStationState } from '../lib/bikeStationModels';
 import { advanceDoors, isVehicleBraking, vehicles3DEnabled } from '../lib/vehicleAnimation';
 import type { DoorAnimation } from '../lib/vehicleAnimation';
 import { fetchBikeStations, fetchMapConfig } from '../lib/api';
+import {
+  signalPriorityIndex,
+  trafficLightStates,
+  trafficLightCollection,
+  trafficLightIconSvg,
+  trafficLightIconName,
+  warningLightIconSvg,
+  TRAFFIC_LIGHT_ICON_VARIANTS,
+  TRAFFIC_LIGHT_ICON_WIDTH,
+  TRAFFIC_LIGHT_ICON_HEIGHT,
+  TRAFFIC_LIGHT_MIN_ZOOM,
+  TRAFFIC_LIGHT_ICON_OPACITY,
+  TRAFFIC_LIGHT_ICON_OPACITY_3D,
+  TRAFFIC_LIGHT_3D_MIN_ZOOM,
+  TRAFFIC_LIGHT_3D_FADE_IN,
+  TRAFFIC_LIGHT_LIMIT,
+  TRAFFIC_LIGHT_SOURCE,
+  TRAFFIC_LIGHT_ICON_LAYER,
+  TRAFFIC_LIGHT_3D_SOURCE,
+  TRAFFIC_LIGHT_3D_LAYER,
+} from '../lib/trafficLightModels';
+import type { JunctionPriorityIndex } from '../lib/trafficLightModels';
 import type { BikeStationsFeatureCollection, TrafficLightFeature } from '../types';
 import { useTrafficLights } from '../hooks/useTrafficLights';
 import { useRoutePatterns } from '../hooks/useRoutePatterns';
@@ -486,6 +508,16 @@ export const Map: React.FC<MapProps> = ({
   // theme/style reload recreates it.
   const trafficLightsDataRef = useRef<TrafficLightFeature[]>([]);
   const trafficLightFeatures = useTrafficLights();
+  // Which junctions a vehicle is currently asking for a green, folded from the
+  // `tlp` field on the positions. Kept as a ref because it is read while
+  // building both the flat markers and the 3D masts, neither of which is a
+  // render.
+  const junctionPrioritiesRef = useRef<JunctionPriorityIndex>(new globalThis.Map());
+  // Signatures: the junction source is only rebuilt when the set of live
+  // exchanges actually changes, not on every positions message.
+  const junctionPrioritySigRef = useRef<string>('');
+  const trafficLightFurnitureDrawnRef = useRef<boolean>(false);
+  const trafficLightFurnitureSigRef = useRef<string>('');
 
   const journeyLegsRef = useRef<JourneyLeg[] | null>(journeyLegs);
   const journeyEndpointsRef = useRef<{ from: JourneyEndpoint; to: JourneyEndpoint } | null>(journeyEndpoints);
@@ -1301,6 +1333,139 @@ export const Map: React.FC<MapProps> = ({
     bikeFurnitureDrawnRef.current = true;
   };
 
+  // The signal counterpart to `updateBikeFurniture`: turn the junctions the
+  // marker layer is drawing into masts of real-metre boxes, lit by whatever
+  // exchange is live at each.
+  const updateTrafficLightFurniture = (map: maplibregl.Map, theme: MapTheme) => {
+    const source = map.getSource(TRAFFIC_LIGHT_3D_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    if (!source) return;
+    const empty = { type: 'FeatureCollection' as const, features: [] };
+
+    const active =
+      vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current) &&
+      map.getZoom() >= TRAFFIC_LIGHT_3D_MIN_ZOOM &&
+      map.getLayer(TRAFFIC_LIGHT_ICON_LAYER) !== undefined;
+    if (!active) {
+      if (trafficLightFurnitureDrawnRef.current) {
+        source.setData(empty);
+        trafficLightFurnitureDrawnRef.current = false;
+        trafficLightFurnitureSigRef.current = '';
+      }
+      return;
+    }
+
+    const centre = map.getCenter();
+    const signature = [
+      theme,
+      centre.lng.toFixed(4),
+      centre.lat.toFixed(4),
+      map.getZoom().toFixed(2),
+      junctionPrioritySigRef.current,
+      String(trafficLightsDataRef.current.length),
+    ].join('|');
+    if (signature === trafficLightFurnitureSigRef.current) return;
+    trafficLightFurnitureSigRef.current = signature;
+
+    // Same source of orientation as the bike racks: the route lines are the
+    // only thing on this map that knows which way the street runs.
+    const routeLines: [number, number][][] = [];
+    if (map.getLayer('route-lines-layer')) {
+      for (const feature of map.queryRenderedFeatures({ layers: ['route-lines-layer'] })) {
+        const geometry = feature.geometry;
+        if (geometry.type === 'LineString') {
+          routeLines.push(geometry.coordinates as [number, number][]);
+        } else if (geometry.type === 'MultiLineString') {
+          for (const line of geometry.coordinates) routeLines.push(line as [number, number][]);
+        }
+      }
+    }
+
+    const seen = new Set<number>();
+    const onScreen: TrafficLightFeature[] = [];
+    for (const feature of map.queryRenderedFeatures({ layers: [TRAFFIC_LIGHT_ICON_LAYER] })) {
+      if (feature.geometry.type !== 'Point') continue;
+      const id = Number(feature.properties?.id);
+      if (!Number.isFinite(id) || seen.has(id)) continue;
+      seen.add(id);
+      const [lng, lat] = feature.geometry.coordinates as [number, number];
+      onScreen.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [lng, lat] },
+        properties: {
+          id,
+          type: feature.properties?.type === 'warning_light' ? 'warning_light' : 'traffic_light',
+          junction: String(feature.properties?.junction ?? ''),
+        },
+      });
+    }
+
+    // Nearest to the middle of the screen wins, which is where the eye is —
+    // except that a junction with a live request is never dropped, because it
+    // is the one the whole feature exists to show.
+    onScreen.sort((a, b) => {
+      const liveA = junctionPrioritiesRef.current.has(a.properties.id) ? 0 : 1;
+      const liveB = junctionPrioritiesRef.current.has(b.properties.id) ? 0 : 1;
+      if (liveA !== liveB) return liveA - liveB;
+      const da = Math.hypot(a.geometry.coordinates[0] - centre.lng, a.geometry.coordinates[1] - centre.lat);
+      const db = Math.hypot(b.geometry.coordinates[0] - centre.lng, b.geometry.coordinates[1] - centre.lat);
+      return da - db;
+    });
+
+    const states = trafficLightStates(
+      onScreen.slice(0, TRAFFIC_LIGHT_LIMIT),
+      junctionPrioritiesRef.current,
+      (lngLat) => nearestLineBearing(lngLat, routeLines, 45),
+    );
+    source.setData(trafficLightCollection(states, theme));
+    trafficLightFurnitureDrawnRef.current = true;
+  };
+
+  // Fold the priority exchanges the vehicles are reporting onto the junctions
+  // they name, and paint the result into the junction source.
+  //
+  // Every vehicle carries its own exchange on its position (see the backend's
+  // signal_priority.go), so the join is done here rather than over a second
+  // stream: the junction ID a tram reports is Helsinki's own junction number,
+  // which is the `id` these features already have. The source is only rebuilt
+  // when the set of live exchanges changes — a few times a minute, against the
+  // once a second positions arrive — because it means re-materialising 550-odd
+  // features.
+  const updateSignalPriority = (map: maplibregl.Map) => {
+    const priorities = signalPriorityIndex(Object.values(latestTramsRef.current));
+    const signature = Array.from(priorities.entries())
+      .map(([junction, p]) => `${junction}:${p.status}:${p.veh}`)
+      .sort()
+      .join('|');
+    if (signature === junctionPrioritySigRef.current) return;
+    junctionPrioritySigRef.current = signature;
+    junctionPrioritiesRef.current = priorities;
+
+    const source = map.getSource(TRAFFIC_LIGHT_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    if (source && typeof source.setData === 'function') {
+      source.setData({
+        type: 'FeatureCollection',
+        features: trafficLightsDataRef.current.map((feature) => {
+          const live = priorities.get(feature.properties.id);
+          // `norequest` is a vehicle deciding not to ask; it lights nothing,
+          // so it must not put a `priority` key on the feature either — the
+          // icon size and sort key both key off the presence of one.
+          if (!live || live.status === 'norequest') return feature;
+          return {
+            ...feature,
+            properties: {
+              ...feature.properties,
+              priority: live.status,
+              priorityDesi: live.desi,
+            },
+          };
+        }),
+      } as unknown as FeatureCollection);
+    }
+
+    // The masts carry the same state, so they are rebuilt with it.
+    updateTrafficLightFurniture(map, mapThemeRef.current);
+  };
+
   // New countdowns arrive every refresh and every second the clock ticks; the
   // set of stops they belong to changes only when the view moves, so this
   // repaints the text without re-querying anything.
@@ -1324,6 +1489,15 @@ export const Map: React.FC<MapProps> = ({
     // one when there is a rack under it to hand over to.
     if (map.getLayer(BIKE_STATION_LAYER)) {
       map.setLayoutProperty(BIKE_STATION_LAYER, 'visibility', active ? 'visible' : 'none');
+    }
+    // So is a traffic light: a signal mast beside a flat map, or a marker
+    // floating over a modelled street, is the same mismatch.
+    if (map.getLayer(TRAFFIC_LIGHT_3D_LAYER)) {
+      map.setLayoutProperty(TRAFFIC_LIGHT_3D_LAYER, 'visibility', active ? 'visible' : 'none');
+    }
+    if (map.getLayer(TRAFFIC_LIGHT_ICON_LAYER)) {
+      map.setPaintProperty(TRAFFIC_LIGHT_ICON_LAYER, 'icon-opacity',
+        (active ? TRAFFIC_LIGHT_ICON_OPACITY_3D : TRAFFIC_LIGHT_ICON_OPACITY) as maplibregl.DataDrivenPropertyValueSpecification<number>);
     }
     if (map.getLayer('citybike_gauge')) {
       map.setPaintProperty('citybike_gauge', 'icon-opacity',
@@ -2052,6 +2226,7 @@ export const Map: React.FC<MapProps> = ({
         }
         updateStopFurniture(map, mapThemeRef.current);
         updateBikeFurniture(map, mapThemeRef.current);
+        updateTrafficLightFurniture(map, mapThemeRef.current);
       }
       // The pulse itself, driven off the same clock as the vehicles so the two
       // beat together rather than drifting apart.
@@ -2243,6 +2418,13 @@ export const Map: React.FC<MapProps> = ({
     fixRef.current = newFixes;
     glideRef.current = newGlides;
     lastUpdateRef.current = now;
+
+    // Every vehicle carries its own traffic light priority exchange, so the
+    // junctions it is talking to are refreshed from the same message the
+    // positions came in on. The signature check inside makes this a no-op
+    // unless a request or an answer actually changed.
+    const map = mapRef.current;
+    if (map && map.getStyle()) updateSignalPriority(map);
   }, [trams, lineFilters]);
 
   // Setup programmatically created sources, layers, and images
@@ -3145,83 +3327,100 @@ export const Map: React.FC<MapProps> = ({
     // the "Waiting at traffic lights" popup badge). This is a static
     // reference layer, so it's populated once from `trafficLightsDataRef`
     // rather than polled like citybike availability.
-    if (!map.getSource('traffic-lights')) {
-      map.addSource('traffic-lights', {
+    if (!map.getSource(TRAFFIC_LIGHT_SOURCE)) {
+      map.addSource(TRAFFIC_LIGHT_SOURCE, {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: trafficLightsDataRef.current },
       });
     }
 
-    if (!map.hasImage('traffic-light-icon')) {
-      const signalSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="24" viewBox="0 0 18 24" fill="none">
-          <rect x="4" y="1" width="10" height="17" rx="3" fill="#1f2937" stroke="#ffffff" stroke-width="1.2"/>
-          <circle cx="9" cy="5.5" r="2" fill="#ef4444"/>
-          <circle cx="9" cy="9.5" r="2" fill="#fcbc19"/>
-          <circle cx="9" cy="13.5" r="2" fill="#20bf6b"/>
-          <line x1="9" y1="18" x2="9" y2="23" stroke="#1f2937" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-      `;
-      const signalImg = new Image(18, 24);
-      signalImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(signalSvg);
-      signalImg.onload = () => {
+    // One image per priority state, so the marker can be lit by an expression
+    // rather than rebuilt: the junction the tram is asking shows the lens it
+    // asked for, everything else shows a signal standing dark.
+    const registerSignalIcon = (name: string, svg: string) => {
+      if (map.hasImage(name)) return;
+      const img = new Image(TRAFFIC_LIGHT_ICON_WIDTH, TRAFFIC_LIGHT_ICON_HEIGHT);
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      img.onload = () => {
         if (mapRef.current !== map) return;
-        if (!map.hasImage('traffic-light-icon')) map.addImage('traffic-light-icon', signalImg, { pixelRatio: 2 });
+        if (!map.hasImage(name)) map.addImage(name, img, { pixelRatio: 2 });
       };
-    }
+    };
 
-    if (!map.hasImage('warning-light-icon')) {
-      const warningSvg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="24" viewBox="0 0 18 24" fill="none">
-          <path d="M9 1.5 L16.5 15.5 A2 2 0 0 1 14.7 18.5 L3.3 18.5 A2 2 0 0 1 1.5 15.5 Z" fill="#fcbc19" stroke="#ffffff" stroke-width="1.2"/>
-          <circle cx="9" cy="10" r="1.4" fill="#1f2937"/>
-          <rect x="8.2" y="5.5" width="1.6" height="3.5" rx="0.8" fill="#1f2937"/>
-          <line x1="9" y1="18.5" x2="9" y2="23" stroke="#1f2937" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-      `;
-      const warningImg = new Image(18, 24);
-      warningImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(warningSvg);
-      warningImg.onload = () => {
-        if (mapRef.current !== map) return;
-        if (!map.hasImage('warning-light-icon')) map.addImage('warning-light-icon', warningImg, { pixelRatio: 2 });
-      };
+    for (const variant of TRAFFIC_LIGHT_ICON_VARIANTS) {
+      registerSignalIcon(trafficLightIconName(variant), trafficLightIconSvg(variant));
     }
+    registerSignalIcon('warning-light-icon', warningLightIconSvg());
 
     // Street-level only: 557+ points citywide would clutter the overview.
-    if (!map.getLayer('traffic-lights-icons')) {
+    if (!map.getLayer(TRAFFIC_LIGHT_ICON_LAYER)) {
       map.addLayer({
-        id: 'traffic-lights-icons',
+        id: TRAFFIC_LIGHT_ICON_LAYER,
         type: 'symbol',
-        source: 'traffic-lights',
-        minzoom: 15,
+        source: TRAFFIC_LIGHT_SOURCE,
+        minzoom: TRAFFIC_LIGHT_MIN_ZOOM,
         layout: {
           'icon-image': [
-            'match',
-            ['get', 'type'],
-            'warning_light', 'warning-light-icon',
-            'traffic-light-icon'
+            'case',
+            ['==', ['get', 'type'], 'warning_light'], 'warning-light-icon',
+            [
+              'match',
+              ['coalesce', ['get', 'priority'], 'idle'],
+              'requesting', trafficLightIconName('requesting'),
+              'granted', trafficLightIconName('granted'),
+              'denied', trafficLightIconName('denied'),
+              trafficLightIconName('idle'),
+            ],
           ],
           'icon-anchor': 'bottom',
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
+          // A junction with a live request is drawn a size up, so the state
+          // reads before the colour does.
           'icon-size': [
             'interpolate',
             ['linear'],
             ['zoom'],
-            15, 0.55,
-            18, 0.85
-          ]
+            15, ['case', ['has', 'priority'], 0.62, 0.5],
+            18, ['case', ['has', 'priority'], 0.95, 0.78],
+          ],
+          // Signals do not fight the stops and vehicles for placement, but a
+          // junction being asked for a green sorts above the ones that are not.
+          'symbol-sort-key': ['case', ['has', 'priority'], 0, 1],
         },
         paint: {
-          'icon-opacity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            15, 0,
-            15.5, 1
-          ]
+          'icon-opacity': TRAFFIC_LIGHT_ICON_OPACITY as maplibregl.DataDrivenPropertyValueSpecification<number>,
         }
       }, 'trams-circles');
+    }
+
+    // The 3D signal: its own source, built from what is on screen, exactly like
+    // the stop furniture and the bike racks next to it.
+    if (!map.getSource(TRAFFIC_LIGHT_3D_SOURCE)) {
+      map.addSource(TRAFFIC_LIGHT_3D_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+
+    if (!map.getLayer(TRAFFIC_LIGHT_3D_LAYER)) {
+      map.addLayer({
+        id: TRAFFIC_LIGHT_3D_LAYER,
+        type: 'fill-extrusion',
+        source: TRAFFIC_LIGHT_3D_SOURCE,
+        minzoom: TRAFFIC_LIGHT_3D_MIN_ZOOM,
+        layout: {
+          visibility: vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current)
+            ? 'visible'
+            : 'none',
+        },
+        paint: {
+          'fill-extrusion-color': ['get', 'color'],
+          'fill-extrusion-base': ['get', 'base'],
+          'fill-extrusion-height': ['get', 'top'],
+          'fill-extrusion-opacity': TRAFFIC_LIGHT_3D_FADE_IN as maplibregl.PropertyValueSpecification<number>,
+        },
+      }, map.getLayer('vehicles-3d') ? 'vehicles-3d' : undefined);
     }
 
     // Source for selected vehicle to next stop route
@@ -3555,6 +3754,10 @@ export const Map: React.FC<MapProps> = ({
     updateStopFurniture(map, mapThemeRef.current);
     bikeFurnitureSigRef.current = '';
     updateBikeFurniture(map, mapThemeRef.current);
+    trafficLightFurnitureSigRef.current = '';
+    // The recreated junction source came back without the live states on it.
+    junctionPrioritySigRef.current = '';
+    updateSignalPriority(map);
     arrivalLabelSigRef.current = '';
     updateArrivalLabelStops(map);
 
@@ -3722,6 +3925,7 @@ export const Map: React.FC<MapProps> = ({
     const rebuildFurniture = () => {
       updateStopFurniture(map, mapThemeRef.current);
       updateBikeFurniture(map, mapThemeRef.current);
+      updateTrafficLightFurniture(map, mapThemeRef.current);
       updateArrivalLabelStops(map);
     };
     map.on('moveend', rebuildFurniture);
@@ -3899,9 +4103,15 @@ export const Map: React.FC<MapProps> = ({
     if (trafficLightFeatures.length === 0) return;
     trafficLightsDataRef.current = trafficLightFeatures;
     const map = mapRef.current;
-    const src = map?.getSource('traffic-lights') as maplibregl.GeoJSONSource | undefined;
+    const src = map?.getSource(TRAFFIC_LIGHT_SOURCE) as maplibregl.GeoJSONSource | undefined;
     if (src && typeof src.setData === 'function') {
       src.setData({ type: 'FeatureCollection', features: trafficLightFeatures } as unknown as FeatureCollection);
+    }
+    // The junctions have only just arrived, so whatever priority state was
+    // already in hand has never been painted onto them.
+    if (map && map.getStyle()) {
+      junctionPrioritySigRef.current = '';
+      updateSignalPriority(map);
     }
   }, [trafficLightFeatures]);
 
@@ -4064,6 +4274,8 @@ export const Map: React.FC<MapProps> = ({
       updateStopFurniture(map, mapTheme);
       bikeFurnitureSigRef.current = '';
       updateBikeFurniture(map, mapTheme);
+      trafficLightFurnitureSigRef.current = '';
+      updateTrafficLightFurniture(map, mapTheme);
     }
   }, [is3D, always3DVehicles, mapTheme]);
 
