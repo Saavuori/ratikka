@@ -48,7 +48,9 @@ function formatAgo(ts: number, edge: number): string {
 /**
  * The timelapse controls. Deliberately not part of the map's ordinary
  * furniture: this is a way to watch the city's past, which is a different thing
- * from watching it now, and it is reached by double-clicking the version badge.
+ * from watching it now, and it is reached through the version badge. While it
+ * is open it is the only chrome on the map — the filters, chips, planner and
+ * tab bar all belong to the live feed and stand down until it closes.
  */
 export const TimelapsePanel: React.FC<TimelapsePanelProps> = ({
   cursor,

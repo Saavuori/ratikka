@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.67.2] - 2026-09-07
+
+### Changed
+- **The timelapse gets the screen to itself.** Opening it left every live control in place: the line filter sidebar, the vehicle-mode chips, the map-view chips, the journey planner, the departures board and, on a phone, the bottom tab bar. All of them answer for *right now* — a departure board beside an hour-old tram is quietly answering a question nobody asked of the past — and the app already knew as much, clearing any open selection when a replay starts. The controls themselves now step aside for the same reason: while history plays, the scrubber is the only chrome on the map, and the version badge that opened it goes too, since the panel carries its own exit. Everything comes back exactly as it was when the replay ends.
+
+---
+
 ## [v0.67.1] - 2026-09-07
 
 ### Fixed
