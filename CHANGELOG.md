@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.67.4] - 2026-09-07
+
+### Fixed
+- **The timelapse stops lurching every couple of minutes.** Playback fetched history two minutes at a time, whatever speed it was running at — and two minutes of unthinned tram history is nine thousand readings and just under three megabytes. Parsing that and building nine thousand objects is a tenth of a second of blocked main thread on a desktop and several times that on a phone, and while it is blocked nothing is drawn: the map froze, the clock stalled, and both resumed a beat later. Once every two minutes of playback, which is exactly the rhythm of the lurch.
+  A block is now sized by the work it makes rather than by the clock it covers: half a minute of history read second by second, eight minutes of it read every thirtieth second, and roughly two thousand readings either way. Every span is a doubling of the smallest and aligned to its own size, so replaying a stretch still asks for the same URLs and the browser cache still answers them. The parse that used to cost three megabytes now costs three quarters of one, four times as often — small enough to land inside a frame or two instead of stopping the map.
+  A block that size is also a much shorter wait when the scrubber is dragged somewhere new: the first window a seek needs comes back in a second and a half rather than three and a half. And the parallel fetching added in v0.67.3 now only runs in parallel when the cursor is actually close to running out of history — at real time, where one block lasts half a minute, they land one at a time, because three blocks parsed back to back would be three times the hitch this change exists to remove.
+
+---
+
+## [v0.67.3] - 2026-09-07
+
+### Fixed
+- **The fast timelapse is smooth, and the trams stay on the map.** Played at thirty times and above, history juddered: vehicles crawled a step behind the map and then snapped forward to catch up, and trams blinked out of existence in ones and twos before reappearing. Three separate causes, all of them the same mistake — code that was right about the live feed being asked about a replay running two hundred and forty times faster than it.
+  The map's glide between two snapshots is measured from the gap between them, floored at seven tenths of a second because a live feed that speaks once a second and reports twice in a tenth is hiccuping, not talking fast. A replay at sixty times genuinely does deliver a snapshot every eighth of a second, and the floor meant every glide was cut off at a fifth of its length by the next one: the vehicles were drawn covering a fifth of the ground they had actually travelled, falling further behind on each snapshot until the guard against teleports fired and put them where they belonged in one jump. That guard was the second cause: it measures a step against a second of travel, and eight seconds of perfectly ordinary tram between two snapshots at sixty times looks, by that measure, like a vehicle crossing the city — so it fired on nearly every step and turned the replay into a slideshow. Both are now measured against the history a window carries rather than the wall clock it took, and past a couple of seconds per window the easing curve steps aside too: the two ends of the glide are both measured positions several hundred metres apart, and the honest way between them is a straight line at a constant rate rather than an ease-in and ease-out eight times a second.
+  The disappearances were the player outrunning its own fetching. Windows were fetched one at a time, and at two hundred and forty times the cursor crosses a two-minute block in half a second — so the player spent most of its time waiting out a round trip, playing into history it did not hold. What it drew there was the last thing it knew: a crowd of vehicles going stale one by one and winking out as they passed the minute the live map drops a silent vehicle at. Fetching now runs a few windows in parallel and asks for the next one the moment one lands, and the cursor waits where it is when it does reach the end of what has been fetched, which is what a video player does and reads as what it is. A speed change no longer empties the buffer either: a reading is a reading, so speeding up mid-playback keeps everything already held and carries straight on instead of blanking the map.
+  Underneath, the playback clock is now driven by animation frames rather than by a timer — an eighth-of-a-second `setInterval` is coalesced and drifts, and the map draws unevenly spaced snapshots as unevenly moving trams — and the buffer merges arriving readings into what it holds instead of re-sorting and replaying the whole thing from the start on every fetch, which at speed was several thousand readings landing twice a second into a buffer of tens of thousands.
+
+---
+
 ## [v0.67.2] - 2026-09-07
 
 ### Changed

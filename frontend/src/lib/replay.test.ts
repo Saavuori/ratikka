@@ -3,9 +3,12 @@ import type { VehiclePosition } from '../types';
 import type { ReplayDayCoverage } from '../types';
 import {
   badgeTitle,
+  coveredUntil,
   coverageMarks,
   FETCH_SPAN_SECONDS,
+  fetchSpanForStep,
   hasCoverage,
+  MAX_FETCH_SPAN_SECONDS,
   newestCoverage,
   nextFetchSpan,
   playbackPlan,
@@ -15,6 +18,7 @@ import {
   REPLAY_STALE_SECONDS,
   ReplayBuffer,
   replayRange,
+  REPLAY_SPEEDS,
   replayTimeScale,
   TARGET_SNAPSHOTS_PER_SECOND,
 } from './replay';
@@ -138,6 +142,69 @@ describe('ReplayBuffer', () => {
   });
 });
 
+describe('ReplayBuffer under a fast playback', () => {
+  it('keeps a reading that arrives while the cursor is still behind it', () => {
+    const buffer = new ReplayBuffer();
+    buffer.append([reading('a', 100)]);
+    // The cursor has drawn 100 but not yet reached 130.
+    expect(buffer.snapshotAt(100)).toHaveProperty('a');
+    buffer.append([reading('a', 130, 60.5)]);
+    expect(buffer.snapshotAt(130).a.lat).toBe(60.5);
+  });
+
+  it('survives a prune with the snapshot it was holding intact', () => {
+    const buffer = new ReplayBuffer();
+    const samples: VehiclePosition[] = [];
+    for (let ts = 0; ts < 2000; ts += 1) samples.push(reading(`v${ts % 4}`, ts));
+    buffer.append(samples);
+
+    expect(buffer.snapshotAt(1500)).toHaveProperty('v0');
+    buffer.prune(1500);
+    // Everything more than two stale windows back is gone, and the vehicles
+    // still on the map are still on it.
+    expect(buffer.size).toBeLessThan(2000);
+    expect(buffer.snapshotAt(1501)).toHaveProperty('v0');
+    expect(buffer.snapshotAt(1501).v0.ts).toBeGreaterThanOrEqual(1500 - REPLAY_STALE_SECONDS);
+  });
+});
+
+describe('coveredUntil', () => {
+  it('reports nothing held as no runway at all', () => {
+    expect(coveredUntil([], 1000)).toBe(1000);
+  });
+
+  it('follows adjoining blocks to the end of the run', () => {
+    const held = [
+      { from: 960, to: 1080 },
+      { from: 1080, to: 1200 },
+      { from: 1200, to: 1320 },
+    ];
+    expect(coveredUntil(held, 1000)).toBe(1320);
+  });
+
+  it('stops at a hole rather than counting what is past it', () => {
+    const held = [
+      { from: 960, to: 1080 },
+      // 1080..1200 has not landed yet.
+      { from: 1200, to: 1320 },
+    ];
+    expect(coveredUntil(held, 1000)).toBe(1080);
+  });
+
+  it('does not mind what order the blocks landed in', () => {
+    const held = [
+      { from: 1200, to: 1320 },
+      { from: 960, to: 1080 },
+      { from: 1080, to: 1200 },
+    ];
+    expect(coveredUntil(held, 1000)).toBe(1320);
+  });
+
+  it('reports the cursor itself when the cursor is past everything held', () => {
+    expect(coveredUntil([{ from: 0, to: 500 }], 1000)).toBe(1000);
+  });
+});
+
 describe('nextFetchSpan', () => {
   it('asks for the block the cursor is in when nothing is held', () => {
     const span = nextFetchSpan(1000, [], 100000);
@@ -149,7 +216,7 @@ describe('nextFetchSpan', () => {
 
   it('aligns blocks so replaying a stretch twice hits the browser cache', () => {
     const first = nextFetchSpan(1000, [], 100000)!;
-    const again = nextFetchSpan(1040, [], 100000)!;
+    const again = nextFetchSpan(1000 + FETCH_SPAN_SECONDS / 3, [], 100000)!;
     expect(again).toEqual(first);
     expect(first.from % FETCH_SPAN_SECONDS).toBe(0);
   });
@@ -167,6 +234,47 @@ describe('nextFetchSpan', () => {
   it('is satisfied once the prefetch horizon is covered', () => {
     const held = [{ from: 0, to: 100000 }];
     expect(nextFetchSpan(1000, held, 100000)).toBeNull();
+  });
+});
+
+describe('fetchSpanForStep', () => {
+  it('asks for a small block of unthinned history, which is the dear one', () => {
+    // Two minutes of tram history unthinned is nine thousand readings and three
+    // megabytes: a block that size is a tenth of a second of blocked main
+    // thread every two minutes of playback, and that is what a viewer sees as
+    // the timelapse jumping.
+    expect(fetchSpanForStep(1)).toBe(FETCH_SPAN_SECONDS);
+  });
+
+  it('asks for more history the more thinly it is being read', () => {
+    expect(fetchSpanForStep(4)).toBeGreaterThan(fetchSpanForStep(1));
+    expect(fetchSpanForStep(8)).toBeGreaterThan(fetchSpanForStep(4));
+  });
+
+  it('keeps a block to roughly one amount of work whatever the speed', () => {
+    for (const speed of REPLAY_SPEEDS) {
+      const { step } = playbackPlan(speed);
+      const readings = fetchSpanForStep(step) / step;
+      expect(readings).toBeGreaterThanOrEqual(FETCH_SPAN_SECONDS / 2);
+      expect(readings).toBeLessThanOrEqual(FETCH_SPAN_SECONDS * 2);
+    }
+  });
+
+  it('keeps every span a doubling of the smallest, so blocks nest and align', () => {
+    for (const speed of REPLAY_SPEEDS) {
+      const span = fetchSpanForStep(playbackPlan(speed).step);
+      expect(span % FETCH_SPAN_SECONDS).toBe(0);
+      expect(Number.isInteger(Math.log2(span / FETCH_SPAN_SECONDS))).toBe(true);
+      expect(span).toBeLessThanOrEqual(MAX_FETCH_SPAN_SECONDS);
+    }
+  });
+
+  it('aligns the larger blocks to their own size, not to the smallest', () => {
+    const span = fetchSpanForStep(8);
+    const held: Array<{ from: number; to: number }> = [];
+    const first = nextFetchSpan(1_000_000, held, 2_000_000, 600, span)!;
+    expect(first.to - first.from).toBe(span);
+    expect(first.from % span).toBe(0);
   });
 });
 
