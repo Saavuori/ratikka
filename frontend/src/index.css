@@ -1849,20 +1849,23 @@ body {
   }
 }
 
-/* Timelapse panel — the replay controls, revealed by double-clicking the
-   version badge. Sits above the badge in the bottom-left corner on desktop and
-   spans the bottom on mobile, clear of the tab bar. */
+/* Timelapse panel — the replay controls, revealed from the version badge. It is
+   the only chrome on the map while history plays, and the point of a timelapse
+   is the city moving, so it is built to give the map everything it can: two
+   rows in the bottom-left corner, sitting on the corner itself rather than
+   above the badge and tab bar that are hidden for the duration. */
 .timelapse-panel {
   position: absolute;
-  bottom: calc(34px + env(safe-area-inset-bottom));
+  bottom: calc(8px + env(safe-area-inset-bottom));
   left: 8px;
   z-index: 12;
-  width: 320px;
+  box-sizing: border-box;
+  width: 380px;
   max-width: calc(100vw - 16px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 6px;
+  padding: 8px 10px;
   background: var(--bg-panel);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -1872,59 +1875,47 @@ body {
   pointer-events: auto;
 }
 
-.timelapse-panel__head {
+/* Row one: play, the speeds, and the way back to the live map. */
+.timelapse-panel__bar {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Row two: the moment being replayed, beside the scrubber that sets it. */
+.timelapse-panel__timeline {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-.timelapse-panel__title {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent-gold);
-}
-
 .timelapse-panel__when {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  font-size: 12px;
+  flex: 0 0 auto;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.timelapse-panel__clock {
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
 }
 
 .timelapse-panel__ago {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 400;
   color: var(--text-secondary);
-}
-
-.timelapse-panel__close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  background: var(--bg-button);
-  border: 1px solid var(--border-button);
-  border-radius: 6px;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.timelapse-panel__close:hover {
-  background: var(--bg-button-hover);
-  color: var(--text-primary);
 }
 
 /* The scrubber, with the recorded stretches shaded behind it so the gaps a
    deploy or a broker reconnect left are visible rather than discovered. */
 .timelapse-panel__track {
   position: relative;
+  flex: 1;
+  min-width: 0;
   height: 22px;
 }
 
@@ -1983,12 +1974,6 @@ body {
   border-radius: 50%;
   background: var(--accent-gold);
   border: 2px solid var(--bg-panel);
-}
-
-.timelapse-panel__controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .timelapse-panel__play {
@@ -2061,17 +2046,19 @@ body {
   background: var(--bg-button-hover);
 }
 
+/* Rendered only when there is a gap, a load or an error to report, so the
+   panel is two rows tall the rest of the time. */
 .timelapse-panel__status {
   font-size: 10px;
   color: var(--text-secondary);
-  min-height: 12px;
 }
 
 @media (max-width: 768px) {
+  /* The tab bar is hidden while a replay plays, so the panel takes the bottom
+     edge itself and leaves the rest of a small screen to the map. */
   .timelapse-panel {
     left: 8px;
     right: 8px;
     width: auto;
-    bottom: calc(var(--bottom-nav-h) + 34px + env(safe-area-inset-bottom));
   }
 }
