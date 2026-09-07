@@ -245,6 +245,12 @@ export interface TrafficLightFeature {
     id: number;
     type: 'traffic_light' | 'warning_light';
     junction: string;
+    /**
+     * True when `coordinates` are the middle of the junction, computed by the
+     * backend from Helsinki's street geometry, rather than the surveyed signal
+     * installation the open data gives (which is routinely 5-30 m off centre).
+     */
+    centered?: boolean;
   };
 }
 
