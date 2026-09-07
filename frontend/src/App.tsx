@@ -10,6 +10,7 @@ import { TramPopup } from './components/TramPopup';
 import { TramCard } from './components/TramCard';
 import { StopPopup } from './components/StopPopup';
 import { BikePopup } from './components/BikePopup';
+import { TrafficLightPopup } from './components/TrafficLightPopup';
 import { VersionBadge } from './components/VersionBadge';
 import { TimelapsePanel } from './components/TimelapsePanel';
 import { ModeToggles } from './components/ModeToggles';
@@ -22,6 +23,8 @@ import type { MapTheme } from './lib/stopPlatforms';
 import { readStorage, writeStorage } from './lib/storage';
 import { areTripsEquivalent } from './lib/trip';
 import { findJourneyVehicle, journeyVehicleModes } from './lib/journeyVehicles';
+import { useTrafficLights } from './hooks/useTrafficLights';
+import { signalPriorityIndex } from './lib/trafficLightModels';
 import { arrivalLabel, nextArrivals } from './lib/stopArrivals';
 import type { ArrivalFocus } from './lib/stopArrivals';
 import { pollDepartures } from './lib/departures';
@@ -248,6 +251,9 @@ function App() {
     id: string;
     name: string;
   } | null>(null);
+  // A signalised junction picked off the map, by its Helsinki junction number
+  // — the same `id` the traffic-lights dataset and HFP's `sid` both use.
+  const [selectedJunctionId, setSelectedJunctionId] = useState<number | null>(null);
 
   // Everything the map shows beside the vehicles — departures, alerts, journey
   // plans, bike capacity — is fetched for right now, so beside an hour-old tram
@@ -257,6 +263,7 @@ function App() {
     setSelectedTram(null);
     setSelectedStop(null);
     setSelectedBikeStation(null);
+    setSelectedJunctionId(null);
     setJourney(null);
     setJourneyOpen(false);
     setDeparturesOpen(false);
@@ -280,12 +287,13 @@ function App() {
     typeof window !== 'undefined' ? window.innerWidth <= 768 : false
   );
 
-  // Auto-collapse sidebar when a tram, stop, or bike station is selected on mobile
+  // Auto-collapse sidebar when a tram, stop, bike station or junction is
+  // selected on mobile
   useEffect(() => {
-    if ((selectedTram || selectedStop || selectedBikeStation) && isMobile) {
+    if ((selectedTram || selectedStop || selectedBikeStation || selectedJunctionId !== null) && isMobile) {
       setIsFilterCollapsed(true);
     }
-  }, [selectedTram, selectedStop, selectedBikeStation, isMobile]);
+  }, [selectedTram, selectedStop, selectedBikeStation, selectedJunctionId, isMobile]);
 
   // On mobile the filter and detail panels render as bottom sheets that occupy the
   // same slot, so only one may be expanded at a time (opening one closes the other).
@@ -479,6 +487,7 @@ function App() {
   const handleSelectTram = (tram: VehiclePosition | null) => {
     setSelectedStop(null);
     setSelectedBikeStation(null);
+    setSelectedJunctionId(null);
     setSelectedTram(tram);
   };
 
@@ -498,6 +507,7 @@ function App() {
     }
     setSelectedTram(null);
     setSelectedBikeStation(null);
+    setSelectedJunctionId(null);
     setSelectedStopRoutes([]); // Reset selected stop routes!
     setStopModes({ bus: false, metro: false, train: false, tram: false, ferry: false });
     setArrivalFocus(null);
@@ -508,11 +518,22 @@ function App() {
   const handleSelectBikeStation = (station: { id: string; name: string } | null) => {
     setSelectedTram(null);
     setSelectedStop(null);
+    setSelectedJunctionId(null);
     setSelectedBikeStation(station);
     if (station) {
       setIsDetailCollapsed(false); // Auto-expand detail panel to show bike capacity
     }
   };
+
+  const handleSelectJunction = useCallback((junctionId: number | null) => {
+    setSelectedTram(null);
+    setSelectedStop(null);
+    setSelectedBikeStation(null);
+    setSelectedJunctionId(junctionId);
+    if (junctionId !== null) {
+      setIsDetailCollapsed(false); // Auto-expand to show who is asking
+    }
+  }, []);
 
   const handleCloseStop = () => {
     setSelectedStop(null);
@@ -705,9 +726,25 @@ function App() {
     }
   }, []);
 
+  // The junction panel reads the same two things the map's markers do: the
+  // static junction locations, and the live priority exchanges folded out of
+  // the vehicles' own `tlp` field. Both are already in hand, so the panel costs
+  // no fetch of its own.
+  const trafficLightFeatures = useTrafficLights();
+  const junctionPriorities = useMemo(
+    () => signalPriorityIndex(vehicles),
+    [vehicles],
+  );
+  const selectedJunction = useMemo(
+    () => (selectedJunctionId === null
+      ? null
+      : trafficLightFeatures.find((f) => f.properties.id === selectedJunctionId) ?? null),
+    [selectedJunctionId, trafficLightFeatures],
+  );
+
   // Bottom tab bar state (mobile only): drives which bottom sheet is expanded, and
   // null when none is — the map is then fully visible.
-  const hasDetailSelection = !!(selectedTram || selectedStop || selectedBikeStation);
+  const hasDetailSelection = !!(selectedTram || selectedStop || selectedBikeStation || selectedJunction);
   const activeMobileTab: MobileTab | null = !isFilterCollapsed
     ? 'lines'
     : hasDetailSelection && !isDetailCollapsed
@@ -743,6 +780,8 @@ function App() {
         onSelectTram={handleSelectTram}
         onSelectStop={handleSelectStop}
         onSelectBikeStation={handleSelectBikeStation}
+        onSelectJunction={handleSelectJunction}
+        selectedJunctionId={selectedJunctionId}
         lineFilters={selectedLines}
         routeGeometries={routeGeometries}
         selectedLine={selectedTram?.desi || null}
@@ -845,6 +884,21 @@ function App() {
           stationId={selectedBikeStation.id}
           stationName={selectedBikeStation.name}
           onClose={handleCloseBikeStation}
+          isCollapsed={isDetailCollapsed}
+          onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
+        />
+      )}
+
+      {/* Selected Junction — who is asking these lights for a green */}
+      {selectedJunction && (
+        <TrafficLightPopup
+          junction={selectedJunction}
+          activity={junctionPriorities.get(selectedJunction.properties.id) ?? null}
+          onSelectVehicle={(veh) => {
+            const vehicle = vehicles.find((v) => v.veh === veh);
+            if (vehicle) handleSelectTram(vehicle);
+          }}
+          onClose={() => setSelectedJunctionId(null)}
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
         />

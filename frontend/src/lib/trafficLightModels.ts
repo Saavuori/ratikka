@@ -7,7 +7,7 @@
 // (`tlr`) and the junction's answers (`tla`), so the map can say that this
 // tram, at this junction, has asked for a green and been given one.
 //
-// That turns the marker into a state display, and this module holds all three
+// That turns the marker into a state display, and this module holds both
 // pieces of it:
 //
 //  1. `signalPriorityIndex` — the live exchanges, folded from the vehicles that
@@ -16,15 +16,13 @@
 //     traffic-lights endpoint serves, so the join is an equality and not a
 //     guess. (Measured against a capture of the live feed: 145 of 147 tram
 //     requests named a junction that is in the open-data set.)
-//  2. `trafficLightIconSvg` — the flat marker, redrawn as a signal head with a
-//     hood over each lens on a mast, and lit by the state above.
-//  3. `trafficLightExtrusions` — the 3D counterpart, the same real-metre boxes
-//     the stop shelters and bike racks are built from, so a signal standing on
-//     a corner belongs to the same scene as the tram waiting at it.
+//  2. `trafficLightIconSvg` — the marker, drawn as a signal head with a hood
+//     over each lens on a mast, and lit by the state above. It is the whole of
+//     the junction on the map, at every zoom and in 3D as well as flat: a
+//     signal modelled in real metres is a thin object seen from a long way up,
+//     and it said less about who had been given a green than this does.
 
-import { offsetMeters, patchRing } from './vehicleModels';
-import { platformColors, type MapTheme } from './stopPlatforms';
-import type { TrafficLightFeature, VehiclePosition, SignalPriority } from '../types';
+import type { VehiclePosition, SignalPriority } from '../types';
 
 // --- Colours ---------------------------------------------------------------
 
@@ -35,7 +33,6 @@ export const SIGNAL_GREEN = '#20bf6b';
 const LENS_DARK = { red: '#5c2a2c', amber: '#5f4a17', green: '#1c4634' };
 const HEAD_DARK = '#1f2937';
 const HEAD_EDGE = '#f8fafc';
-const MAST = '#4b5563';
 
 // --- 1. Live priority state ------------------------------------------------
 
@@ -44,12 +41,19 @@ export type JunctionPriorityStatus = SignalPriority['status'];
 
 export interface JunctionPriority {
   status: JunctionPriorityStatus;
-  /** The vehicle doing the asking, so the marker can name it. */
+  /** The vehicle doing the asking, so the junction can name it. */
   desi: string;
   veh: string;
+  mode: string;
+  /** Where it is and how fast, so "still coming" and "sitting at the line" read differently. */
+  lat: number;
+  lng: number;
+  spd: number;
+  drst: number;
   requestType?: string;
   level?: string;
   reason?: string;
+  attempts?: number;
   ts: number;
 }
 
@@ -57,6 +61,8 @@ export interface JunctionPriority {
 // state wins the marker: an answer outranks a request, and a request outranks
 // a vehicle that decided not to make one. Showing "granted" while another
 // tram is still waiting is the honest summary — the junction *has* answered.
+// It is only the marker that has to pick, though; the junction's own panel
+// lists every vehicle, which is the whole reason the index keeps them all.
 const STATUS_RANK: Record<JunctionPriorityStatus, number> = {
   norequest: 0,
   requesting: 1,
@@ -64,8 +70,26 @@ const STATUS_RANK: Record<JunctionPriorityStatus, number> = {
   granted: 3,
 };
 
+/** Everything currently being asked of one junction. */
+export interface JunctionActivity {
+  /**
+   * Every vehicle in an exchange with this junction right now, most advanced
+   * state first and newest first within a state. A junction on a corner two
+   * tram lines share routinely has more than one.
+   */
+  vehicles: JunctionPriority[];
+  /** The state the junction is drawn in: the leading vehicle's. */
+  status: JunctionPriorityStatus;
+}
+
 /** Live exchanges by junction ID. */
-export type JunctionPriorityIndex = Map<number, JunctionPriority>;
+export type JunctionPriorityIndex = Map<number, JunctionActivity>;
+
+/** Sorts an exchange list the way a junction's panel reads it. */
+function byPrecedence(a: JunctionPriority, b: JunctionPriority): number {
+  const rank = STATUS_RANK[b.status] - STATUS_RANK[a.status];
+  return rank !== 0 ? rank : b.ts - a.ts;
+}
 
 /**
  * Fold the priority exchanges reported by vehicles onto the junctions they
@@ -75,29 +99,51 @@ export type JunctionPriorityIndex = Map<number, JunctionPriority>;
 export function signalPriorityIndex(
   vehicles: Iterable<VehiclePosition>,
 ): JunctionPriorityIndex {
-  const index = new Map<number, JunctionPriority>();
+  const byJunction = new Map<number, JunctionPriority[]>();
   for (const vehicle of vehicles) {
     const tlp = vehicle.tlp;
     if (!tlp || typeof tlp.junction !== 'number') continue;
-    const next: JunctionPriority = {
+    const entry: JunctionPriority = {
       status: tlp.status,
       desi: vehicle.desi,
       veh: vehicle.veh,
+      mode: vehicle.mode,
+      lat: vehicle.lat,
+      lng: vehicle.lng,
+      spd: vehicle.spd,
+      drst: vehicle.drst,
       requestType: tlp.requestType,
       level: tlp.level,
       reason: tlp.reason,
+      attempts: tlp.attempts,
       ts: tlp.ts,
     };
-    const current = index.get(tlp.junction);
-    if (
-      !current ||
-      STATUS_RANK[next.status] > STATUS_RANK[current.status] ||
-      (STATUS_RANK[next.status] === STATUS_RANK[current.status] && next.ts > current.ts)
-    ) {
-      index.set(tlp.junction, next);
-    }
+    const list = byJunction.get(tlp.junction);
+    if (list) list.push(entry);
+    else byJunction.set(tlp.junction, [entry]);
+  }
+
+  const index: JunctionPriorityIndex = new Map();
+  for (const [junction, list] of byJunction) {
+    list.sort(byPrecedence);
+    index.set(junction, { vehicles: list, status: list[0].status });
   }
   return index;
+}
+
+/**
+ * The vehicles at a junction split the way the panel shows them: the ones the
+ * junction has answered, and the ones still asking. A vehicle that decided not
+ * to ask is in neither — it is at the junction, not negotiating with it.
+ */
+export function splitByOutcome(activity: JunctionActivity | null | undefined) {
+  const vehicles = activity?.vehicles ?? [];
+  return {
+    granted: vehicles.filter((v) => v.status === 'granted'),
+    denied: vehicles.filter((v) => v.status === 'denied'),
+    requesting: vehicles.filter((v) => v.status === 'requesting'),
+    silent: vehicles.filter((v) => v.status === 'norequest'),
+  };
 }
 
 /** Which lens a state lights, and the accent the marker is ringed in. */
@@ -153,7 +199,7 @@ export function describeRequestType(requestType: string | undefined): string | n
   }
 }
 
-// --- 2. The flat marker ----------------------------------------------------
+// --- 2. The marker ---------------------------------------------------------
 
 /** Icon variants, one image per state; MapLibre picks between them by name. */
 export const TRAFFIC_LIGHT_ICON_VARIANTS = [
@@ -241,317 +287,25 @@ export function warningLightIconSvg(): string {
   `;
 }
 
-// --- 3. The 3D signal ------------------------------------------------------
-
-export interface TrafficLightState {
-  /** Junction ID — the open-data `numero`, and HFP's `sid`. */
-  junctionId: number;
-  lng: number;
-  lat: number;
-  kind: 'traffic_light' | 'warning_light';
-  /**
-   * Which way the street runs past the junction, degrees clockwise from north,
-   * or null where nothing on the map says. The mast stands beside that line
-   * with the head facing along it; with no bearing it is simply drawn
-   * north-south, because a signal at a guessed angle is still a signal.
-   */
-  bearing: number | null;
-  /** The live exchange at this junction, if a vehicle is having one. */
-  priority?: JunctionPriority | null;
-}
-
-export type TrafficLightPart =
-  | 'foot'
-  | 'mast'
-  | 'arm'
-  | 'case'
-  | 'hood'
-  | 'lens'
-  | 'halo';
-
-export interface TrafficLightExtrusionFeature {
-  type: 'Feature';
-  geometry: { type: 'Polygon'; coordinates: [number, number][][] };
-  properties: {
-    junctionId: number;
-    part: TrafficLightPart;
-    color: string;
-    base: number;
-    top: number;
-    /** Set on the parts that carry live state, for the layer's own styling. */
-    status?: JunctionPriorityStatus;
-  };
-}
-
-/**
- * Signal geometry in metres, off a Helsinki street signal: a 3.4 m mast with a
- * three-lens head at eye level for a tram driver, and the same head repeated on
- * a short cantilever arm over the carriageway.
- */
-export const SIGNAL = {
-  footRadius: 0.28,
-  footHeight: 0.12,
-  mastWidth: 0.14,
-  mastHeight: 3.4,
-  /** The head: a case a metre tall with three 0.2 m lenses down its face. */
-  head: { width: 0.34, depth: 0.26, base: 2.25, height: 1.05 },
-  lens: { size: 0.2, proud: 0.06, pitch: 0.31, first: 0.19 },
-  hood: { drop: 0.05, proud: 0.13 },
-  arm: { length: 1.5, thickness: 0.1, height: 3.25 },
-  /** How far off the junction point the mast stands, across the street line. */
-  offset: 3.2,
-  /**
-   * The state ring on the ground, drawn only while a request is live. A ring
-   * rather than a disc: a filled 2.6 m circle of signal colour is the loudest
-   * thing on the street and buries the junction it is meant to mark, where a
-   * band around it frames the junction and leaves the pavement, the tracks and
-   * the tram standing on them visible through the middle.
-   */
-  halo: { radius: 3.4, innerRadius: 2.5, height: 0.05 },
-} as const;
-
-/** Used when nothing on the map gives the junction an orientation. */
-export const DEFAULT_SIGNAL_BEARING = 0;
-
-const HALO_SIDES = 20;
-
-function circle(
-  lng: number,
-  lat: number,
-  radius: number,
-  clockwise = true,
-  sides = HALO_SIDES,
-): [number, number][] {
-  const ring: [number, number][] = [];
-  for (let i = 0; i < sides; i++) {
-    const step = (360 / sides) * i;
-    ring.push(offsetMeters(lng, lat, clockwise ? step : 360 - step, radius, 0));
-  }
-  ring.push(ring[0]);
-  return ring;
-}
-
-/** An annulus: the outer circle with the inner one punched out of it. */
-function annulus(
-  lng: number,
-  lat: number,
-  radius: number,
-  innerRadius: number,
-): [number, number][][] {
-  // Wound the opposite way from the outer ring, which is what makes it a hole
-  // rather than a second filled disc.
-  return [circle(lng, lat, radius), circle(lng, lat, innerRadius, false)];
-}
-
-/**
- * The junction as extruded boxes. One mast stands for the junction, because
- * one point is all the open data gives: it records where a signalised junction
- * is, not where each of its masts is. So this is a signal at the junction, not
- * a survey of the junction's signals — and it is placed off to the side of the
- * street line rather than in the middle of the crossing, which is the one thing
- * that would read as wrong.
- */
-export function trafficLightExtrusions(
-  light: TrafficLightState,
-  theme: MapTheme = 'light',
-): TrafficLightExtrusionFeature[] {
-  const palette = platformColors(theme);
-  const out: TrafficLightExtrusionFeature[] = [];
-  const hdg = light.bearing ?? DEFAULT_SIGNAL_BEARING;
-  const status = light.priority?.status ?? null;
-  const accent = priorityAccent(status);
-
-  // The mast stands beside the street rather than on the junction point, so
-  // the signals of a crossroads do not pile up on top of each other.
-  const [mlng, mlat] = offsetMeters(light.lng, light.lat, hdg, 0, SIGNAL.offset);
-
-  const push = (
-    part: TrafficLightPart,
-    ring: [number, number][],
-    color: string,
-    base: number,
-    top: number,
-  ) => {
-    const feature: TrafficLightExtrusionFeature = {
-      type: 'Feature',
-      geometry: { type: 'Polygon', coordinates: [ring] },
-      properties: { junctionId: light.junctionId, part, color, base, top },
-    };
-    if (status) feature.properties.status = status;
-    out.push(feature);
-  };
-  const patch = (
-    part: TrafficLightPart,
-    along: [number, number],
-    across: [number, number],
-    color: string,
-    base: number,
-    top: number,
-  ) => push(part, patchRing(mlng, mlat, hdg, along, across), color, base, top);
-
-  // 1. The state disc, on the ground under the mast. In 3D the head is a small
-  //    object seen from a long way up; the disc is what makes a junction that
-  //    is being asked for a green findable from that height. A band rather than
-  //    a disc, so it frames the junction instead of covering it. Drawn only
-  //    while there is something to show.
-  if (accent) {
-    out.push({
-      type: 'Feature',
-      geometry: {
-        type: 'Polygon',
-        coordinates: annulus(light.lng, light.lat, SIGNAL.halo.radius, SIGNAL.halo.innerRadius),
-      },
-      properties: {
-        junctionId: light.junctionId,
-        part: 'halo',
-        color: accent,
-        base: 0,
-        top: SIGNAL.halo.height,
-        ...(status ? { status } : {}),
-      },
-    });
-  }
-
-  if (light.kind === 'warning_light') {
-    // A warning light is one amber lamp on a shorter pole. It has no lens
-    // stack and nothing to say about priority.
-    patch('foot', [-SIGNAL.footRadius, SIGNAL.footRadius], [-SIGNAL.footRadius, SIGNAL.footRadius],
-      palette.extrusion, 0, SIGNAL.footHeight);
-    patch('mast', [-0.06, 0.06], [-0.06, 0.06], MAST, SIGNAL.footHeight, 2.6);
-    patch('case', [-0.2, 0.2], [-0.14, 0.14], HEAD_DARK, 2.15, 2.75);
-    patch('lens', [-0.1, 0.1], [-0.14 - SIGNAL.lens.proud, -0.14], SIGNAL_AMBER, 2.32, 2.58);
-    return out;
-  }
-
-  // 2. Foot and mast.
-  patch('foot', [-SIGNAL.footRadius, SIGNAL.footRadius], [-SIGNAL.footRadius, SIGNAL.footRadius],
-    palette.extrusion, 0, SIGNAL.footHeight);
-  patch('mast', [-SIGNAL.mastWidth / 2, SIGNAL.mastWidth / 2],
-    [-SIGNAL.mastWidth / 2, SIGNAL.mastWidth / 2], MAST, SIGNAL.footHeight, SIGNAL.mastHeight);
-
-  // 3. The cantilever arm reaching out over the carriageway, with the second
-  //    head hanging off its end — the one a driver actually reads.
-  patch('arm', [-SIGNAL.arm.thickness / 2, SIGNAL.arm.thickness / 2],
-    [-SIGNAL.arm.length, 0], MAST, SIGNAL.arm.height - SIGNAL.arm.thickness, SIGNAL.arm.height);
-
-  const h = SIGNAL.head;
-  // Two heads: one on the mast facing the street, one under the arm.
-  const heads: Array<{ across: number; base: number }> = [
-    { across: -h.depth / 2, base: h.base },
-    { across: -SIGNAL.arm.length - h.depth / 2, base: SIGNAL.arm.height - SIGNAL.arm.thickness - h.height },
-  ];
-
-  for (const head of heads) {
-    const front = head.across;
-    patch('case', [-h.width / 2, h.width / 2], [front, front + h.depth],
-      HEAD_DARK, head.base, head.base + h.height);
-
-    // 4. The lenses, proud of the case, each under its own hood. Red at the
-    //    top, as they are on the street.
-    const lenses: Array<['red' | 'amber' | 'green', string]> = [
-      ['red', SIGNAL_RED],
-      ['amber', SIGNAL_AMBER],
-      ['green', SIGNAL_GREEN],
-    ];
-    lenses.forEach(([key, bright], i) => {
-      // Top lens first: the stack is measured down from the top of the case.
-      const centre = head.base + h.height - SIGNAL.lens.first - i * SIGNAL.lens.pitch;
-      const on =
-        (status === 'denied' && key === 'red') ||
-        (status === 'requesting' && key === 'amber') ||
-        (status === 'granted' && key === 'green');
-      patch('lens', [-SIGNAL.lens.size / 2, SIGNAL.lens.size / 2],
-        [front - SIGNAL.lens.proud, front],
-        on ? bright : LENS_DARK[key],
-        centre - SIGNAL.lens.size / 2, centre + SIGNAL.lens.size / 2);
-      patch('hood', [-h.width / 2, h.width / 2],
-        [front - SIGNAL.hood.proud, front],
-        HEAD_DARK, centre + SIGNAL.lens.size / 2, centre + SIGNAL.lens.size / 2 + SIGNAL.hood.drop);
-    });
-  }
-
-  return out;
-}
-
-export function trafficLightCollection(lights: TrafficLightState[], theme: MapTheme = 'light') {
-  return {
-    type: 'FeatureCollection' as const,
-    features: lights.flatMap((l) => trafficLightExtrusions(l, theme)),
-  };
-}
-
-/**
- * Turn the junction features the flat layer draws into 3D states, attaching
- * whatever priority exchange is live at each.
- */
-export function trafficLightStates(
-  features: TrafficLightFeature[],
-  priorities: JunctionPriorityIndex,
-  bearingOf: (lngLat: [number, number]) => number | null,
-): TrafficLightState[] {
-  return features.map((feature) => {
-    const [lng, lat] = feature.geometry.coordinates;
-    return {
-      junctionId: feature.properties.id,
-      lng,
-      lat,
-      kind: feature.properties.type,
-      bearing: bearingOf([lng, lat]),
-      priority: priorities.get(feature.properties.id) ?? null,
-    };
-  });
-}
-
 // --- Layer wiring ----------------------------------------------------------
 
 /**
  * Street-level only: 557 junctions citywide would be a rash of markers over an
  * overview map, and a signal head is not worth drawing until a metre is worth
- * a pixel.
+ * a pixel. From there up it is the marker all the way, in 2D and in 3D alike:
+ * a signal is a small, thin object, and a modelled mast at a rooftop camera
+ * angle says less about who has been given a green than the flat head does.
  */
 export const TRAFFIC_LIGHT_MIN_ZOOM = 15;
 export const TRAFFIC_LIGHT_FULL_ZOOM = 15.5;
 
-/**
- * The 3D signal arrives later than the marker, and later than the stop
- * shelters: it is a thinner object than a shelter, so it needs more pixels per
- * metre before it stops being a smear.
- */
-export const TRAFFIC_LIGHT_3D_MIN_ZOOM = 16.4;
-export const TRAFFIC_LIGHT_3D_FULL_ZOOM = 17.2;
-
-export const TRAFFIC_LIGHT_3D_FADE_IN: unknown[] = [
-  'interpolate', ['linear'], ['zoom'],
-  TRAFFIC_LIGHT_3D_MIN_ZOOM, 0,
-  TRAFFIC_LIGHT_3D_FULL_ZOOM, 0.95,
-];
-
-/** The marker's own fade-in on the flat map, where it is all there is. */
+/** The marker's own fade-in; it stays up at every zoom above it. */
 export const TRAFFIC_LIGHT_ICON_OPACITY: unknown[] = [
   'interpolate', ['linear'], ['zoom'],
   TRAFFIC_LIGHT_MIN_ZOOM, 0,
   TRAFFIC_LIGHT_FULL_ZOOM, 1,
 ];
 
-/**
- * In 3D the marker hands over to the mast: it fades in as before, then back
- * out across the band the extrusion arrives in, so a junction is drawn as a
- * symbol or as a signal but never as both. What the marker carried — which
- * lens is lit — the mast carries too, and the state disc on the ground carries
- * it further, being the part still legible from a rooftop camera angle.
- */
-export const TRAFFIC_LIGHT_ICON_OPACITY_3D: unknown[] = [
-  'interpolate', ['linear'], ['zoom'],
-  TRAFFIC_LIGHT_MIN_ZOOM, 0,
-  TRAFFIC_LIGHT_FULL_ZOOM, 1,
-  TRAFFIC_LIGHT_3D_MIN_ZOOM, 1,
-  TRAFFIC_LIGHT_3D_FULL_ZOOM, 0,
-];
-
-/** Cap on how many junctions get a mast at once, so a dense view stays cheap. */
-export const TRAFFIC_LIGHT_LIMIT = 40;
-
 export const TRAFFIC_LIGHT_SOURCE = 'traffic-lights';
 export const TRAFFIC_LIGHT_ICON_LAYER = 'traffic-lights-icons';
-export const TRAFFIC_LIGHT_3D_SOURCE = 'traffic-light-furniture';
-export const TRAFFIC_LIGHT_3D_LAYER = 'traffic-lights-3d';
+export const TRAFFIC_LIGHT_SELECTION_LAYER = 'traffic-lights-selected';

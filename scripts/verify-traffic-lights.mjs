@@ -1,22 +1,16 @@
-// Renders the traffic-light marker and the 3D signal with MapLibre and measures
-// what actually lands on the canvas.
+// Renders the traffic-light markers with MapLibre and measures what actually
+// lands on the canvas.
 //
 // Why this exists: a junction used to be a dot with a location. It is now a
 // state display — the HFP `tlr`/`tla` feeds say which junction a tram is asking
-// for a green and what the junction answered — and every part of showing that
-// fails quietly:
-//
-//   1. The marker (`trafficLightIconSvg`) is an SVG rasterised through an Image
-//      and handed to `map.addImage`, once per state. A malformed path or a
-//      colour the encoder mangles leaves a symbol layer that "works" and draws
-//      nothing; a lit lens that is not actually lit leaves a marker that is
-//      *correct* about the junction and silent about the state, which is the
-//      whole point of the feature.
-//   2. The mast is `fill-extrusion` geometry in metres on the ground
-//      (frontend/src/lib/trafficLightModels.ts), so it fails the way the
-//      vehicles, the stop shelters and the bike racks do: a signal at the wrong
-//      scale is still a box, and one with no height is a footprint seen from
-//      above.
+// for a green and what the junction answered — and showing that fails quietly.
+// The marker (`trafficLightIconSvg`) is an SVG rasterised through an Image and
+// handed to `map.addImage`, once per state. A malformed path or a colour the
+// encoder mangles leaves a symbol layer that "works" and draws nothing; a lit
+// lens that is not actually lit leaves a marker that is *correct* about the
+// junction and silent about the state, which is the whole point of the feature.
+// The marker is the whole of the junction on the map — there is no 3D
+// counterpart to hand over to — so this is the only place it is checked.
 //
 // Usage (from the repo root):
 //   npx playwright@latest install chromium   # once
@@ -55,8 +49,6 @@ await bundle.close();
 const source = fs.readFileSync(path.join(outDir, 'trafficLightModels.mjs'), 'utf8');
 const {
   TRAFFIC_LIGHT_ICON_VARIANTS,
-  TRAFFIC_LIGHT_3D_MIN_ZOOM,
-  SIGNAL,
 } = await import(pathToFileURL(path.join(outDir, 'trafficLightModels.mjs')).href);
 
 // MapLibre ships ESM only and spawns its worker from a URL relative to its own
@@ -106,16 +98,13 @@ await page.waitForFunction(() => !!window.maplibregl && !!window.signals, null, 
 const CENTER = [24.94, 60.17];
 
 /**
- * Draw a junction — the flat marker, the 3D signal, or both — and report what
- * was painted, in CSS pixels. `ground` is the projected footprint of the
- * extrusion geometry, so anything painted above its top row is a box standing
- * up rather than a polygon lying down.
+ * Draw a junction marker and report what was painted, in CSS pixels.
  */
 const render = (opts) =>
-  page.evaluate(async ({ light, variant, zoom, pitch, theme, marker, mast, capture, center, min3d }) => {
+  page.evaluate(async ({ variant, warning, zoom, pitch, capture, center }) => {
     const {
-      trafficLightCollection, trafficLightIconSvg, trafficLightIconName,
-      TRAFFIC_LIGHT_3D_FADE_IN, TRAFFIC_LIGHT_ICON_WIDTH, TRAFFIC_LIGHT_ICON_HEIGHT,
+      trafficLightIconSvg, trafficLightIconName, warningLightIconSvg,
+      TRAFFIC_LIGHT_ICON_WIDTH, TRAFFIC_LIGHT_ICON_HEIGHT,
     } = window.signals;
 
     document.getElementById('map').innerHTML = '';
@@ -135,49 +124,31 @@ const render = (opts) =>
     });
     await new Promise((r) => map.on('load', r));
 
-    if (marker) {
-      // Exactly how Map.tsx registers it: SVG through a data URI and an Image.
-      const name = trafficLightIconName(variant);
-      const img = new Image(TRAFFIC_LIGHT_ICON_WIDTH, TRAFFIC_LIGHT_ICON_HEIGHT);
-      const loaded = new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = () => reject(new Error(`signal image ${variant} failed to decode`));
-      });
-      img.src = 'data:image/svg+xml;charset=utf-8,' +
-        encodeURIComponent(trafficLightIconSvg(variant));
-      await loaded;
-      map.addImage(name, img, { pixelRatio: 2 });
-      map.addSource('marker', {
-        type: 'geojson',
-        data: { type: 'Feature', geometry: { type: 'Point', coordinates: center }, properties: {} },
-      });
-      map.addLayer({
-        id: 'traffic-lights-icons', type: 'symbol', source: 'marker',
-        // Drawn at 2x so the scan measures the art rather than the handful of
-        // pixels a 13 px sprite survives as. What the app varies with zoom is
-        // the size; what this checks is what is inside it.
-        layout: {
-          'icon-image': name, 'icon-anchor': 'bottom',
-          'icon-allow-overlap': true, 'icon-size': 2,
-        },
-      });
-    }
-
-    let mastData = { type: 'FeatureCollection', features: [] };
-    if (mast) {
-      mastData = trafficLightCollection([{ ...light, lng: center[0], lat: center[1] }], theme);
-      map.addSource('mast', { type: 'geojson', data: mastData });
-      map.addLayer({
-        id: 'traffic-lights-3d', type: 'fill-extrusion', source: 'mast',
-        minzoom: min3d,
-        paint: {
-          'fill-extrusion-color': ['get', 'color'],
-          'fill-extrusion-height': ['get', 'top'],
-          'fill-extrusion-base': ['get', 'base'],
-          'fill-extrusion-opacity': TRAFFIC_LIGHT_3D_FADE_IN,
-        },
-      });
-    }
+    // Exactly how Map.tsx registers it: SVG through a data URI and an Image.
+    const name = warning ? 'warning-light-icon' : trafficLightIconName(variant);
+    const svg = warning ? warningLightIconSvg() : trafficLightIconSvg(variant);
+    const img = new Image(TRAFFIC_LIGHT_ICON_WIDTH, TRAFFIC_LIGHT_ICON_HEIGHT);
+    const loaded = new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error(`signal image ${name} failed to decode`));
+    });
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    await loaded;
+    map.addImage(name, img, { pixelRatio: 2 });
+    map.addSource('marker', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'Point', coordinates: center }, properties: {} },
+    });
+    map.addLayer({
+      id: 'traffic-lights-icons', type: 'symbol', source: 'marker',
+      // Drawn at 2x so the scan measures the art rather than the handful of
+      // pixels a 13 px sprite survives as. What the app varies with zoom is
+      // the size; what this checks is what is inside it.
+      layout: {
+        'icon-image': name, 'icon-anchor': 'bottom',
+        'icon-allow-overlap': true, 'icon-size': 2,
+      },
+    });
     await new Promise((r) => map.once('idle', r));
 
     const glCanvas = map.getCanvas();
@@ -209,44 +180,16 @@ const render = (opts) =>
       }
     }
 
-    const project = (features) => {
-      let top = Infinity, left = Infinity, right = -Infinity, bottom = -Infinity;
-      for (const f of features) {
-        for (const [lng, lat] of f.geometry.coordinates[0]) {
-          const p = map.project([lng, lat]);
-          top = Math.min(top, p.y); bottom = Math.max(bottom, p.y);
-          left = Math.min(left, p.x); right = Math.max(right, p.x);
-        }
-      }
-      return { top, bottom, left, right };
-    };
-    const ground = mastData.features.length ? project(mastData.features) : null;
-
-    const mPerDegLat = 111320;
-    const mPerDegLng = mPerDegLat * Math.cos((center[1] * Math.PI) / 180);
-    const metersPerPixel = (() => {
-      const a = map.project(center);
-      const b = map.unproject([a.x + 100, a.y]);
-      return (Math.abs(b.lng - center[0]) * mPerDegLng) / 100;
-    })();
-
     const image = capture ? glCanvas.toDataURL('image/png') : undefined;
     map.remove();
-    return {
-      painted, red, amber, green, minX, maxX, minY, maxY, ground, metersPerPixel, image,
-      parts: mastData.features.map((f) => f.properties.part),
-    };
+    return { painted, red, amber, green, minX, maxX, minY, maxY, image };
   }, {
-    light: { junctionId: 75, kind: 'traffic_light', bearing: 90, ...(opts.light ?? {}) },
     variant: opts.variant ?? 'idle',
+    warning: opts.warning ?? false,
     zoom: opts.zoom ?? 18,
     pitch: opts.pitch ?? 0,
-    theme: opts.theme ?? 'light',
-    marker: opts.marker ?? false,
-    mast: opts.mast ?? false,
     capture: opts.capture ?? false,
     center: CENTER,
-    min3d: TRAFFIC_LIGHT_3D_MIN_ZOOM,
   });
 
 const failures = [];
@@ -256,19 +199,17 @@ const check = (label, ok, detail) => {
   if (!ok) failures.push(label);
 };
 
-const asking = (status) => ({ priority: { status, desi: '10B', veh: '0040-407', ts: 1 } });
-
 // 1. Every state's marker decodes and paints. An SVG the encoder mangles leaves
 //    a symbol layer that renders nothing at all, with no error anywhere.
 for (const variant of TRAFFIC_LIGHT_ICON_VARIANTS) {
-  const r = await render({ marker: true, variant, zoom: 17 });
+  const r = await render({ variant, zoom: 17 });
   check(`the ${variant} marker is drawn`, r.painted > 300, `${r.painted} px`);
 }
 
 // 2. The marker is a signal head on a mast: taller than it is wide, and about
 //    icon-sized. A blob or a stretched sprite fails here.
 {
-  const r = await render({ marker: true, variant: 'idle', zoom: 17 });
+  const r = await render({ variant: 'idle', zoom: 17 });
   const w = r.maxX - r.minX;
   const h = r.maxY - r.minY;
   check(
@@ -281,10 +222,10 @@ for (const variant of TRAFFIC_LIGHT_ICON_VARIANTS) {
 // 3. The state is *shown*, which is the whole feature: a granted request paints
 //    green the idle marker does not, and a refused one paints red.
 {
-  const idle = await render({ marker: true, variant: 'idle', zoom: 18 });
-  const granted = await render({ marker: true, variant: 'granted', zoom: 18 });
-  const requesting = await render({ marker: true, variant: 'requesting', zoom: 18 });
-  const denied = await render({ marker: true, variant: 'denied', zoom: 18 });
+  const idle = await render({ variant: 'idle', zoom: 18 });
+  const granted = await render({ variant: 'granted', zoom: 18 });
+  const requesting = await render({ variant: 'requesting', zoom: 18 });
+  const denied = await render({ variant: 'denied', zoom: 18 });
   // The unlit lenses are the same hues at a fraction of the brightness, and
   // the hue tests carry brightness floors, so an idle marker registers no lit
   // colour at all. That is the claim: a signal showing nothing looks like a
@@ -306,95 +247,42 @@ for (const variant of TRAFFIC_LIGHT_ICON_VARIANTS) {
   );
 }
 
-// 4. The mast stands up. Seen at a pitch, the extrusion must paint well above
-//    the top row of its own projected footprint — the failure mode of every
-//    fill-extrusion model on this map is a shape lying flat on the ground.
-{
-  const r = await render({ mast: true, zoom: 19, pitch: 60 });
-  const standing = r.ground.top - r.minY;
-  // A 3.4 m mast at this zoom and pitch is a couple of dozen pixels tall; what
-  // matters is that it is painted *above* the footprint at all, because a model
-  // with no height paints exactly zero there.
+// 4. The marker is the junction at every zoom, in 3D as much as flat: nothing
+//    hands over to it and it hands over to nothing, so it has to survive both
+//    a straight-down street-level view and a steeply pitched one.
+for (const [label, opts] of [
+  ['flat at street level', { zoom: 15.5, pitch: 0 }],
+  ['flat at close range', { zoom: 19, pitch: 0 }],
+  ['pitched, as in 3D view', { zoom: 19, pitch: 60 }],
+]) {
+  const r = await render({ variant: 'granted', ...opts });
   check(
-    'the signal stands up rather than lying on the pavement',
-    standing > 20,
-    `${standing.toFixed(0)} px of mast above its footprint`
+    `the marker is drawn and lit ${label}`,
+    r.painted > 200 && r.green > 10,
+    `${r.painted} px, ${r.green} green`
   );
 }
 
-// 5. It is drawn at the size the model says. Seen from straight above with the
-//    street running east-west, the painted spread across the street is the
-//    cantilever arm reaching out over it.
+// 5. A warning light is the other object in the dataset and must not be drawn
+//    as a three-lens signal: one amber lamp under a triangle, nothing lit green
+//    or red, because there is nothing a tram can ask of it.
 {
-  const r = await render({ mast: true, zoom: 20, pitch: 0 });
-  const paintedMeters = Math.max(r.maxX - r.minX, r.maxY - r.minY) * r.metersPerPixel;
+  const r = await render({ warning: true, zoom: 18 });
+  check('the warning light is drawn', r.painted > 300, `${r.painted} px`);
   check(
-    'the arm reaches out at its modelled length',
-    Math.abs(paintedMeters - SIGNAL.arm.length) < 1.2,
-    `${paintedMeters.toFixed(2)} m painted, arm is ${SIGNAL.arm.length} m`
+    'a warning light is amber only, with no signal lenses',
+    r.amber > 50 && r.green === 0 && r.red === 0,
+    `${r.amber} amber, ${r.green} green, ${r.red} red`
   );
-}
-
-// 6. The mast stands beside the junction, not in the middle of the crossing.
-{
-  const r = await render({ mast: true, zoom: 20, pitch: 0 });
-  const offCentre = Math.abs((r.maxY + r.minY) / 2 - 300) * r.metersPerPixel;
-  check(
-    'the mast stands off the junction point',
-    offCentre > 1.5,
-    `${offCentre.toFixed(1)} m from the junction, offset is ${SIGNAL.offset} m`
-  );
-}
-
-// 7. The 3D signal carries the same state the marker does — including the disc
-//    on the ground, which is the part still legible from a rooftop angle.
-{
-  const idle = await render({ mast: true, zoom: 19, pitch: 55 });
-  const granted = await render({ mast: true, zoom: 19, pitch: 55, light: asking('granted') });
-  const denied = await render({ mast: true, zoom: 19, pitch: 55, light: asking('denied') });
-  check(
-    'a granted request greens the 3D signal and its ground disc',
-    granted.green > idle.green + 100,
-    `${idle.green} green px idle, ${granted.green} granted`
-  );
-  check(
-    'a refused request reddens it',
-    denied.red > idle.red + 100,
-    `${idle.red} red px idle, ${denied.red} denied`
-  );
-  check(
-    'the ground disc is drawn only while something is being asked',
-    !idle.parts.includes('halo') && granted.parts.includes('halo'),
-    `idle parts: ${[...new Set(idle.parts)].join(',')}`
-  );
-}
-
-// 8. A warning light is the other object in the dataset and must not be drawn
-//    as a three-lens signal.
-{
-  const r = await render({ mast: true, zoom: 19, pitch: 45, light: { kind: 'warning_light' } });
-  check(
-    'a warning light is one lamp on a pole',
-    r.parts.filter((p) => p === 'lens').length === 1 && !r.parts.includes('arm'),
-    `parts: ${[...new Set(r.parts)].join(',')}`
-  );
-  check('the warning light is visible', r.painted > 100, `${r.painted} px`);
-}
-
-// 9. Both themes paint something. The foot is theme-coloured, and a surface the
-//    colour of the background is indistinguishable from a layer that never drew.
-for (const theme of ['light', 'dark']) {
-  const r = await render({ mast: true, zoom: 19, pitch: 45, theme });
-  check(`the ${theme} signal is visible`, r.painted > 100, `${r.painted} px`);
 }
 
 // Opt-in visual artifacts; normal verification leaves no images behind.
 if (process.env.SIGNAL_SCREENSHOTS === '1') {
   const screenshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ratikka-signal-previews-'));
   for (const [name, opts] of [
-    ['mast-granted', { mast: true, zoom: 19.5, pitch: 60, light: asking('granted') }],
-    ['mast-idle', { mast: true, zoom: 19.5, pitch: 60 }],
-    ['marker-requesting', { marker: true, zoom: 18, variant: 'requesting' }],
+    ['marker-granted', { zoom: 18, variant: 'granted' }],
+    ['marker-idle', { zoom: 18, variant: 'idle' }],
+    ['marker-requesting', { zoom: 18, variant: 'requesting' }],
   ]) {
     const shot = await render({ ...opts, capture: true });
     const filename = path.join(screenshotDir, `signal-${name}.png`);
@@ -407,7 +295,7 @@ await browser.close();
 server.close();
 fs.rmSync(outDir, { recursive: true, force: true });
 
-console.log('\n--- traffic light markers and 3D signals ---');
+console.log('\n--- traffic light markers ---');
 report.forEach((l) => console.log(l));
 if (pageErrors.length) {
   console.log('\npage errors:');
