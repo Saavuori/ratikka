@@ -617,6 +617,9 @@ body {
   transition: opacity 0.2s;
   text-decoration: none;
   cursor: pointer;
+  /* Two taps on the badge are the timelapse gesture, not a request to zoom the
+     map: without this the browser claims the second tap for double-tap zoom. */
+  touch-action: manipulation;
 }
 
 .version-badge:hover {
@@ -1590,6 +1593,9 @@ body {
     left: 12px;
     /* Sit behind bottom sheets (z-index: 10) so an expanded sheet fully covers it */
     z-index: 9;
+    /* A finger needs more than the nine-pixel tag to land on twice in a row. */
+    padding: 8px 12px;
+    min-height: 24px;
   }
   .maplibregl-ctrl-bottom-right,
   .maplibregl-ctrl-bottom-left {

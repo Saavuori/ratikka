@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { VehiclePosition } from '../types';
 import type { ReplayDayCoverage } from '../types';
 import {
+  badgeGesture,
   badgeTitle,
   coverageMarks,
   DOUBLE_CLICK_GRACE_MS,
@@ -331,5 +332,19 @@ describe('nextFetchSpan horizon', () => {
 
   it('still stops at the end of the archive however far it is asked to reach', () => {
     expect(nextFetchSpan(1000, held, 1150, 2000)).toBeNull();
+  });
+});
+
+describe('badgeGesture', () => {
+  it('waits when no click is pending', () => {
+    expect(badgeGesture(1_000, null)).toBe('wait');
+  });
+
+  it('reveals when the second click lands inside the grace period', () => {
+    expect(badgeGesture(1_000 + DOUBLE_CLICK_GRACE_MS, 1_000)).toBe('reveal');
+  });
+
+  it('waits again when the second click comes too late', () => {
+    expect(badgeGesture(1_000 + DOUBLE_CLICK_GRACE_MS + 1, 1_000)).toBe('wait');
   });
 });

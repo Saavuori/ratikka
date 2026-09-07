@@ -322,3 +322,18 @@ export function badgeTitle(revealable: boolean): string {
  * that long prevents the changelog link from winning before the second click.
  */
 export const DOUBLE_CLICK_GRACE_MS = 500;
+
+/**
+ * Whether a click on the badge completes the timelapse gesture or is the first
+ * of a pair still waiting for its partner. `pendingSince` is when the previous
+ * click landed, or null when none is waiting.
+ *
+ * Counted from clicks rather than from the browser's own `dblclick`, which
+ * touch browsers do not reliably emit even though they synthesize a click for
+ * every tap: this is the one path a mouse and a finger both travel, so the
+ * gesture behaves the same on a phone as on a desktop.
+ */
+export function badgeGesture(now: number, pendingSince: number | null): 'reveal' | 'wait' {
+  if (pendingSince === null) return 'wait';
+  return now - pendingSince <= DOUBLE_CLICK_GRACE_MS ? 'reveal' : 'wait';
+}
