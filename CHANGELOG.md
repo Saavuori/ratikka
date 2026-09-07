@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.67.0] - 2026-09-07
+
+### Changed
+- **The traffic light is one object again: the marker, at every zoom.** The 3D signal built in v0.65.0 — the mast, the cantilever arm, the two heads, the ring on the ground — is gone, and the junction marker no longer fades out to make room for it. A signal is a thin object a metre wide, and modelled at real scale it was a smear of a few pixels at exactly the camera angle 3D view puts you at, while the flat head it replaced said the same thing legibly: which lens is lit, and how many vehicles are asking. So the marker stays up from zoom 15 all the way in, tilted or flat, and it is the only drawing of a junction the map has. The junction still selects, still takes the gold on its ring, still opens the panel listing who is asking it for a green — all of that was the marker's already.
+  `scripts/verify-traffic-lights.mjs` drops its mast measurements for what is left to check: that every state's art decodes and paints, that a granted request paints green the idle marker paints none of, that the marker is drawn and lit at street level, at close range and under a 60° pitch, and that a warning light stays one amber lamp with no signal lenses.
+
+---
+
 ## [v0.66.0] - 2026-09-07
 
 ### Added
