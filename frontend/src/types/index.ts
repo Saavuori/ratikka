@@ -34,6 +34,46 @@ export interface VehiclePosition {
   dir?: string;
   oday?: string;
   start?: string;
+  /**
+   * The vehicle's newest traffic light priority exchange, from the HFP `tlr`
+   * (the vehicle asks a junction for a green) and `tla` (the junction answers)
+   * feeds. Absent whenever the vehicle has not asked anything in the last
+   * ~25 seconds, which is most vehicles most of the time.
+   */
+  tlp?: SignalPriority;
+}
+
+/**
+ * One traffic light priority exchange, as the vehicle and the junction
+ * reported it. See backend/internal/mqtt/signal_priority.go.
+ */
+export interface SignalPriority {
+  /**
+   * `requesting` — asked, not yet answered; `granted`/`denied` — the junction
+   * answered (HFP ACK/NAK); `norequest` — the vehicle reached a junction it is
+   * equipped to ask and deliberately did not, with `reason` saying why.
+   */
+  status: 'requesting' | 'granted' | 'denied' | 'norequest';
+  /**
+   * Signal junction ID. The same number as the `id` on a traffic-light
+   * feature, both being Helsinki's own junction numbering.
+   */
+  junction?: number;
+  signalGroup?: number;
+  signalGroupNbr?: number;
+  requestId?: number;
+  /** What was asked for: NORMAL, DOOR_CLOSE, DOOR_OPEN or ADVANCE. */
+  requestType?: string;
+  /** Priority level asked for: normal, high, or norequest. */
+  level?: string;
+  /** Why no request was sent: GLOBAL, AHEAD, LINE or PRIOEXEP. */
+  reason?: string;
+  /** Attempt sequence number of the current request. */
+  attempts?: number;
+  /** Radio protocol used: MQTT or KAR-MQTT. */
+  protocol?: string;
+  /** The vehicle's own timestamp for the newest event in the exchange. */
+  ts: number;
 }
 
 export interface PositionsMessage {
