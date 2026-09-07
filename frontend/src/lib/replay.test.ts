@@ -6,7 +6,9 @@ import {
   coveredUntil,
   coverageMarks,
   FETCH_SPAN_SECONDS,
+  fetchSpanForStep,
   hasCoverage,
+  MAX_FETCH_SPAN_SECONDS,
   newestCoverage,
   nextFetchSpan,
   playbackPlan,
@@ -16,6 +18,7 @@ import {
   REPLAY_STALE_SECONDS,
   ReplayBuffer,
   replayRange,
+  REPLAY_SPEEDS,
   replayTimeScale,
   TARGET_SNAPSHOTS_PER_SECOND,
 } from './replay';
@@ -213,7 +216,7 @@ describe('nextFetchSpan', () => {
 
   it('aligns blocks so replaying a stretch twice hits the browser cache', () => {
     const first = nextFetchSpan(1000, [], 100000)!;
-    const again = nextFetchSpan(1040, [], 100000)!;
+    const again = nextFetchSpan(1000 + FETCH_SPAN_SECONDS / 3, [], 100000)!;
     expect(again).toEqual(first);
     expect(first.from % FETCH_SPAN_SECONDS).toBe(0);
   });
@@ -231,6 +234,47 @@ describe('nextFetchSpan', () => {
   it('is satisfied once the prefetch horizon is covered', () => {
     const held = [{ from: 0, to: 100000 }];
     expect(nextFetchSpan(1000, held, 100000)).toBeNull();
+  });
+});
+
+describe('fetchSpanForStep', () => {
+  it('asks for a small block of unthinned history, which is the dear one', () => {
+    // Two minutes of tram history unthinned is nine thousand readings and three
+    // megabytes: a block that size is a tenth of a second of blocked main
+    // thread every two minutes of playback, and that is what a viewer sees as
+    // the timelapse jumping.
+    expect(fetchSpanForStep(1)).toBe(FETCH_SPAN_SECONDS);
+  });
+
+  it('asks for more history the more thinly it is being read', () => {
+    expect(fetchSpanForStep(4)).toBeGreaterThan(fetchSpanForStep(1));
+    expect(fetchSpanForStep(8)).toBeGreaterThan(fetchSpanForStep(4));
+  });
+
+  it('keeps a block to roughly one amount of work whatever the speed', () => {
+    for (const speed of REPLAY_SPEEDS) {
+      const { step } = playbackPlan(speed);
+      const readings = fetchSpanForStep(step) / step;
+      expect(readings).toBeGreaterThanOrEqual(FETCH_SPAN_SECONDS / 2);
+      expect(readings).toBeLessThanOrEqual(FETCH_SPAN_SECONDS * 2);
+    }
+  });
+
+  it('keeps every span a doubling of the smallest, so blocks nest and align', () => {
+    for (const speed of REPLAY_SPEEDS) {
+      const span = fetchSpanForStep(playbackPlan(speed).step);
+      expect(span % FETCH_SPAN_SECONDS).toBe(0);
+      expect(Number.isInteger(Math.log2(span / FETCH_SPAN_SECONDS))).toBe(true);
+      expect(span).toBeLessThanOrEqual(MAX_FETCH_SPAN_SECONDS);
+    }
+  });
+
+  it('aligns the larger blocks to their own size, not to the smallest', () => {
+    const span = fetchSpanForStep(8);
+    const held: Array<{ from: number; to: number }> = [];
+    const first = nextFetchSpan(1_000_000, held, 2_000_000, 600, span)!;
+    expect(first.to - first.from).toBe(span);
+    expect(first.from % span).toBe(0);
   });
 });
 

@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.67.4] - 2026-09-07
+
+### Fixed
+- **The timelapse stops lurching every couple of minutes.** Playback fetched history two minutes at a time, whatever speed it was running at — and two minutes of unthinned tram history is nine thousand readings and just under three megabytes. Parsing that and building nine thousand objects is a tenth of a second of blocked main thread on a desktop and several times that on a phone, and while it is blocked nothing is drawn: the map froze, the clock stalled, and both resumed a beat later. Once every two minutes of playback, which is exactly the rhythm of the lurch.
+  A block is now sized by the work it makes rather than by the clock it covers: half a minute of history read second by second, eight minutes of it read every thirtieth second, and roughly two thousand readings either way. Every span is a doubling of the smallest and aligned to its own size, so replaying a stretch still asks for the same URLs and the browser cache still answers them. The parse that used to cost three megabytes now costs three quarters of one, four times as often — small enough to land inside a frame or two instead of stopping the map.
+  A block that size is also a much shorter wait when the scrubber is dragged somewhere new: the first window a seek needs comes back in a second and a half rather than three and a half. And the parallel fetching added in v0.67.3 now only runs in parallel when the cursor is actually close to running out of history — at real time, where one block lasts half a minute, they land one at a time, because three blocks parsed back to back would be three times the hitch this change exists to remove.
+
+---
+
 ## [v0.67.3] - 2026-09-07
 
 ### Fixed

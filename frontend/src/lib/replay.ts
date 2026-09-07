@@ -22,8 +22,39 @@ export const REPLAY_STALE_SECONDS = 60;
  */
 export const TARGET_SNAPSHOTS_PER_SECOND = 8;
 
-/** How much history one fetch covers. */
-export const FETCH_SPAN_SECONDS = 120;
+/**
+ * The smallest block of history one fetch covers, and the size every larger
+ * block is a doubling of, so that blocks nest and stay aligned.
+ */
+export const FETCH_SPAN_SECONDS = 30;
+
+/** The largest block one fetch covers. */
+export const MAX_FETCH_SPAN_SECONDS = 480;
+
+/**
+ * How much history to ask for in one go, at a given thinning.
+ *
+ * Not a constant, because a constant span is a wildly varying amount of work. A
+ * two-minute block of tram history is nine thousand readings and three
+ * megabytes unthinned, and three hundred and seventy readings at a thirtieth of
+ * that — and it was the unthinned end that hurt: parsing three megabytes and
+ * building nine thousand objects is a tenth of a second of blocked main thread
+ * on a desktop and several times that on a phone, once every two minutes of
+ * playback, which is exactly where a viewer sees the timelapse jump.
+ *
+ * So the block is sized by the work rather than by the clock: roughly a
+ * constant couple of thousand readings whatever the speed, which is a fetch
+ * small enough to parse inside a frame or two and a seek quick enough to feel
+ * immediate. Spans stay doublings of the smallest one and aligned to their own
+ * size, so replaying a stretch at the same speed asks for the same URLs and the
+ * browser cache answers them.
+ */
+export function fetchSpanForStep(step: number): number {
+  const wanted = FETCH_SPAN_SECONDS * Math.max(1, step);
+  let span = FETCH_SPAN_SECONDS;
+  while (span * 2 <= wanted && span * 2 <= MAX_FETCH_SPAN_SECONDS) span *= 2;
+  return span;
+}
 
 /**
  * How far ahead of the cursor the player keeps history buffered, at least. Fast
@@ -228,21 +259,23 @@ function merge(left: BufferEntry[], right: BufferEntry[]): BufferEntry[] {
 
 /**
  * A span of history that is wanted but not yet held, or null when the buffer
- * already reaches far enough ahead. Fetches are aligned to whole
- * FETCH_SPAN_SECONDS blocks so that repeated playback of the same stretch asks
- * for the same URLs and the browser cache answers them.
+ * already reaches far enough ahead. Fetches are aligned to whole blocks of
+ * `spanSeconds` so that repeated playback of the same stretch asks for the same
+ * URLs and the browser cache answers them.
  */
 export function nextFetchSpan(
   cursorTs: number,
   fetched: Array<{ from: number; to: number }>,
   horizonTs: number,
-  aheadSeconds: number = PREFETCH_SPAN_SECONDS
+  aheadSeconds: number = PREFETCH_SPAN_SECONDS,
+  spanSeconds: number = FETCH_SPAN_SECONDS
 ): { from: number; to: number } | null {
   const wanted = Math.min(cursorTs + aheadSeconds, horizonTs);
+  const span = Math.max(1, spanSeconds);
 
-  for (let ts = Math.floor(cursorTs); ts <= wanted; ts += FETCH_SPAN_SECONDS) {
-    const blockFrom = Math.floor(ts / FETCH_SPAN_SECONDS) * FETCH_SPAN_SECONDS;
-    const blockTo = blockFrom + FETCH_SPAN_SECONDS;
+  for (let ts = Math.floor(cursorTs); ts <= wanted; ts += span) {
+    const blockFrom = Math.floor(ts / span) * span;
+    const blockTo = blockFrom + span;
     if (blockFrom > horizonTs) break;
     if (fetched.some((span) => span.from <= blockFrom && span.to >= blockTo)) continue;
     return { from: blockFrom, to: blockTo };

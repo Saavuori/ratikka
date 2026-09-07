@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchReplayIndex, fetchReplayWindow } from '../lib/api';
 import {
   coveredUntil,
+  fetchSpanForStep,
   hasCoverage,
   MAX_INFLIGHT_FETCHES,
   newestCoverage,
   nextFetchSpan,
   playbackPlan,
   prefetchHorizon,
+  PREFETCH_RUNWAY_SECONDS,
   ReplayBuffer,
   replayRange,
   replayTimeScale,
@@ -338,15 +340,29 @@ export function useReplay(): ReplayState & { controls: ReplayControls } {
       }
     };
 
+    const blockSpan = fetchSpanForStep(plan.step);
+
     const pump = () => {
       if (cancelled || performance.now() < retryAt) return;
       const bounds = replayRange(serverNow(), index.retentionDays);
-      while (inFlight < MAX_INFLIGHT_FETCHES) {
+
+      // How hard to fetch depends on how close the cursor is to running out of
+      // history, in the only unit that matters: wall seconds of playback left.
+      // Parallel requests are what keeps a fast replay supplied, but they also
+      // land together, and three blocks parsed back to back is three times the
+      // hitch of one — so at a speed where a single block lasts half a minute,
+      // they are fetched one at a time and the work stays spread out.
+      const runway = (coveredUntil(fetchedRef.current, cursorRef.current) - cursorRef.current) /
+        Math.max(0.1, speed);
+      const limit = runway < PREFETCH_RUNWAY_SECONDS ? MAX_INFLIGHT_FETCHES : 1;
+
+      while (inFlight < limit) {
         const span = nextFetchSpan(
           cursorRef.current,
           [...fetchedRef.current, ...pending],
           bounds.to,
-          prefetchHorizon(speed)
+          prefetchHorizon(speed),
+          blockSpan
         );
         if (!span) return;
         const wanted = { ...span, step: plan.step };
