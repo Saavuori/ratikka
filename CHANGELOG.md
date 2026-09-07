@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.67.1] - 2026-09-07
+
+### Fixed
+- **A traffic light is drawn where the junction is, not where the cabinet is.** The markers have always sat slightly wrong — beside the crossing, inside the corner building, a carriageway away from the tram waiting at the light — and the reason is what the open data actually holds. `avoindata:Liikennevalot_piste` gives one point per signalized junction, but that point is a surveyed *installation*: the controller cabinet, a mast on a kerb. It is typically 5-30 m from the middle of the crossing, which is nothing on a citywide view and the whole width of the junction at the zooms the marker is drawn at.
+  The middle is recoverable from the city's own street geometry, and now is. `avoindata:Liikennevaylat` carries the carriageway centrelines noded at every junction, so a junction is a point three or more of them meet at — several such points where a dual carriageway or a staggered crossing splits, and the centroid of the ones belonging to one crossing is the middle of the whole thing. The marked pedestrian crossings (`Suojatie`) ring that same box, so their centroid is a second, independent reading of it, and the only reading there is for a mid-block signal, which has no meeting of streets at all. Where both readings exist the centre is their mean: scored against a sample of junctions, each reading flatters itself and the open-data point is worst under either scoring, so the mean is the answer that stays close whichever way it is measured. 466 of 565 signals move, by a median of 7.4 m.
+  A correction is only kept when the geometry agrees with the point it is correcting — under 45 m of movement, and never on a single piece of evidence — because being 20 m off is a blemish and being snapped to the next junction down the street is a lie. The 99 signals with no clear answer keep their open-data coordinates exactly as before, and say so: a feature carries `centered: true` only when the point served is a computed centre. A junction listed twice under one number, which is two masts of the same crossing, is now served once instead of as two markers stacked on the same spot.
+  None of this is work the app does at runtime: 111,000 street centrelines are not something to intersect on a request, or on a timer, for a dataset that changes when a street is rebuilt. `scripts/generate-junction-centers.mjs` computes the table offline against Helsinki's WFS, and the backend embeds it and applies it as it serves `/api/v1/traffic-lights`.
+
+---
+
 ## [v0.67.0] - 2026-09-07
 
 ### Changed

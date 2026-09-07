@@ -46,6 +46,10 @@ type trafficLightProperties struct {
 	ID       int    `json:"id"`
 	Type     string `json:"type"`     // "traffic_light" | "warning_light"
 	Junction string `json:"junction"` // e.g. "Mannerheimintie/Runeberginkatu"
+	// True when the point served is the middle of the junction, computed from
+	// Helsinki's street geometry, rather than the surveyed signal installation
+	// the open data gives (see junction_centers.go).
+	Centered bool `json:"centered,omitempty"`
 }
 
 // rawWFSFeatureCollection mirrors the subset of the GeoServer WFS GeoJSON
@@ -94,17 +98,34 @@ func fetchTrafficLightLayer(r *http.Request, h *Handlers, typeName, kind string,
 		return fmt.Errorf("failed to decode WFS response: %w", err)
 	}
 
+	// A junction with two signal installations appears twice in the open data
+	// under one junction number — two masts of the same crossing. Recentring
+	// puts both on the same point, where they would draw as one marker with
+	// another hidden underneath it and count twice in anything that groups by
+	// junction, so the second one is dropped once it has been folded onto the
+	// first.
+	seen := make(map[string]bool, len(raw.Features))
+
 	for _, f := range raw.Features {
 		if len(f.Geometry.Coordinates) < 2 {
 			continue
 		}
+		coords, centered := centerOnJunction(kind, f.Properties.Numero, [2]float64{f.Geometry.Coordinates[0], f.Geometry.Coordinates[1]})
+		if centered {
+			key := junctionCenterKey(kind, f.Properties.Numero)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+		}
 		out.Features = append(out.Features, trafficLightFeature{
 			Type:     "Feature",
-			Geometry: trafficLightGeometry{Type: "Point", Coordinates: [2]float64{f.Geometry.Coordinates[0], f.Geometry.Coordinates[1]}},
+			Geometry: trafficLightGeometry{Type: "Point", Coordinates: coords},
 			Properties: trafficLightProperties{
 				ID:       f.Properties.Numero,
 				Type:     kind,
 				Junction: f.Properties.Risteys,
+				Centered: centered,
 			},
 		})
 	}

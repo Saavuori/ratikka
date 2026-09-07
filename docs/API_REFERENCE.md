@@ -818,7 +818,8 @@ tram is requesting priority at Mannerheimintie/Runeberginkatu" comes from.
       "properties": {
         "id": 27,
         "type": "traffic_light",
-        "junction": "Huopalahdentie/Tietokuja"
+        "junction": "Huopalahdentie/Tietokuja",
+        "centered": true
       }
     }
   ]
@@ -827,6 +828,18 @@ tram is requesting priority at Mannerheimintie/Runeberginkatu" comes from.
 
 `type` is `"traffic_light"` or `"warning_light"`. `coordinates` are `[lon, lat]`
 per the GeoJSON spec.
+
+`coordinates` are the **middle of the junction**, not the point in the source
+data. Helsinki's open data gives the surveyed signal installation — a
+controller cabinet, a mast on a corner — which sits 5-30 m off centre, far
+enough to put the marker inside a building or a carriageway away from the tram
+waiting at it. The middle is computed offline from the city's street
+centrelines (where they meet, and where the marked crossings ring the junction)
+by `scripts/generate-junction-centers.mjs`, shipped as a table in the backend
+and applied when this endpoint is served; `centered: true` marks a feature that
+carries a computed centre, and it is absent on the ones left at their
+open-data point. A junction listed twice under one number — two masts of the
+same crossing — is served once.
 
 ---
 
