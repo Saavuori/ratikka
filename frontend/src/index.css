@@ -1593,9 +1593,11 @@ body {
     left: 12px;
     /* Sit behind bottom sheets (z-index: 10) so an expanded sheet fully covers it */
     z-index: 9;
-    /* A finger needs more than the nine-pixel tag to land on twice in a row. */
-    padding: 8px 12px;
-    min-height: 24px;
+    /* A finger needs more than nine-point type to land on: this is what opens
+       the timelapse, so it is padded out to a target a thumb can hit. */
+    padding: 10px 14px;
+    min-height: 36px;
+    box-sizing: border-box;
   }
   .maplibregl-ctrl-bottom-right,
   .maplibregl-ctrl-bottom-left {

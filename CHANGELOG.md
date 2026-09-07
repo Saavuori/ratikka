@@ -2,14 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.66.1] - 2026-09-07
-
-### Fixed
-- **The timelapse can be opened with a finger.** The archive hides behind a double-click on the version badge, and on a phone that double-click never arrived: touch browsers synthesize a `click` for each tap but do not reliably emit `dblclick`, so the badge saw two unrelated single taps and did what a single tap asks for — it opened the changelog. The pair is now counted from the clicks themselves, which is the one path a mouse and a finger both travel, so the gesture behaves the same on a phone as on a desktop and the `dblclick` event is no longer needed for anything.
-  Two smaller things stood in the way of a finger even when the counting was right. The badge is nine-point type in the map's corner, too small a target to land on twice in a row, so on narrow screens it is padded out to something a thumb can hit; and a double tap on it was also the browser's own zoom gesture, which `touch-action: manipulation` now hands back to the badge. The link itself is unchanged: one tap still opens the changelog once the grace period shows no second tap is coming, falling back to this tab where a popup opened from a timer is refused.
-
----
-
 ## [v0.66.0] - 2026-09-07
 
 ### Added

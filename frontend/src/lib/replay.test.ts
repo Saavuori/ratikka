@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { VehiclePosition } from '../types';
 import type { ReplayDayCoverage } from '../types';
 import {
-  badgeGesture,
   badgeTitle,
   coverageMarks,
-  DOUBLE_CLICK_GRACE_MS,
   FETCH_SPAN_SECONDS,
   hasCoverage,
   nextFetchSpan,
@@ -271,29 +269,26 @@ describe('coverageMarks', () => {
 });
 
 describe('badgeTitle', () => {
-  it('advertises the timelapse gesture where there is history to reveal', () => {
-    expect(badgeTitle(true)).toContain('double-click for timelapse');
+  it('offers the timelapse where there is history to reveal', () => {
+    expect(badgeTitle(true)).toContain('Open the timelapse');
   });
 
-  it('offers no gesture on an instance that records nothing', () => {
-    // A double-click that does nothing is worse than one nobody knows about.
+  it('offers nothing but the changelog on an instance that records nothing', () => {
     expect(badgeTitle(false)).not.toContain('timelapse');
+    expect(badgeTitle(false)).toContain('View changelog');
+  });
+
+  it('says where the changelog went when the press opens the timelapse instead', () => {
+    expect(badgeTitle(true)).toContain('long-press');
   });
 
   it('keeps the attribution the badge exists to carry, either way', () => {
     for (const title of [badgeTitle(true), badgeTitle(false)]) {
-      expect(title).toContain('View changelog');
       expect(title).toContain('CC BY 4.0');
     }
   });
 });
 
-describe('DOUBLE_CLICK_GRACE_MS', () => {
-  it('waits long enough to catch a real double-click, briefly enough not to feel broken', () => {
-    expect(DOUBLE_CLICK_GRACE_MS).toBeGreaterThanOrEqual(400);
-    expect(DOUBLE_CLICK_GRACE_MS).toBeLessThanOrEqual(600);
-  });
-});
 
 describe('prefetchHorizon', () => {
   it('buffers a fixed stretch at ordinary speeds', () => {
@@ -332,19 +327,5 @@ describe('nextFetchSpan horizon', () => {
 
   it('still stops at the end of the archive however far it is asked to reach', () => {
     expect(nextFetchSpan(1000, held, 1150, 2000)).toBeNull();
-  });
-});
-
-describe('badgeGesture', () => {
-  it('waits when no click is pending', () => {
-    expect(badgeGesture(1_000, null)).toBe('wait');
-  });
-
-  it('reveals when the second click lands inside the grace period', () => {
-    expect(badgeGesture(1_000 + DOUBLE_CLICK_GRACE_MS, 1_000)).toBe('reveal');
-  });
-
-  it('waits again when the second click comes too late', () => {
-    expect(badgeGesture(1_000 + DOUBLE_CLICK_GRACE_MS + 1, 1_000)).toBe('wait');
   });
 });

@@ -306,34 +306,11 @@ const ATTRIBUTION =
   'Traffic-light junctions: Helsingin kaupunkiympäristön toimiala / Kaupunkimittauspalvelut, CC BY 4.0';
 
 /**
- * What the badge advertises on hover. The timelapse gesture is only mentioned
- * where there is history to reveal: an instance recording nothing must not
- * offer a double-click that does nothing.
+ * What the badge advertises on hover. The timelapse is only offered where there
+ * is history to reveal; with none, the badge is its changelog link and says so.
  */
 export function badgeTitle(revealable: boolean): string {
   return revealable
-    ? `View changelog · double-click for timelapse · ${ATTRIBUTION}`
+    ? `Open the timelapse · long-press for the changelog · ${ATTRIBUTION}`
     : `View changelog · ${ATTRIBUTION}`;
-}
-
-/**
- * How long a single click waits to see whether it is really half of a double.
- * The browser's default double-click window is commonly about 500 ms; waiting
- * that long prevents the changelog link from winning before the second click.
- */
-export const DOUBLE_CLICK_GRACE_MS = 500;
-
-/**
- * Whether a click on the badge completes the timelapse gesture or is the first
- * of a pair still waiting for its partner. `pendingSince` is when the previous
- * click landed, or null when none is waiting.
- *
- * Counted from clicks rather than from the browser's own `dblclick`, which
- * touch browsers do not reliably emit even though they synthesize a click for
- * every tap: this is the one path a mouse and a finger both travel, so the
- * gesture behaves the same on a phone as on a desktop.
- */
-export function badgeGesture(now: number, pendingSince: number | null): 'reveal' | 'wait' {
-  if (pendingSince === null) return 'wait';
-  return now - pendingSince <= DOUBLE_CLICK_GRACE_MS ? 'reveal' : 'wait';
 }
