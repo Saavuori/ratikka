@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.68.1] - 2026-09-08
+
+### Fixed
+- **The ride-along strip fits on the screen, and can be called off.** On a phone the "Looking for your vehicle" card hung off the bottom of the map: its lines were stacked instead of laid out in a row, the bottom half of it disappeared under the tab bar, and the button that stops the search went with it — leaving a search that could be started and not stopped. The card is one of the map's glass panels, and those are written for the popups that float over the map: they take themselves out of the flow and stack their contents downwards. The bottom dock lays its cards out itself, so an out-of-flow card left the dock measuring nothing at all, and the card grew down from the dock's own edge and through the tab bar rather than sitting above it. It is a row in the dock's flow again, so the dock is as tall as what it holds and everything in it clears the tab bar, the version badge and the map's own controls. The stop button says **Stop** rather than showing a crosshair, because the one thing a rider needs from that card while it is still searching is the way out of it.
+- **The vehicle toggles still work while a ride is being looked for.** Finding the vehicle you are sitting in needs every mode on the wire — the bus under you cannot be matched against a feed that is switched off — but that requirement had been wired straight to what the map draws, so starting a search turned on buses, metro, trains and ferries for everyone to look at, and tapping the toggles did nothing until the search ended. What is subscribed to and what is drawn are now two separate questions: the extra feeds stream for the detector and stay invisible, the toggles keep deciding what is on the map, and the one vehicle the search settles on is drawn whatever the toggles say — which is the only marker the search was ever asked for.
+
+---
+
 ## [v0.68.0] - 2026-09-08
 
 ### Added
