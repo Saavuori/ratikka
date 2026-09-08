@@ -1,13 +1,22 @@
-/* Ride-along: the "which vehicle am I in" control. Bottom centre, because the
-   top of the map is already three deep in launchers and the answer belongs
-   next to the thumb that will accept it. */
-.ride-dock,
-.ride-panel {
+/* The bottom dock: everything about the vehicle under the reader's feet, in
+   one column at the bottom centre. The top of the map is already three deep in
+   launchers, and these answers belong next to the thumb that acts on them.
+   The dock itself is transparent to clicks; its cards are not. */
+.map-bottom-dock {
   position: absolute;
   bottom: 18px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 105;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.ride-dock,
+.ride-panel {
   pointer-events: auto;
 }
 
@@ -101,8 +110,7 @@
    above it on the left — so the control clears both rather than landing on
    them. */
 @media (max-width: 768px) {
-  .ride-dock,
-  .ride-panel {
+  .map-bottom-dock {
     bottom: calc(var(--bottom-nav-h) + 56px + env(safe-area-inset-bottom));
   }
 }

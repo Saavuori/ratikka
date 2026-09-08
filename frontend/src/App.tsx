@@ -19,13 +19,16 @@ import { BottomNav, type MobileTab } from './components/BottomNav';
 import { JourneySearch, type JourneySelection } from './components/JourneySearch';
 import { DeparturesPanel } from './components/DeparturesPanel';
 import { RidePanel } from './components/RidePanel';
+import { AlightBanner } from './components/AlightBanner';
 import { fetchRouteDetails, fetchAlerts, fetchTripDetails, fetchStopsArrivals, fetchMapConfig } from './lib/api';
 import type { MapTheme } from './lib/stopPlatforms';
 import { readStorage, writeStorage } from './lib/storage';
 import { areTripsEquivalent } from './lib/trip';
 import { findJourneyVehicle, journeyVehicleModes } from './lib/journeyVehicles';
+import { alightAlert } from './lib/alightAlert';
 import { useTrafficLights } from './hooks/useTrafficLights';
 import { useRideDetection } from './hooks/useRideDetection';
+import { useAlightNotifications } from './hooks/useAlightNotifications';
 import { signalPriorityIndex } from './lib/trafficLightModels';
 import { arrivalLabel, nextArrivals } from './lib/stopArrivals';
 import type { ArrivalFocus } from './lib/stopArrivals';
@@ -815,6 +818,16 @@ function App() {
   // beside an hour-old tram. They all come back on exit.
   const replayActive = replay.active;
 
+  // When to get off. A planned journey already names the stop the reader
+  // leaves the vehicle at; this is the app saying so at the moment it matters,
+  // counted off the vehicle running the leg rather than off the clock.
+  const alight = useMemo(
+    () => (journey && !replayActive
+      ? alightAlert(journey.itinerary, vehicles, now, ride.rideVehicleId)
+      : null),
+    [journey, vehicles, now, ride.rideVehicleId, replayActive]);
+  const alightNotifications = useAlightNotifications(alight);
+
   // What the ride strip says while it is following: the line, and the stop the
   // vehicle is running to, in words rather than as a GTFS id.
   const rideVehicle = ride.rideVehicleId ? liveTrams[ride.rideVehicleId] ?? null : null;
@@ -996,13 +1009,20 @@ function App() {
           handleSelectStop(stop.gtfsId, stop.name, stop.code, stop.lat, stop.lon, undefined, undefined, extras)}
       />
 
-      {/* Ride along: which vehicle am I in, and follow it (bottom-center) */}
-      <RidePanel
-        detection={ride}
-        hidden={replayActive || mobileSheetOpen}
-        rideLine={rideVehicle?.desi ?? null}
-        rideNextStop={rideNextStop}
-      />
+      {/* The bottom dock: when to get off, and which vehicle you are in */}
+      <div className="map-bottom-dock">
+        <AlightBanner
+          alert={alight}
+          notifications={alightNotifications}
+          hidden={replayActive || mobileSheetOpen}
+        />
+        <RidePanel
+          detection={ride}
+          hidden={replayActive || mobileSheetOpen}
+          rideLine={rideVehicle?.desi ?? null}
+          rideNextStop={rideNextStop}
+        />
+      </div>
 
       {/* Quick vehicle-mode shortcuts (top-right corner) */}
       <ModeToggles
