@@ -6,6 +6,12 @@ import './ride.css';
 export interface RidePanelProps {
   detection: RideDetection;
   hidden?: boolean;
+  /**
+   * Whether the map's locate control is switched on. The offer to look for a
+   * ride is only made to a reader who has already put themselves on the map:
+   * off it, the answer would be a permission prompt out of nowhere.
+   */
+  locating?: boolean;
   /** The line the ride is running, once one is being followed. */
   rideLine: string | null;
   /** The stop the ride is running to, in words, or null when unknown. */
@@ -32,12 +38,20 @@ function vehicleName(mode: string, desi: string): string {
  * and — once the evidence is beyond doubt — the ride it has locked onto. The
  * question is never skipped on a hunch: being told you are on the 7 when you
  * are standing beside it is worse than being asked.
+ *
+ * The first of those faces waits for the map's locate control. A reader who
+ * has not put themselves on the map is not asking to be found, and an offer
+ * that opens with a permission prompt is a poor way to ask them.
  */
-export function RidePanel({ detection, hidden = false, rideLine, rideNextStop }: RidePanelProps) {
+export function RidePanel({ detection, hidden = false, locating = false, rideLine, rideNextStop }: RidePanelProps) {
   const { status, suggestion, ambiguous, error } = detection;
   if (hidden) return null;
 
   if (status === 'off' || status === 'unavailable' || status === 'denied') {
+    // Nothing to offer until the reader has switched the map's locate control
+    // on. A search that is already running keeps its own face below, so
+    // switching locating off mid-ride never strands one with no way out.
+    if (!locating) return null;
     const blocked = status !== 'off';
     return (
       <div className="ride-dock">

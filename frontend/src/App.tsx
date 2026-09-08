@@ -314,6 +314,10 @@ function App() {
   }, [replay.active]);
 
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
+  // Whether the map's locate control is on. Riding along is an answer about
+  // where the reader is, so it is only offered once they have asked the map
+  // that question themselves.
+  const [locating, setLocating] = useState<boolean>(false);
 
   // Reset following mode when selected tram changes
   useEffect(() => {
@@ -890,6 +894,7 @@ function App() {
         isFollowing={isFollowing}
         onDisableFollowing={() => setIsFollowing(false)}
         onMapBearingChange={setMapBearing}
+        onLocatingChange={setLocating}
         showTrams={showTrams || journeyModes.tram}
         showBuses={shownModes.bus}
         showMetro={shownModes.metro}
@@ -1036,6 +1041,7 @@ function App() {
         <RidePanel
           detection={ride}
           hidden={replayActive || mobileSheetOpen}
+          locating={locating}
           rideLine={rideVehicle?.desi ?? null}
           rideNextStop={rideNextStop}
         />
