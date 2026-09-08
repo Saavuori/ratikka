@@ -236,6 +236,13 @@ interface MapProps {
   isFollowing: boolean;
   onDisableFollowing: () => void;
   onMapBearingChange?: (bearing: number) => void;
+  /**
+   * Whether the map's own locate control is switched on — including its
+   * background state, where the dot keeps up but the camera has been let go.
+   * Riding along is only offered to a reader who has already said where they
+   * are, so the offer follows this.
+   */
+  onLocatingChange?: (locating: boolean) => void;
   showTrams: boolean;
   showBuses: boolean;
   showMetro: boolean;
@@ -438,6 +445,7 @@ export const Map: React.FC<MapProps> = ({
   isFollowing,
   onDisableFollowing,
   onMapBearingChange,
+  onLocatingChange,
   showTrams,
   showBuses,
   showMetro,
@@ -498,7 +506,7 @@ export const Map: React.FC<MapProps> = ({
 
   // References to keep state fresh in map event handlers and tick loop without closure issues
   const latestTramsRef = useRef<Record<string, VehiclePosition>>(trams);
-  const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation, onSelectJunction, onDisableFollowing, onMapBearingChange, onVisibleStopsChange });
+  const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation, onSelectJunction, onDisableFollowing, onMapBearingChange, onLocatingChange, onVisibleStopsChange });
   const routeGeometriesRef = useRef<Record<string, { geometries: string[]; color?: string; stops?: string[] }>>(routeGeometries);
   const selectedTramIdRef = useRef<string | null>(selectedTramId);
   const journeyVehicleIdsRef = useRef<string[]>(journeyVehicleIds);
@@ -578,8 +586,8 @@ export const Map: React.FC<MapProps> = ({
   }, [trams]);
 
   useEffect(() => {
-    callbacksRef.current = { onSelectTram, onSelectStop, onSelectBikeStation, onSelectJunction, onDisableFollowing, onMapBearingChange, onVisibleStopsChange };
-  }, [onSelectTram, onSelectStop, onSelectBikeStation, onSelectJunction, onDisableFollowing, onMapBearingChange, onVisibleStopsChange]);
+    callbacksRef.current = { onSelectTram, onSelectStop, onSelectBikeStation, onSelectJunction, onDisableFollowing, onMapBearingChange, onLocatingChange, onVisibleStopsChange };
+  }, [onSelectTram, onSelectStop, onSelectBikeStation, onSelectJunction, onDisableFollowing, onMapBearingChange, onLocatingChange, onVisibleStopsChange]);
 
   useEffect(() => {
     routeGeometriesRef.current = routeGeometries;
@@ -4107,6 +4115,26 @@ export const Map: React.FC<MapProps> = ({
       showUserLocation: true,
     });
     map.addControl(geolocate, 'bottom-right');
+
+    // Report whether the control is on, so the rest of the app can follow it.
+    // The control's own events do not answer that question on their own:
+    // `trackuserlocationend` fires both when it is switched off and when a pan
+    // drops it into the background, where it is still very much on. What it
+    // does keep truthful is the button, so the button is what is read — every
+    // state change writes those classes before the event that announces it.
+    const locatingNow = () => {
+      const button = map.getContainer().querySelector('.maplibregl-ctrl-geolocate');
+      if (!button) return false;
+      return ['active', 'background', 'waiting', 'active-error', 'background-error']
+        .some((state) => button.classList.contains(`maplibregl-ctrl-geolocate-${state}`));
+    };
+    const reportLocating = () => callbacksRef.current.onLocatingChange?.(locatingNow());
+    geolocate.on('trackuserlocationstart', reportLocating);
+    geolocate.on('trackuserlocationend', reportLocating);
+    geolocate.on('userlocationfocus', reportLocating);
+    geolocate.on('userlocationlostfocus', reportLocating);
+    geolocate.on('geolocate', reportLocating);
+    geolocate.on('error', reportLocating);
 
     map.on('style.load', () => {
       setupCustomMapElements(map);
