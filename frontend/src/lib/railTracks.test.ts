@@ -11,6 +11,7 @@ import {
   hfpDirectionId,
   isMetroLine,
   isSnappedMode,
+  isHelsinkiCentralStationZone,
   snappedLinesInFeed,
 } from './railTracks';
 
@@ -461,11 +462,18 @@ describe('isSnappedMode', () => {
   it('snaps the modes that run on known geometry, and nothing else', () => {
     expect(isSnappedMode('metro')).toBe(true);
     expect(isSnappedMode('tram')).toBe(true);
-    // A bus may legitimately be on a diversion; a commuter train shares
-    // corridors carrying too many patterns to pick one with confidence.
+    // A bus may legitimately be on a diversion.
     expect(isSnappedMode('bus')).toBe(false);
-    expect(isSnappedMode('train')).toBe(false);
+    expect(isSnappedMode('train')).toBe(true);
     expect(isSnappedMode(undefined)).toBe(false);
+  });
+});
+
+describe('isHelsinkiCentralStationZone', () => {
+  it('protects the central station throat and platforms from false precision', () => {
+    expect(isHelsinkiCentralStationZone(24.942, 60.172)).toBe(true);
+    expect(isHelsinkiCentralStationZone(24.935, 60.172)).toBe(false);
+    expect(isHelsinkiCentralStationZone(24.942, 60.176)).toBe(false);
   });
 });
 
@@ -481,7 +489,7 @@ describe('snappedLinesInFeed', () => {
   };
 
   it('returns each snapped line in the snapshot exactly once', () => {
-    expect(snappedLinesInFeed(feed)).toEqual(['9', 'M1', 'M2']);
+    expect(snappedLinesInFeed(feed)).toEqual(['9', 'A', 'M1', 'M2']);
   });
 
   it('is stable across snapshots whose key order differs, so it can be a fetch dependency', () => {
