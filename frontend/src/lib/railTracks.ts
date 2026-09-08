@@ -569,11 +569,9 @@ export function hfpDirectionId(dir: string | number | undefined | null): number 
 }
 
 /**
- * Whether a vehicle of this mode is drawn on rails rather than where the feed
- * says it is. Metro and tram both are: both run on known, fixed geometry.
- * Buses and commuter trains are not — a bus may legitimately be on a diversion,
- * and the commuter network's shared corridors carry too many patterns for a
- * position to be pulled onto one of them with any confidence.
+ * Whether a vehicle of this mode is eligible for route-constrained placement.
+ * Buses may legitimately be on diversions; rail vehicles have fixed geometry.
+ * Commuter trains still have a separate station-throat safeguard in the map.
  */
 export function isSnappedMode(mode: string | undefined | null): boolean {
   return mode === 'metro' || mode === 'tram' || mode === 'train';
