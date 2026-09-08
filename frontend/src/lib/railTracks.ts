@@ -42,6 +42,10 @@
 //   - `pointOnTrack` reads a position back out at a given arc length, which is
 //     what lets the animation slide a vehicle *along* the rails between two
 //     snapshots instead of cutting the corner in a straight line,
+//   - `orientOnTracks` faces a vehicle along the rails without moving it, for
+//     places that can say which way a vehicle points but not which track it is
+//     on — Helsinki Central's throat, where the platform tracks are parallel and
+//     a route polyline knows nothing about platform assignment,
 //   - `trackSpine`, which reads a whole vehicle's length off the rails at once
 //     so an articulated body can bend through a curve instead of ploughing
 //     across it.
@@ -397,6 +401,17 @@ export interface Placement {
   hdg: number;
   // How far the reported point was from the rail it was pulled onto, in metres.
   offset: number;
+  // Where on the network the vehicle was placed, which is what the next
+  // snapshot continues from and what the animation slides along. Absent when
+  // the vehicle was only *oriented* by the rails and left where the feed put it
+  // — see `orientOnTracks` — because there is then no track it is known to be
+  // running along.
+  track?: TrackPlacement;
+}
+
+// A placement that put the vehicle *on* a track, which is what `placeOnTracks`
+// returns and what the animation slides along.
+export interface TrackedPlacement extends Placement {
   track: TrackPlacement;
 }
 
@@ -422,6 +437,67 @@ export interface PlaceOptions extends SnapOptions {
 }
 
 /**
+ * Which way along a track the vehicle is running: with the polyline's own
+ * direction of travel, or against it.
+ *
+ * Where the track carries the GTFS direction the vehicle reported, that answers
+ * it outright — a pattern polyline runs the way its direction runs, so a
+ * vehicle matched within its own direction is running forwards along it by
+ * construction. This is worth more than it sounds for a commuter train, whose
+ * reported heading in a station throat is whatever the last GPS fix that moved
+ * said, which at a stand is nothing much.
+ *
+ * Otherwise the reported heading decides, as it must for the metro, whose
+ * patterns carry no direction we can match a train to.
+ */
+function runsForward(
+  track: RailTrack | undefined,
+  direction: number | null | undefined,
+  heading: number,
+  bearing: number
+): boolean {
+  if (track && track.direction !== null && direction !== undefined && direction !== null) {
+    if (track.direction === direction) return true;
+  }
+  return angleBetween(heading, bearing) <= 90;
+}
+
+/**
+ * Face a vehicle along the rails without moving it.
+ *
+ * Some places can say which way a vehicle is pointing but not which track it is
+ * on. Helsinki Central's throat is the example: twenty-odd parallel tracks a few
+ * metres apart, all running the same way, with platform assignments that no
+ * route polyline knows — pulling a train sideways onto its route's polyline
+ * there is a guess at a platform, but reading the bearing off that polyline is
+ * not a guess at all, because every track in the fan is parallel to it.
+ *
+ * So the reported position is kept, honestly, and only the heading comes from
+ * the rails. No `track` is returned: the vehicle is not known to be on one, so
+ * nothing may slide it along one.
+ */
+export function orientOnTracks(
+  tracks: RailTrack[],
+  position: { lat: number; lng: number; hdg: number },
+  options: SnapOptions = {}
+): Placement | null {
+  const fix = snapToTracks(tracks, position.lng, position.lat, options);
+  if (!fix) return null;
+  const forward = runsForward(
+    tracks[fix.trackIndex],
+    options.direction,
+    position.hdg,
+    fix.bearing
+  );
+  return {
+    lat: position.lat,
+    lng: position.lng,
+    hdg: forward ? fix.bearing : (fix.bearing + 180) % 360,
+    offset: fix.offset,
+  };
+}
+
+/**
  * Pull a reported position onto a line's tracks and work out which way along
  * them the vehicle is facing.
  *
@@ -437,7 +513,7 @@ export function placeOnTracks(
   position: { lat: number; lng: number; hdg: number },
   previous: TrackPlacement | undefined,
   options: PlaceOptions = {}
-): Placement | null {
+): TrackedPlacement | null {
   const wasHere = previous?.line === line;
 
   // Where the vehicle should turn up, given where it was and how far it has
@@ -498,11 +574,11 @@ export function placeOnTracks(
   if (sameTrack) {
     forward = previous!.forward;
   } else {
-    // Reported heading against the track's own bearing. On the metro this is
-    // dead-reckoned like everything else, but it agrees with the direction of
-    // travel 98% of the time, which is what this has to get right.
-    const delta = Math.abs((((position.hdg - fix.bearing) % 360) + 540) % 360 - 180);
-    forward = delta <= 90;
+    // The pattern's own direction where the feed gave one to match it against,
+    // and the reported heading otherwise. On the metro that is the heading: it
+    // is dead-reckoned like everything else, but it agrees with the direction
+    // of travel 98% of the time, which is what this has to get right.
+    forward = runsForward(tracks[fix.trackIndex], options.direction, position.hdg, fix.bearing);
   }
 
   return {
