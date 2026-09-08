@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useTramData } from './hooks/useTramData';
 import { useReplay } from './hooks/useReplay';
@@ -18,12 +18,14 @@ import { ViewToggles } from './components/ViewToggles';
 import { BottomNav, type MobileTab } from './components/BottomNav';
 import { JourneySearch, type JourneySelection } from './components/JourneySearch';
 import { DeparturesPanel } from './components/DeparturesPanel';
+import { RidePanel } from './components/RidePanel';
 import { fetchRouteDetails, fetchAlerts, fetchTripDetails, fetchStopsArrivals, fetchMapConfig } from './lib/api';
 import type { MapTheme } from './lib/stopPlatforms';
 import { readStorage, writeStorage } from './lib/storage';
 import { areTripsEquivalent } from './lib/trip';
 import { findJourneyVehicle, journeyVehicleModes } from './lib/journeyVehicles';
 import { useTrafficLights } from './hooks/useTrafficLights';
+import { useRideDetection } from './hooks/useRideDetection';
 import { signalPriorityIndex } from './lib/trafficLightModels';
 import { arrivalLabel, nextArrivals } from './lib/stopArrivals';
 import type { ArrivalFocus } from './lib/stopArrivals';
@@ -40,6 +42,26 @@ function App() {
   // difference — filtering, selection, the telemetry panels and the animation
   // all work on history exactly as they work on now.
   const trams = replay.active ? replay.vehicles : liveTrams;
+  const vehicles = useMemo(() => Object.values(trams), [trams]);
+
+  // Which vehicle the reader is actually inside, worked out from their own
+  // position. Declared here because the answer decides which feeds the backend
+  // is asked for: while it is still looking, every mode has to be streaming or
+  // the bus the reader is sitting on is not on the map to be found.
+  //
+  // It is matched against the *live* feed, never the replayed one: where the
+  // reader is now says nothing about where a tram was on Tuesday, so a replay
+  // simply suspends the search until the map is about now again.
+  const rideCandidates = useMemo(
+    () => (replay.active ? [] : Object.values(liveTrams)), [replay.active, liveTrams]);
+  const ride = useRideDetection(rideCandidates);
+  const rideSearching = ride.status === 'scanning' || ride.status === 'suggesting';
+  const rideModes = useMemo(() => ({
+    bus: rideSearching || ride.rideMode === 'bus',
+    metro: rideSearching || ride.rideMode === 'metro',
+    train: rideSearching || ride.rideMode === 'train',
+    ferry: rideSearching || ride.rideMode === 'ferry',
+  }), [rideSearching, ride.rideMode]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const isMobile = useIsMobile();
   const [journey, setJourney] = useState<JourneySelection | null>(null);
@@ -178,14 +200,15 @@ function App() {
   // backend knows which optional feeds to ingest. Trams always stream.
   const wantsModes = useMemo(
     () => ({
-      bus: showBuses || journeyModes.bus || stopModes.bus,
-      metro: showMetro || journeyModes.metro || stopModes.metro,
-      train: showTrains || journeyModes.train || stopModes.train,
-      ferry: showFerries || journeyModes.ferry || stopModes.ferry,
+      bus: showBuses || journeyModes.bus || stopModes.bus || rideModes.bus,
+      metro: showMetro || journeyModes.metro || stopModes.metro || rideModes.metro,
+      train: showTrains || journeyModes.train || stopModes.train || rideModes.train,
+      ferry: showFerries || journeyModes.ferry || stopModes.ferry || rideModes.ferry,
     }),
     [showBuses, showMetro, showTrains, showFerries,
       journeyModes.bus, journeyModes.metro, journeyModes.train, journeyModes.ferry,
-      stopModes.bus, stopModes.metro, stopModes.train, stopModes.ferry]
+      stopModes.bus, stopModes.metro, stopModes.train, stopModes.ferry,
+      rideModes.bus, rideModes.metro, rideModes.train, rideModes.ferry]
   );
   const { status: connectionStatus } = useWebSocket({
     onMessage: (data) => handleUpdate(data.vehicles),
@@ -277,10 +300,37 @@ function App() {
     setIsFollowing(false);
   }, [selectedTram?.veh]);
 
-
-
   // Detail panel collapse state: defaults to true (hidden/collapsed when item is selected)
   const [isDetailCollapsed, setIsDetailCollapsed] = useState<boolean>(true);
+
+  // A detected ride takes the map over: the vehicle the reader is inside
+  // becomes the selection, so its route, its stops and its telemetry are what
+  // the panels are about.
+  useEffect(() => {
+    if (!ride.rideVehicleId) return;
+    setSelectedStop(null);
+    setSelectedBikeStation(null);
+    setSelectedJunctionId(null);
+    setIsDetailCollapsed(false);
+  }, [ride.rideVehicleId]);
+
+  useEffect(() => {
+    const vehicle = ride.rideVehicleId ? liveTrams[ride.rideVehicleId] : null;
+    if (!vehicle) return;
+    setSelectedTram((previous) => (previous?.veh === vehicle.veh ? previous : vehicle));
+  }, [ride.rideVehicleId, liveTrams]);
+
+  // Riding along means the camera rides too. This runs after the reset above,
+  // so a ride's own selection keeps its follow instead of having it cleared —
+  // and dragging the map still releases the camera, as it does for any follow.
+  // When the ride ends the camera is let go rather than left chasing a vehicle
+  // the reader has stepped off.
+  const previousRideRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (ride.rideVehicleId && selectedTram?.veh === ride.rideVehicleId) setIsFollowing(true);
+    else if (previousRideRef.current && !ride.rideVehicleId) setIsFollowing(false);
+    previousRideRef.current = ride.rideVehicleId;
+  }, [ride.rideVehicleId, selectedTram?.veh]);
 
   // Sidebar collapse state: defaults to collapsed on mobile, open on desktop
   const [isFilterCollapsed, setIsFilterCollapsed] = useState<boolean>(
@@ -600,7 +650,6 @@ function App() {
         .filter((leg) => leg.transit && leg.route?.shortName)
         .map((leg) => leg.route!.shortName)
     : [];
-  const vehicles = useMemo(() => Object.values(trams), [trams]);
   const journeyVehicleIds = useMemo(() => {
     return [...new Set(journey?.itinerary.legs.flatMap((leg) => {
       const vehicle = findJourneyVehicle(leg, vehicles, now);
@@ -617,6 +666,9 @@ function App() {
       // The arrival being tracked stays on the map even when its mode or line
       // is filtered out — hiding it is exactly what tracking is meant to stop.
       if (arrivalFocus?.vehicleId === tram.veh) return true;
+      // The vehicle the reader is riding in outranks every filter, for the
+      // same reason: hiding it is exactly what riding along is meant to stop.
+      if (ride.rideVehicleId === tram.veh) return true;
       if (tram.mode === 'tram' && !showTrams && !journeyModes.tram) return false;
       if (tram.mode === 'bus' && !wantsModes.bus) return false;
       if (tram.mode === 'metro' && !wantsModes.metro) return false;
@@ -762,6 +814,16 @@ function App() {
   // the scrubber is the only control on screen and nothing offers a live answer
   // beside an hour-old tram. They all come back on exit.
   const replayActive = replay.active;
+
+  // What the ride strip says while it is following: the line, and the stop the
+  // vehicle is running to, in words rather than as a GTFS id.
+  const rideVehicle = ride.rideVehicleId ? liveTrams[ride.rideVehicleId] ?? null : null;
+  const rideNextStop = useMemo(() => {
+    const target = rideVehicle?.nextStop?.replace(/^HSL:/, '');
+    if (!target || selectedTripDetails?.tripId !== rideVehicle?.tripId) return null;
+    return selectedTripDetails?.stops.find(
+      (stop) => stop.gtfsId?.replace(/^HSL:/, '') === target)?.name ?? null;
+  }, [rideVehicle, selectedTripDetails]);
 
   // Every bar button toggles: tapping the open sheet closes it back to the map.
   const handleMobileTabSelect = (tab: MobileTab) => {
@@ -932,6 +994,14 @@ function App() {
         onOpenChange={setDeparturesOpen}
         onSelectStop={(stop, extras) =>
           handleSelectStop(stop.gtfsId, stop.name, stop.code, stop.lat, stop.lon, undefined, undefined, extras)}
+      />
+
+      {/* Ride along: which vehicle am I in, and follow it (bottom-center) */}
+      <RidePanel
+        detection={ride}
+        hidden={replayActive || mobileSheetOpen}
+        rideLine={rideVehicle?.desi ?? null}
+        rideNextStop={rideNextStop}
       />
 
       {/* Quick vehicle-mode shortcuts (top-right corner) */}

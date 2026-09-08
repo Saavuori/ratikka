@@ -1,0 +1,108 @@
+/* Ride-along: the "which vehicle am I in" control. Bottom centre, because the
+   top of the map is already three deep in launchers and the answer belongs
+   next to the thumb that will accept it. */
+.ride-dock,
+.ride-panel {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 105;
+  pointer-events: auto;
+}
+
+.ride-launcher {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-glow);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ride-launcher svg { color: var(--accent-green); }
+.ride-launcher:hover:not(:disabled) { background: var(--bg-panel-hover); }
+.ride-launcher:disabled { opacity: 0.6; cursor: default; }
+
+.ride-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  padding: 10px 12px;
+  color: var(--text-primary);
+}
+
+.ride-panel.riding { border-color: var(--border-focus); }
+
+.ride-panel > svg { color: var(--accent-green); flex-shrink: 0; }
+
+.ride-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 7px;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.ride-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.ride-text strong { font-size: 0.82rem; }
+.ride-text span {
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.ride-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-button);
+  background: var(--bg-button);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ride-button:hover { background: var(--bg-button-hover); }
+.ride-button.primary { border-color: var(--border-focus); color: var(--accent-green); }
+.ride-button:focus-visible,
+.ride-launcher:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
+}
+
+/* On a phone the tab bar owns the bottom edge, and the version badge sits just
+   above it on the left — so the control clears both rather than landing on
+   them. */
+@media (max-width: 768px) {
+  .ride-dock,
+  .ride-panel {
+    bottom: calc(var(--bottom-nav-h) + 56px + env(safe-area-inset-bottom));
+  }
+}

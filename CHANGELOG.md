@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.68.0] - 2026-09-08
+
+### Added
+- **The map can work out which vehicle you are sitting in, and ride it with you.** Following a tram has meant finding it on the map first — which is the one thing that is genuinely awkward to do from inside it, where a dozen markers are within a block of you and the one under your feet looks like all the others. So the app now answers it from your own position: tap **I'm on board** and it watches where you are, compares that against every live vehicle, and names the one carrying you. From there it does what you would have done by hand — selects that vehicle, opens its route and its stop list, and locks the camera to it — so the map shows the run you are actually on, next stop first, without you having identified anything.
+  A single fix cannot answer the question and the app does not pretend otherwise. At a stop you are as close to the tram you are waiting for as to the one you just left, and a bus passing a pavement comes within a few metres of everyone standing on it. What separates a ride from a near miss is that a ride *keeps* being near, so the evidence is gathered per vehicle over a rolling window: how long it has stayed within reach, how close it has been on average, and — the part that does the real work — how much ground the two of you have covered *together*. A vehicle is claimed outright only after four fixes, twenty-five seconds and a hundred and fifty metres of shared travel with no fix in between where it was not alongside; on weaker evidence it is offered as a question ("On the tram 9?") rather than asserted, because being told you are on the 7 while you are standing beside it is worse than being asked. Say no and that run is not offered again.
+  How far away still counts is not a fixed radius: it is the length of the vehicle's body, plus whatever uncertainty the phone reports for its own fix, plus the ground the vehicle has covered since its last report — a generous allowance for a 27 m tram and a poor GPS in a metal box, which is exactly the case this has to work in. Two things it deliberately refuses to answer: a fix too vague to place anyone on one side of a street is dropped rather than scored, and two vehicles running different journeys that fit the evidence equally well are reported as ambiguous rather than resolved by a coin toss. The coupled halves of one train are not ambiguous — either answer names the same ride — so those are settled by which unit is nearer.
+  While it is still looking, every mode streams, because the bus you are sitting on cannot be found if the bus feed is off; once a ride is locked, only that ride's own mode is kept on, and the vehicle stays on the map whatever the line filters say. Stepping off ends it: three fixes in a row without the vehicle alongside, or a minute of silence from it, and the camera is released and the search resumes rather than chasing a tram you have left. Nothing starts on its own — geolocation costs a permission prompt and a radio, so the watch begins on a tap, and is resumed unprompted on a later visit only for a reader who has both asked for it before and already granted the permission.
+
+---
+
 ## [v0.67.4] - 2026-09-07
 
 ### Fixed
