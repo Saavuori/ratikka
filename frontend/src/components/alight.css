@@ -1,7 +1,10 @@
 /* The get-off-here banner. It shares the bottom dock with the ride strip and
    sits above it: where to leave the vehicle outranks which vehicle it is. */
 .alight-banner {
+  /* In the flow of the dock, and a row: see the note on `.ride-panel`. */
+  position: relative;
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 10px;
   width: 380px;

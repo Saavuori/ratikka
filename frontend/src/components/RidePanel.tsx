@@ -1,4 +1,4 @@
-import { Check, Crosshair, Loader2, TramFront, X } from 'lucide-react';
+import { Check, Loader2, TramFront, X } from 'lucide-react';
 import { getRouteColor } from '../lib/routeColors';
 import type { RideDetection } from '../hooks/useRideDetection';
 import './ride.css';
@@ -104,7 +104,7 @@ export function RidePanel({ detection, hidden = false, rideLine, rideNextStop }:
         </span>
       </div>
       <button type="button" className="ride-button" onClick={detection.stop} aria-label="Stop looking">
-        <Crosshair size={14} aria-hidden="true" />
+        <X size={14} aria-hidden="true" /> Stop
       </button>
     </section>
   );

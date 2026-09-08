@@ -199,19 +199,36 @@ function App() {
     return readStorage('showRoutes') !== 'false';
   });
 
-  // Drive the WebSocket here (after the mode toggles are declared) so the
-  // backend knows which optional feeds to ingest. Trams always stream.
-  const wantsModes = useMemo(
+  // What the map draws: the reader's own toggles, plus the modes a selected
+  // journey or stop needs in order to answer for itself.
+  const shownModes = useMemo(
     () => ({
-      bus: showBuses || journeyModes.bus || stopModes.bus || rideModes.bus,
-      metro: showMetro || journeyModes.metro || stopModes.metro || rideModes.metro,
-      train: showTrains || journeyModes.train || stopModes.train || rideModes.train,
-      ferry: showFerries || journeyModes.ferry || stopModes.ferry || rideModes.ferry,
+      bus: showBuses || journeyModes.bus || stopModes.bus,
+      metro: showMetro || journeyModes.metro || stopModes.metro,
+      train: showTrains || journeyModes.train || stopModes.train,
+      ferry: showFerries || journeyModes.ferry || stopModes.ferry,
     }),
     [showBuses, showMetro, showTrains, showFerries,
       journeyModes.bus, journeyModes.metro, journeyModes.train, journeyModes.ferry,
-      stopModes.bus, stopModes.metro, stopModes.train, stopModes.ferry,
-      rideModes.bus, rideModes.metro, rideModes.train, rideModes.ferry]
+      stopModes.bus, stopModes.metro, stopModes.train, stopModes.ferry]
+  );
+  // What the backend is asked to ingest, declared here (after the mode toggles)
+  // so the WebSocket below knows which optional feeds to subscribe to; trams
+  // always stream. It is not the same set as what is drawn: the ride
+  // search needs every mode on the wire to find the bus the reader is sitting
+  // in, but that is the detector's business and not a decision to draw a
+  // mode somebody has switched off. So the extra feeds stream and stay
+  // invisible; the one vehicle the search settles on is drawn whatever the
+  // toggles say (see `displayedTrams`), which is the only marker the reader
+  // actually asked for.
+  const wantsModes = useMemo(
+    () => ({
+      bus: shownModes.bus || rideModes.bus,
+      metro: shownModes.metro || rideModes.metro,
+      train: shownModes.train || rideModes.train,
+      ferry: shownModes.ferry || rideModes.ferry,
+    }),
+    [shownModes, rideModes]
   );
   const { status: connectionStatus } = useWebSocket({
     onMessage: (data) => handleUpdate(data.vehicles),
@@ -673,10 +690,10 @@ function App() {
       // same reason: hiding it is exactly what riding along is meant to stop.
       if (ride.rideVehicleId === tram.veh) return true;
       if (tram.mode === 'tram' && !showTrams && !journeyModes.tram) return false;
-      if (tram.mode === 'bus' && !wantsModes.bus) return false;
-      if (tram.mode === 'metro' && !wantsModes.metro) return false;
-      if (tram.mode === 'train' && !wantsModes.train) return false;
-      if (tram.mode === 'ferry' && !wantsModes.ferry) return false;
+      if (tram.mode === 'bus' && !shownModes.bus) return false;
+      if (tram.mode === 'metro' && !shownModes.metro) return false;
+      if (tram.mode === 'train' && !shownModes.train) return false;
+      if (tram.mode === 'ferry' && !shownModes.ferry) return false;
       if (selectedLines.length > 0 && !selectedLines.includes(tram.desi)) {
         return false;
       }
@@ -874,10 +891,10 @@ function App() {
         onDisableFollowing={() => setIsFollowing(false)}
         onMapBearingChange={setMapBearing}
         showTrams={showTrams || journeyModes.tram}
-        showBuses={wantsModes.bus}
-        showMetro={wantsModes.metro}
-        showTrains={wantsModes.train}
-        showFerries={wantsModes.ferry}
+        showBuses={shownModes.bus}
+        showMetro={shownModes.metro}
+        showTrains={shownModes.train}
+        showFerries={shownModes.ferry}
         showRoutes={showRoutes}
         selectedTripDetails={selectedTripDetails}
         journeyLegs={journey?.itinerary.legs ?? null}

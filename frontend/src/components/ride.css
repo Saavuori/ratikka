@@ -42,7 +42,14 @@
 .ride-launcher:disabled { opacity: 0.6; cursor: default; }
 
 .ride-panel {
+  /* `.glass-panel` is written for the map's floating popups: it takes itself
+     out of the flow and stacks its children downwards. In the dock this panel
+     is an ordinary row that has to occupy the dock's own height, or the dock
+     measures zero and the card hangs off the bottom of it, through the tab
+     bar, with its own stop button underneath. */
+  position: relative;
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 10px;
   width: 380px;
