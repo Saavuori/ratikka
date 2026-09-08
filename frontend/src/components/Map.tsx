@@ -46,6 +46,7 @@ import {
   buildPatternTracks,
   distanceBetween,
   hfpDirectionId,
+  isHelsinkiCentralStationZone,
   isSnappedMode,
   placeOnTracks,
   pointOnTrack,
@@ -328,6 +329,10 @@ const METRO_SNAP_MAX_OFFSET = 400;
 // working) should be drawn where it says it is rather than dragged onto rails
 // it is not using.
 const TRAM_SNAP_MAX_OFFSET = 35;
+
+// Commuter-train GPS is better than metro odometry, but still cannot identify
+// parallel railway tracks. Keep the match conservative outside station throats.
+const TRAIN_SNAP_MAX_OFFSET = 80;
 
 // How much closer another pattern has to be before a tram is moved onto it.
 // The two directions of a tram line are one carriageway apart, so the margin
@@ -1690,12 +1695,27 @@ export const Map: React.FC<MapProps> = ({
     age: number,
   ) => {
     if (!isSnappedMode(tram.mode)) return null;
+    // Helsinki Central has several platform tracks and reversing movements
+    // inside one compact area. Until Fintraffic track events are integrated,
+    // the reported position is more honest than a route-polyline guess there.
+    if (tram.mode === 'train' && isHelsinkiCentralStationZone(tram.lng, tram.lat)) return null;
     const tracks = tracksRef.current[tram.desi];
     if (!tracks || tracks.length === 0) return null;
 
     if (tram.mode === 'metro') {
       return placeOnTracks(tram.desi, tracks, tram, previous, {
         maxOffset: METRO_SNAP_MAX_OFFSET,
+      });
+    }
+
+    if (tram.mode === 'train') {
+      const travelled = Math.abs(tram.spd ?? 0) * Math.max(age, 0);
+      return placeOnTracks(tram.desi, tracks, tram, previous, {
+        maxOffset: TRAIN_SNAP_MAX_OFFSET,
+        direction: hfpDirectionId(tram.dir),
+        heading: tram.hdg,
+        expectedAdvance: travelled,
+        continuityWindow: travelled + 100,
       });
     }
 

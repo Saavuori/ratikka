@@ -1,4 +1,4 @@
-// Snapping rail vehicles — metro trains and trams — onto the rails they run on.
+// Snapping rail vehicles onto the rails they run on.
 //
 // Two different problems are solved by the same geometry.
 //
@@ -576,7 +576,16 @@ export function hfpDirectionId(dir: string | number | undefined | null): number 
  * position to be pulled onto one of them with any confidence.
  */
 export function isSnappedMode(mode: string | undefined | null): boolean {
-  return mode === 'metro' || mode === 'tram';
+  return mode === 'metro' || mode === 'tram' || mode === 'train';
+}
+
+/**
+ * Helsinki Central is a deliberately unresolved area for commuter-train
+ * placement. Its throat and platforms contain many parallel, reversing and
+ * overlapping movements that route polylines cannot distinguish reliably.
+ */
+export function isHelsinkiCentralStationZone(lng: number, lat: number): boolean {
+  return lng >= 24.936 && lng <= 24.950 && lat >= 60.169 && lat <= 60.175;
 }
 
 /**
