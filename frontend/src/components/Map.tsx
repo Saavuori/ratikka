@@ -48,6 +48,7 @@ import {
   hfpDirectionId,
   isHelsinkiCentralStationZone,
   isSnappedMode,
+  orientOnTracks,
   placeOnTracks,
   pointOnTrack,
   snappedLinesInFeed,
@@ -333,6 +334,13 @@ const TRAM_SNAP_MAX_OFFSET = 35;
 // Commuter-train GPS is better than metro odometry, but still cannot identify
 // parallel railway tracks. Keep the match conservative outside station throats.
 const TRAIN_SNAP_MAX_OFFSET = 80;
+
+// How far the rails may be for a train inside Helsinki Central to be *turned* by
+// them without being moved onto them. Wider than the snap above on purpose:
+// nothing is being asserted about which of the station's tracks the train is on,
+// only about which way that whole fan of tracks runs, and the fan is some
+// hundred metres wide. Metres.
+const TRAIN_ORIENT_MAX_OFFSET = 150;
 
 // How much closer another pattern has to be before a tram is moved onto it.
 // The two directions of a tram line are one carriageway apart, so the margin
@@ -1695,12 +1703,25 @@ export const Map: React.FC<MapProps> = ({
     age: number,
   ) => {
     if (!isSnappedMode(tram.mode)) return null;
-    // Helsinki Central has several platform tracks and reversing movements
-    // inside one compact area. Until Fintraffic track events are integrated,
-    // the reported position is more honest than a route-polyline guess there.
-    if (tram.mode === 'train' && isHelsinkiCentralStationZone(tram.lng, tram.lat)) return null;
     const tracks = tracksRef.current[tram.desi];
     if (!tracks || tracks.length === 0) return null;
+
+    // Helsinki Central has twenty-odd platform tracks and reversing movements
+    // inside one compact area, and which platform a train is standing at is not
+    // something its route polyline knows. Until Fintraffic track events are
+    // integrated, the reported position is more honest than a route-polyline
+    // guess there — but the *heading* is not a guess at all, because every track
+    // in the throat runs parallel to every other, so the polyline's bearing is
+    // the bearing of whichever track the train is really on. Turning the train
+    // without moving it is what stops a 75 m body lying diagonally across the
+    // station's tracks on whatever heading the last GPS fix that moved reported.
+    if (tram.mode === 'train' && isHelsinkiCentralStationZone(tram.lng, tram.lat)) {
+      return orientOnTracks(tracks, tram, {
+        maxOffset: TRAIN_ORIENT_MAX_OFFSET,
+        direction: hfpDirectionId(tram.dir),
+        heading: tram.hdg,
+      });
+    }
 
     if (tram.mode === 'metro') {
       return placeOnTracks(tram.desi, tracks, tram, previous, {

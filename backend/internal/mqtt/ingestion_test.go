@@ -361,6 +361,65 @@ func TestIngestionWorker_MetroCoupledUnitsDeduped(t *testing.T) {
 	}
 }
 
+// Commuter trains are coupled the same way, and at rush hour most of them are:
+// both units of a set publish the same journey a train's length apart. One
+// journey is one train on the map.
+func TestIngestionWorker_TrainCoupledUnitsDeduped(t *testing.T) {
+	memCache := cache.NewMemoryCache()
+	worker := NewIngestionWorker("tls://mock:8883", memCache)
+
+	unit := func(veh int, lat float64) *mockMessage {
+		return &mockMessage{
+			payload: []byte(fmt.Sprintf(
+				`{"VP":{"desi":"K","dir":"1","oper":90,"veh":%d,"tsi":1788289014,"spd":21.4,"hdg":34,"lat":%f,"long":24.941,"oday":"2026-09-08","start":"09:45","loc":"GPS","route":"3001K"}}`,
+				veh, lat)),
+			topic: fmt.Sprintf("/hfp/v2/journey/ongoing/vp/train/0090/%05d/3001K/1/Kerava/09:45/1174101/3/60;24/19/44/11", veh),
+		}
+	}
+
+	worker.handleMessage(nil, unit(6322, 60.1740))
+	worker.handleMessage(nil, unit(6324, 60.1735))
+	worker.handleMessage(nil, unit(6322, 60.1742))
+
+	positions, err := memCache.GetAllPositions(context.Background())
+	if err != nil {
+		t.Fatalf("failed to read positions: %v", err)
+	}
+	if len(positions) != 1 {
+		t.Fatalf("expected 1 cached vehicle for the journey, got %d: %v", len(positions), positions)
+	}
+	if _, ok := positions["0090-6322"]; !ok {
+		t.Errorf("expected the first unit seen (0090-6322) to be kept, got %v", positions)
+	}
+}
+
+// Two trams of the same line minutes apart are two vehicles, not a coupled set:
+// nothing but the rail modes is paired down.
+func TestIngestionWorker_TramsNotDedupedAsCoupledUnits(t *testing.T) {
+	memCache := cache.NewMemoryCache()
+	worker := NewIngestionWorker("tls://mock:8883", memCache)
+
+	tram := func(veh int, lat float64) *mockMessage {
+		return &mockMessage{
+			payload: []byte(fmt.Sprintf(
+				`{"VP":{"desi":"9","dir":"1","oper":40,"veh":%d,"tsi":1788289014,"spd":6.2,"hdg":180,"lat":%f,"long":24.93,"oday":"2026-09-08","start":"09:45","loc":"GPS","route":"1009"}}`,
+				veh, lat)),
+			topic: fmt.Sprintf("/hfp/v2/journey/ongoing/vp/tram/0040/%05d/1009/1/Ilmala/09:45/1020450/5/60;24/19/65/90", veh),
+		}
+	}
+
+	worker.handleMessage(nil, tram(456, 60.19))
+	worker.handleMessage(nil, tram(457, 60.20))
+
+	positions, err := memCache.GetAllPositions(context.Background())
+	if err != nil {
+		t.Fatalf("failed to read positions: %v", err)
+	}
+	if len(positions) != 2 {
+		t.Fatalf("expected both trams to be cached, got %d: %v", len(positions), positions)
+	}
+}
+
 // A different journey on the same line is its own vehicle, never deduped away.
 func TestIngestionWorker_MetroSeparateJourneysKept(t *testing.T) {
 	memCache := cache.NewMemoryCache()

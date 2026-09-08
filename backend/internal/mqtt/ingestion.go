@@ -45,8 +45,23 @@ func IsOptionalMode(mode string) bool {
 // roughly a train-length apart, so ingesting both would put two identical "M1"
 // markers on the map that swap places every second. We therefore keep the first
 // unit seen for a journey and drop its twin, until the chosen one goes quiet for
-// metroUnitTTL (end of journey, or the unit stopped reporting).
-const metroUnitTTL = 60 * time.Second
+// coupledUnitTTL (end of journey, or the unit stopped reporting).
+//
+// Commuter trains do exactly the same thing, and at rush hour most of them do:
+// on a 70-second capture of the live train feed, 12 of 42 running journeys were
+// publishing from two units at once, their reported positions 52-193 m apart —
+// one Sm-series unit's length, plus the difference between where each unit's
+// antenna thinks it is. On the map that drew as two whole trains of the same
+// line nose to tail, which is what a coupled set looks like from the outside but
+// not what the feed is describing: it is one journey, one train, reported twice.
+const coupledUnitTTL = 60 * time.Second
+
+// The modes whose journeys are driven as coupled units, each publishing its own
+// VP stream. A tram or a bus is a single vehicle per journey and needs none of
+// this.
+func hasCoupledUnits(mode string) bool {
+	return mode == "metro" || mode == "train"
+}
 
 // HSL publishes a tram's VP message four times over. Measured on a five-minute
 // capture of the live feed, 97,099 tram messages carried 24,276 distinct
@@ -207,10 +222,11 @@ type IngestionWorker struct {
 	mu           sync.Mutex
 	enabledModes map[string]bool
 
-	// metroUnits maps a metro journey to the unit whose positions we keep; see
-	// metroUnitTTL. Guarded by metroMu, held only by the MQTT receive goroutine.
-	metroMu    sync.Mutex
-	metroUnits map[string]metroUnit
+	// coupledUnits maps a metro or commuter-train journey to the unit whose
+	// positions we keep; see coupledUnitTTL. Guarded by coupledMu, held only by
+	// the MQTT receive goroutine.
+	coupledMu    sync.Mutex
+	coupledUnits map[string]coupledUnit
 
 	// lastReadings holds the newest reading seen per vehicle, so the duplicate
 	// copies HSL publishes are dropped before they cost a cache write; see
@@ -224,7 +240,7 @@ type IngestionWorker struct {
 	tlp *tlpStore
 }
 
-type metroUnit struct {
+type coupledUnit struct {
 	veh  int
 	seen time.Time
 }
@@ -238,7 +254,7 @@ func NewIngestionWorker(broker string, cache cache.Cache) *IngestionWorker {
 		broker:       broker,
 		cache:        cache,
 		enabledModes: make(map[string]bool),
-		metroUnits:   make(map[string]metroUnit),
+		coupledUnits: make(map[string]coupledUnit),
 		lastReadings: make(map[string]lastReading),
 		tlp:          newTLPStore(),
 	}
@@ -430,8 +446,8 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 
 	nextStop, eol := parseNextStop(parts)
 
-	// Coupled metro units publish the same journey twice; keep only one of them.
-	if mode == "metro" && !w.acceptMetroUnit(vp.Route, vp.Dir, vp.Oday, vp.Start, vp.Veh) {
+	// Coupled units publish the same journey twice; keep only one of them.
+	if hasCoupledUnits(mode) && !w.acceptCoupledUnit(vp.Route, vp.Dir, vp.Oday, vp.Start, vp.Veh) {
 		return
 	}
 
@@ -486,8 +502,8 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 }
 
 // archiveReading files the reading in the replay archive. It is handed the same
-// values the cache was given, after dedupe and after the metro's coupled units
-// have been paired down, so the history holds exactly what the live map showed
+// values the cache was given, after dedupe and after coupled units have been
+// paired down, so the history holds exactly what the live map showed
 // rather than the raw feed.
 //
 // Errors are logged and swallowed: a full disk or a bad chunk must cost the
@@ -518,7 +534,7 @@ func (w *IngestionWorker) archiveReading(pos VehiclePosition, nextStop *string, 
 // carried an identical timestamp and coordinate.
 //
 // The map is swept rather than left to grow, on the same trigger as
-// metroUnits: the fleet turns over as journeys start and end, and a vehicle
+// coupledUnits: the fleet turns over as journeys start and end, and a vehicle
 // that has not been heard from in dedupeTTL is long gone from the position
 // cache too.
 // The next stop is part of what makes a reading distinct, not just the
@@ -547,11 +563,15 @@ func (w *IngestionWorker) acceptReading(vehicleID string, ts int64, lat, lng flo
 	return true
 }
 
-// acceptMetroUnit reports whether this metro message comes from the unit we
-// track for its journey. The first unit seen wins and keeps winning while it
-// keeps reporting; once it has been quiet for metroUnitTTL (the journey ended,
-// or that unit stopped publishing) the next message to arrive takes over.
-func (w *IngestionWorker) acceptMetroUnit(route, dir, oday, start string, veh int) bool {
+// acceptCoupledUnit reports whether this message comes from the unit we track
+// for its journey. The first unit seen wins and keeps winning while it keeps
+// reporting; once it has been quiet for coupledUnitTTL (the journey ended, or
+// that unit stopped publishing) the next message to arrive takes over.
+//
+// Which of a coupled pair that leaves is arbitrary — the feed does not say which
+// end of the train a unit is — but it is stable, which is what matters: swapping
+// between them would slide the marker a train's length back and forth.
+func (w *IngestionWorker) acceptCoupledUnit(route, dir, oday, start string, veh int) bool {
 	// Without a journey identity there is nothing to pair the units by, so the
 	// message is passed through rather than dropped.
 	if route == "" || dir == "" || start == "" {
@@ -560,22 +580,22 @@ func (w *IngestionWorker) acceptMetroUnit(route, dir, oday, start string, veh in
 	key := route + "/" + dir + "/" + oday + "/" + start
 	now := time.Now()
 
-	w.metroMu.Lock()
-	defer w.metroMu.Unlock()
+	w.coupledMu.Lock()
+	defer w.coupledMu.Unlock()
 
-	if cur, ok := w.metroUnits[key]; ok && now.Sub(cur.seen) <= metroUnitTTL {
+	if cur, ok := w.coupledUnits[key]; ok && now.Sub(cur.seen) <= coupledUnitTTL {
 		if cur.veh != veh {
 			return false
 		}
 	}
-	w.metroUnits[key] = metroUnit{veh: veh, seen: now}
+	w.coupledUnits[key] = coupledUnit{veh: veh, seen: now}
 
 	// Journeys retire constantly, so sweep expired entries rather than letting
 	// the map grow for the life of the process.
-	if len(w.metroUnits) > 512 {
-		for k, u := range w.metroUnits {
-			if now.Sub(u.seen) > metroUnitTTL {
-				delete(w.metroUnits, k)
+	if len(w.coupledUnits) > 512 {
+		for k, u := range w.coupledUnits {
+			if now.Sub(u.seen) > coupledUnitTTL {
+				delete(w.coupledUnits, k)
 			}
 		}
 	}

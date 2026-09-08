@@ -12,6 +12,7 @@ import {
   isMetroLine,
   isSnappedMode,
   isHelsinkiCentralStationZone,
+  orientOnTracks,
   snappedLinesInFeed,
 } from './railTracks';
 
@@ -319,6 +320,52 @@ describe('placeOnTracks', () => {
   });
 });
 
+describe('orientOnTracks', () => {
+  // Helsinki Central in miniature: a fan of parallel tracks, and a route
+  // polyline running along one of them. Which track a train is standing on is
+  // not something the polyline knows; which way it points is.
+  const platform = buildTrack([[24.9410, 60.1690], [24.9410, 60.1770]], 0)!;
+
+  it('faces a train along the rails without moving it', () => {
+    const reported = { lat: 60.1730, lng: 24.9400, hdg: 300 };
+    const p = orientOnTracks([platform], reported, { maxOffset: 150, direction: 0 })!;
+    expect(p).not.toBeNull();
+    // Where the feed put it, to the last decimal.
+    expect(p.lat).toBe(reported.lat);
+    expect(p.lng).toBe(reported.lng);
+    // Along the tracks, not across them.
+    expect(p.hdg).toBeCloseTo(0, 0);
+    // Nothing may slide it along a track it is only known to be parallel to.
+    expect(p.track).toBeUndefined();
+  });
+
+  it('takes its facing from the journey direction, not a stale heading', () => {
+    // A train at a stand reports whatever heading its last moving fix had, so
+    // the polyline's own direction is the better evidence where the feed names
+    // the direction the journey runs in.
+    const inbound = buildTrack([[24.9410, 60.1770], [24.9410, 60.1690]], 1)!;
+    const p = orientOnTracks([inbound], { lat: 60.1730, lng: 24.9400, hdg: 20 }, {
+      maxOffset: 150,
+      direction: 1,
+    })!;
+    expect(p.hdg).toBeCloseTo(180, 0);
+  });
+
+  it('falls back to the heading where no direction can be matched', () => {
+    const undirected = buildTrack([[24.9410, 60.1690], [24.9410, 60.1770]])!;
+    const down = orientOnTracks([undirected], { lat: 60.1730, lng: 24.9400, hdg: 200 }, {
+      maxOffset: 150,
+    })!;
+    expect(down.hdg).toBeCloseTo(180, 0);
+  });
+
+  it('leaves a train alone when there is no rail near enough to turn it by', () => {
+    expect(
+      orientOnTracks([platform], { lat: 60.1730, lng: 24.9200, hdg: 300 }, { maxOffset: 150 })
+    ).toBeNull();
+  });
+});
+
 describe('placeOnTracks for a tram', () => {
   const tracks = [TRACK_PAIR.outbound, TRACK_PAIR.inbound];
   // A tram reported between its own rails and the opposite ones, which is the
@@ -334,6 +381,15 @@ describe('placeOnTracks for a tram', () => {
     expect(right.track.forward).toBe(true);
     expect(right.hdg).toBeCloseTo(90, 0);
     expect(right.lat).toBeCloseTo(60.1700, 5);
+  });
+
+  it('faces the way its own pattern runs, whatever the reported heading says', () => {
+    // A commuter train standing at a platform reports the heading of its last
+    // moving fix, which after a reversal points back the way it came. The
+    // pattern it is matched within runs one way only, so that answers it.
+    const p = placeOnTracks('K', tracks, { ...between, hdg: 265 }, undefined, { direction: 0 })!;
+    expect(p.track.forward).toBe(true);
+    expect(p.hdg).toBeCloseTo(90, 0);
   });
 
   it('uses the heading when the feed names no direction', () => {
