@@ -6,6 +6,13 @@ import { useReplay } from './hooks/useReplay';
 import { useIsMobile } from './hooks/useIsMobile';
 import { Map } from './components/Map';
 import { RIBBONED_MODES } from './map/routeNetwork';
+import type {
+  ArrivalOverlay,
+  JourneyOverlay,
+  MapCallbacks,
+  MapSelection,
+  MapView,
+} from './map/props';
 import { FilterPanel } from './components/FilterPanel';
 import { TramPopup } from './components/TramPopup';
 import { TramCard } from './components/TramCard';
@@ -798,43 +805,74 @@ function App() {
     setIsFilterCollapsed(!isFilterCollapsed);
   };
 
+  // What the map is told, grouped by what it is about. Assembled here rather
+  // than spread across thirty-seven attributes on the element below.
+  const mapSelection: MapSelection = {
+    // A vehicle with no `veh` of its own is identified by the trip it is running.
+    vehicleId:
+      selectedTram?.veh && selectedTram.veh !== '0'
+        ? selectedTram.veh
+        : selectedTram?.tripId || null,
+    line: selectedTram?.desi || null,
+    tripDetails: selectedTripDetails,
+    stop: selectedStop
+      ? {
+          id: selectedStop.id,
+          coords:
+            selectedStop.lat && selectedStop.lng ? [selectedStop.lng, selectedStop.lat] : null,
+          mode: selectedStop.mode || null,
+          isTrunk: selectedStop.isTrunkStop || false,
+        }
+      : null,
+    bikeStationId: selectedBikeStation?.id || null,
+    junctionId: selectedJunctionId,
+  };
+
+  const mapView: MapView = {
+    theme: mapTheme,
+    is3D,
+    always3DVehicles,
+    modes: shownModes,
+    showRoutes,
+    lineFilters: selectedLines,
+  };
+
+  const journeyOverlay: JourneyOverlay = {
+    legs: journey?.itinerary.legs ?? null,
+    endpoints: journey ? { from: journey.from, to: journey.to } : null,
+    vehicleIds: journeyVehicleIds,
+  };
+
+  const arrivalOverlay: ArrivalOverlay = {
+    focus: arrivalFocus,
+    tripDetails: arrivalTripDetails,
+    labels: arrivalLabels,
+  };
+
+  const mapCallbacks: MapCallbacks = {
+    onSelectTram: handleSelectTram,
+    onSelectStop: handleSelectStop,
+    onSelectBikeStation: handleSelectBikeStation,
+    onSelectJunction: handleSelectJunction,
+    onDisableFollowing: () => setIsFollowing(false),
+    onMapBearingChange: setMapBearing,
+    onLocatingChange: setLocating,
+    onVisibleStopsChange: setLabelStopIds,
+  };
+
   return (
     <div className="dashboard-container">
       {/* Fullscreen Map Canvas */}
       <Map
         trams={displayedTrams}
-        selectedTramId={selectedTram?.veh && selectedTram.veh !== '0' ? selectedTram.veh : selectedTram?.tripId || null}
-        journeyVehicleIds={journeyVehicleIds}
-        selectedStopId={selectedStop?.id || null}
-        selectedBikeStationId={selectedBikeStation?.id || null}
-        selectedStopCoords={selectedStop?.lat && selectedStop?.lng ? [selectedStop.lng, selectedStop.lat] : null}
-        selectedStopMode={selectedStop?.mode || null}
-        selectedStopIsTrunk={selectedStop?.isTrunkStop || false}
-        onSelectTram={handleSelectTram}
-        onSelectStop={handleSelectStop}
-        onSelectBikeStation={handleSelectBikeStation}
-        onSelectJunction={handleSelectJunction}
-        selectedJunctionId={selectedJunctionId}
-        lineFilters={selectedLines}
         routeGeometries={routeGeometries}
-        selectedLine={selectedTram?.desi || null}
-        mapTheme={mapTheme}
-        is3D={is3D}
-        always3DVehicles={always3DVehicles}
         isFollowing={isFollowing}
-        onDisableFollowing={() => setIsFollowing(false)}
-        onMapBearingChange={setMapBearing}
-        onLocatingChange={setLocating}
-        modes={shownModes}
-        showRoutes={showRoutes}
-        selectedTripDetails={selectedTripDetails}
-        journeyLegs={journey?.itinerary.legs ?? null}
-        journeyEndpoints={journey ? { from: journey.from, to: journey.to } : null}
-        arrivalFocus={arrivalFocus}
-        arrivalTripDetails={arrivalTripDetails}
-        arrivalLabels={arrivalLabels}
-        onVisibleStopsChange={setLabelStopIds}
         timeScale={replay.timeScale}
+        selection={mapSelection}
+        view={mapView}
+        journey={journeyOverlay}
+        arrivals={arrivalOverlay}
+        callbacks={mapCallbacks}
       />
 
       {/* Sidebar Filters Panel — hidden while the timelapse owns the screen */}

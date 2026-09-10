@@ -16,6 +16,13 @@ import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint 
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
 import type { ModeFlags, TransportMode } from '../lib/modes';
+import type {
+  ArrivalOverlay,
+  JourneyOverlay,
+  MapCallbacks,
+  MapSelection,
+  MapView,
+} from '../map/props';
 import {
   ensureBackgroundRouteNetwork,
   forgetBaseFilters,
@@ -213,71 +220,17 @@ const ARRIVAL_LABEL_LAYER = 'stop-arrival-labels-layer';
 // where the zoom stops of the offset fan are unit-tested against the style spec.
 
 interface MapProps {
+  /** The vehicles to draw, live or replayed. */
   trams: Record<string, VehiclePosition>;
-  selectedTramId: string | null;
-  journeyVehicleIds?: string[];
-  selectedStopId: string | null;
-  selectedBikeStationId: string | null;
-  selectedStopCoords?: [number, number] | null;
-  selectedStopMode?: string | null;
-  selectedStopIsTrunk?: boolean;
-  onSelectTram: (tram: VehiclePosition | null) => void;
-  onSelectStop: (
-    stopId: string,
-    name: string,
-    code: string,
-    lat?: number,
-    lng?: number,
-    mode?: string,
-    isTrunkStop?: boolean
-  ) => void;
-  onSelectBikeStation: (station: { id: string; name: string } | null) => void;
-  /** A signalised junction was picked off the map; null closes the panel. */
-  onSelectJunction: (junctionId: number | null) => void;
-  selectedJunctionId: number | null;
-  lineFilters: string[];
+  /** Fetched pattern geometry per line, drawn as the highlighted ribbons. */
   routeGeometries: Record<string, { geometries: string[]; color?: string; stops?: string[] }>;
-  // Line number (`desi`) of the currently selected vehicle, if any. Its route
-  // path is drawn emphasised while every other highlighted route is dimmed.
-  selectedLine?: string | null;
-  mapTheme: MapTheme;
-  is3D: boolean;
-  always3DVehicles: boolean;
+  selection: MapSelection;
+  view: MapView;
+  journey: JourneyOverlay;
+  arrivals: ArrivalOverlay;
+  callbacks: MapCallbacks;
+  /** Whether the camera is tracking the selected vehicle. */
   isFollowing: boolean;
-  onDisableFollowing: () => void;
-  onMapBearingChange?: (bearing: number) => void;
-  /**
-   * Whether the map's own locate control is switched on — including its
-   * background state, where the dot keeps up but the camera has been let go.
-   * Riding along is only offered to a reader who has already said where they
-   * are, so the offer follows this.
-   */
-  onLocatingChange?: (locating: boolean) => void;
-  /** Which vehicle modes the map draws, and with them their stops and routes. */
-  modes: ModeFlags;
-  showRoutes: boolean;
-  selectedTripDetails: TripDetailsResponse | null;
-  journeyLegs?: JourneyLeg[] | null;
-  journeyEndpoints?: { from: JourneyEndpoint; to: JourneyEndpoint } | null;
-  /**
-   * The arrival being followed at the selected stop, and the geometry of its
-   * trip. Arrival focus is the selected-vehicle highlight run from the other
-   * end — a stop and the vehicle coming to it — so it drives the same layers,
-   * and App keeps the two selections mutually exclusive.
-   */
-  arrivalFocus?: ArrivalFocus | null;
-  arrivalTripDetails?: TripDetailsResponse | null;
-  /**
-   * Stops whose next arrival should be labelled on the map, keyed by the
-   * unprefixed stop id. Zooming in on a stop is the whole gesture: the sign
-   * board appears and what is coming to it appears with it.
-   */
-  arrivalLabels?: Record<string, { label: string; color: string }>;
-  /**
-   * Which stops are close enough to the middle of a zoomed-in view to be
-   * worth a label. Reported when the view settles, never per frame.
-   */
-  onVisibleStopsChange?: (stopIds: string[]) => void;
   /**
    * How many seconds of history a second of wall clock covers. One while the
    * live feed is playing, and the replay speed while history is.
@@ -427,39 +380,47 @@ interface Glide {
 
 export const Map: React.FC<MapProps> = ({
   trams,
-  selectedTramId,
-  journeyVehicleIds = [],
-  selectedStopId,
-  selectedBikeStationId,
-  selectedStopCoords,
-  arrivalFocus = null,
-  arrivalTripDetails = null,
-  arrivalLabels,
-  onVisibleStopsChange,
-  selectedStopMode,
-  selectedStopIsTrunk,
-  onSelectTram,
-  onSelectStop,
-  onSelectBikeStation,
-  onSelectJunction,
-  selectedJunctionId,
-  lineFilters,
   routeGeometries,
-  selectedLine = null,
-  mapTheme,
-  is3D,
-  always3DVehicles,
+  selection,
+  view,
+  journey,
+  arrivals,
+  callbacks,
   isFollowing,
-  onDisableFollowing,
-  onMapBearingChange,
-  onLocatingChange,
-  modes,
-  showRoutes,
-  selectedTripDetails,
-  journeyLegs = null,
-  journeyEndpoints = null,
   timeScale = 1,
 }) => {
+  // Unpacked under the names the body has always used, so grouping the props
+  // is a change at the boundary and nowhere else.
+  const {
+    vehicleId: selectedTramId,
+    line: selectedLine,
+    tripDetails: selectedTripDetails,
+    stop: selectedStop,
+    bikeStationId: selectedBikeStationId,
+    junctionId: selectedJunctionId,
+  } = selection;
+  const selectedStopId = selectedStop?.id ?? null;
+  const selectedStopCoords = selectedStop?.coords ?? null;
+  const selectedStopMode = selectedStop?.mode ?? null;
+  const selectedStopIsTrunk = selectedStop?.isTrunk ?? false;
+  const { theme: mapTheme, is3D, always3DVehicles, modes, showRoutes, lineFilters } = view;
+  const { legs: journeyLegs, endpoints: journeyEndpoints, vehicleIds: journeyVehicleIds } = journey;
+  const {
+    focus: arrivalFocus,
+    tripDetails: arrivalTripDetails,
+    labels: arrivalLabels,
+  } = arrivals;
+  const {
+    onSelectTram,
+    onSelectStop,
+    onSelectBikeStation,
+    onSelectJunction,
+    onDisableFollowing,
+    onMapBearingChange,
+    onLocatingChange,
+    onVisibleStopsChange,
+  } = callbacks;
+
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
 
