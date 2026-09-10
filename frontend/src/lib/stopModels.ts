@@ -11,7 +11,8 @@
 // `across` is to the right of that bearing, with the kerb side positive.
 
 import { TRAM_GREEN, METRO_ORANGE, TRAIN_PURPLE, BUS_BLUE, FERRY_CYAN } from './routeColors';
-import { offsetMeters, patchRing, SELECTED_COLOR, DOORS_OPEN_COLOR, GLASS_COLOR } from './vehicleModels';
+import { bearingBetween, distanceToSegment, metersBetween, offsetMeters } from './geo';
+import { patchRing, SELECTED_COLOR, DOORS_OPEN_COLOR, GLASS_COLOR } from './vehicleModels';
 import { platformColors, PLATFORM_EXTRUSION_HEIGHT, type MapTheme } from './stopPlatforms';
 
 export type StopMode = 'TRAM' | 'BUS' | 'SUBWAY' | 'RAIL' | 'FERRY';
@@ -223,26 +224,6 @@ export function stopFurnitureCollection(stops: StopFurnitureState[], theme: MapT
 // off geometry that is already on the map: the platform polygon the stop sits
 // in, or failing that the route line running past it.
 
-const EARTH_RADIUS = 6378137;
-const RAD = Math.PI / 180;
-
-/** Metres between two lng/lat points, flat-earth over the few hundred that matter. */
-export function metersBetween(a: [number, number], b: [number, number]): number {
-  const lat = ((a[1] + b[1]) / 2) * RAD;
-  const x = (b[0] - a[0]) * RAD * Math.cos(lat) * EARTH_RADIUS;
-  const y = (b[1] - a[1]) * RAD * EARTH_RADIUS;
-  return Math.hypot(x, y);
-}
-
-/** Bearing from a to b, degrees clockwise from north. */
-export function bearingBetween(a: [number, number], b: [number, number]): number {
-  const lat = ((a[1] + b[1]) / 2) * RAD;
-  const east = (b[0] - a[0]) * Math.cos(lat);
-  const north = b[1] - a[1];
-  const deg = Math.atan2(east, north) / RAD;
-  return (deg + 360) % 360;
-}
-
 /** Ray casting, in lng/lat. Rings from vector tiles are already closed. */
 export function pointInRing(point: [number, number], ring: [number, number][]): boolean {
   let inside = false;
@@ -298,20 +279,6 @@ export function nearestLineBearing(
     }
   }
   return bearing;
-}
-
-function distanceToSegment(p: [number, number], a: [number, number], b: [number, number]): number {
-  const lat = a[1] * RAD;
-  const toXY = (q: [number, number]): [number, number] => [
-    (q[0] - a[0]) * RAD * Math.cos(lat) * EARTH_RADIUS,
-    (q[1] - a[1]) * RAD * EARTH_RADIUS,
-  ];
-  const [px, py] = toXY(p);
-  const [bx, by] = toXY(b);
-  const lengthSq = bx * bx + by * by;
-  if (lengthSq === 0) return Math.hypot(px, py);
-  const t = Math.max(0, Math.min(1, (px * bx + py * by) / lengthSq));
-  return Math.hypot(px - bx * t, py - by * t);
 }
 
 /** Point `metres` to the right of `bearing` from a stop — used by the tests. */

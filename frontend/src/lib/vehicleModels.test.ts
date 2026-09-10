@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { createPropertyExpression, v8 } from '@maplibre/maplibre-gl-style-spec';
 import type { StylePropertySpecification } from '@maplibre/maplibre-gl-style-spec';
 import {
-  offsetMeters,
   sectionRing,
   vehicleExtrusions,
   vehicleExtrusionCollection,
@@ -24,19 +23,11 @@ import {
   VEHICLE_3D_FADE_IN,
   VEHICLE_ICON_FADE_OUT,
 } from './vehicleModels';
+import { metersBetween, offsetMeters } from './geo';
 import { METRO_ORANGE, TRAIN_PURPLE, BUS_BLUE, TRAM_GREEN, FERRY_CYAN, FERRY_COLORS, ROUTE_COLORS } from './routeColors';
 import { occupancyColor } from './occupancy';
 
 const HELSINKI: [number, number] = [24.94, 60.17];
-
-// Metres between two lng/lat points, good enough at city scale.
-function metersBetween(a: [number, number], b: [number, number]): number {
-  const mPerDegLat = 111320;
-  const mPerDegLng = mPerDegLat * Math.cos((a[1] * Math.PI) / 180);
-  const dx = (b[0] - a[0]) * mPerDegLng;
-  const dy = (b[1] - a[1]) * mPerDegLat;
-  return Math.hypot(dx, dy);
-}
 
 describe('offsetMeters', () => {
   const [lng, lat] = HELSINKI;

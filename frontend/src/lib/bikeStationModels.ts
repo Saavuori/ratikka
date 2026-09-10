@@ -17,7 +17,8 @@
 //    availability that the flat gauge summarises is, up close, simply visible —
 //    a full rack looks full and an empty one looks empty.
 
-import { offsetMeters, patchRing, SELECTED_COLOR } from './vehicleModels';
+import { offsetMeters } from './geo';
+import { patchRing, SELECTED_COLOR } from './vehicleModels';
 import { platformColors, type MapTheme } from './stopPlatforms';
 
 /** HSL's city bikes, and everything painted to match them. */

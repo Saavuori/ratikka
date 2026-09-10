@@ -54,8 +54,8 @@ import {
   snappedLinesInFeed,
   trackSpine,
 } from '../lib/railTracks';
+import { advanceAlongHeading } from '../lib/geo';
 import {
-  advanceAlongHeading,
   glideFraction,
   hasMoved,
   predictedAdvance,

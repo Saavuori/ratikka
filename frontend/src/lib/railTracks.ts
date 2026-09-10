@@ -209,7 +209,7 @@ export function buildTracks(geometries: string[] | undefined): RailTrack[] {
   return buildPatternTracks(geometries?.map((points) => ({ points })));
 }
 
-function bearingBetween(from: [number, number], to: [number, number]): number {
+function bearingOfProjectedSegment(from: [number, number], to: [number, number]): number {
   // Both points are already in local metres, so the bearing is a plain atan2 of
   // the easting/northing delta.
   const dx = to[0] - from[0];
@@ -293,7 +293,7 @@ export function snapToTracks(
       const offset = Math.hypot(px - cx, py - cy);
       if (offset - maxPenalty >= bestScore) continue;
 
-      const bearing = bearingBetween([ax, ay], [bx, by]);
+      const bearing = bearingOfProjectedSegment([ax, ay], [bx, by]);
       const against =
         heading !== undefined && angleBetween(heading, bearing) > 90;
       let score = against ? offset + penalty : offset;
@@ -358,7 +358,7 @@ export function pointOnTrack(
   return {
     lng,
     lat,
-    bearing: bearingBetween([ax, ay], [bx, by]),
+    bearing: bearingOfProjectedSegment([ax, ay], [bx, by]),
   };
 }
 

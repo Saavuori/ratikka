@@ -1,23 +1,10 @@
+import { haversineMeters } from './geo';
 import type { TrafficLightFeature, VehiclePosition } from '../types';
 
 // A stopped tram closer than this to a known junction is considered "at" it.
 // Helsinki tram tracks generally sit within a few meters of the stop line, so
 // this stays tight enough to not bleed into the next junction down the street.
 const NEARBY_JUNCTION_METERS = 35;
-
-// Mean Earth radius in meters, standard for the haversine great-circle formula.
-const EARTH_RADIUS_METERS = 6371000;
-
-// Great-circle distance between two WGS84 points, in meters.
-export function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return 2 * EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(a)));
-}
 
 export interface NearestJunction {
   feature: TrafficLightFeature;

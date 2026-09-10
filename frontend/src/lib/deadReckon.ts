@@ -249,43 +249,6 @@ export function glideFraction(
   );
 }
 
-// Mean Earth radius, m. Only ever used over a few tens of metres here, where a
-// sphere and the local tangent plane are the same thing to well under a
-// millimetre.
-const EARTH_RADIUS = 6371000;
-
-/**
- * Move a point `metres` along a compass heading, in degrees clockwise from
- * north.
- *
- * This is the surface modes' answer to `pointOnTrack`. A metro is carried along
- * its own rails because it has rails and we have their geometry; a bus has
- * neither, so its predicted position runs along the heading it last reported.
- * Over the second or two this is used for that is an excellent approximation —
- * the arc a road vehicle cuts in a second is a few centimetres off its own
- * tangent even on a tight turn — and it degrades in the right direction, since
- * a vehicle turning hard is usually a vehicle going slowly.
- */
-export function advanceAlongHeading(
-  lat: number,
-  lng: number,
-  hdg: number,
-  metres: number
-): { lat: number; lng: number } {
-  if (!(metres > 0) || !Number.isFinite(hdg)) return { lat, lng };
-  const rad = (hdg * Math.PI) / 180;
-  const dLat = ((metres * Math.cos(rad)) / EARTH_RADIUS) * (180 / Math.PI);
-  const cosLat = Math.cos((lat * Math.PI) / 180);
-  // At the poles a metre east is an unbounded number of degrees. Helsinki is
-  // nowhere near one, but the guard keeps a garbage coordinate from producing
-  // an infinite longitude rather than a wrong one.
-  const dLng =
-    Math.abs(cosLat) < 1e-6
-      ? 0
-      : ((metres * Math.sin(rad)) / (EARTH_RADIUS * cosLat)) * (180 / Math.PI);
-  return { lat: lat + dLat, lng: lng + dLng };
-}
-
 /**
  * Whether a snapshot carries a position the animation has not already seen.
  *

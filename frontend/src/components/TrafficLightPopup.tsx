@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Radio } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { getRouteColor, getModeAccent } from '../lib/routeColors';
-import { haversineMeters } from '../lib/trafficLights';
+import { haversineMeters } from '../lib/geo';
 import {
   splitByOutcome,
   describeRequestType,

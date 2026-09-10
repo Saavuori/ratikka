@@ -1,5 +1,5 @@
 import type { VehiclePosition } from '../types';
-import { haversineMeters } from './trafficLights';
+import { haversineMeters } from './geo';
 
 /**
  * Working out which vehicle the reader is *inside*, from their own phone's

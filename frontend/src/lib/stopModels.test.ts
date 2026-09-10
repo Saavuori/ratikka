@@ -7,8 +7,6 @@ import {
   stopModel,
   stopExtrusions,
   stopFurnitureCollection,
-  bearingBetween,
-  metersBetween,
   pointInRing,
   longestEdgeBearing,
   nearestLineBearing,
@@ -17,6 +15,7 @@ import {
   STOP_3D_FULL_ZOOM,
   STOP_3D_FADE_IN,
 } from './stopModels';
+import { bearingBetween, metersBetween } from './geo';
 import type { StopFurnitureState } from './stopModels';
 import { SELECTED_COLOR, DOORS_OPEN_COLOR } from './vehicleModels';
 import { PLATFORM_EXTRUSION_HEIGHT } from './stopPlatforms';
