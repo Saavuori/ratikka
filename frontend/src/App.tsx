@@ -22,7 +22,7 @@ import { RidePanel } from './components/RidePanel';
 import { AlightBanner } from './components/AlightBanner';
 import { fetchRouteDetails, fetchAlerts, fetchTripDetails, fetchStopsArrivals, fetchMapConfig } from './lib/api';
 import type { MapTheme } from './lib/stopPlatforms';
-import { readStorage, writeStorage } from './lib/storage';
+import { usePersistedFlag, usePersistedLines, usePersistedState } from './hooks/usePersisted';
 import { areTripsEquivalent } from './lib/trip';
 import { findJourneyVehicle, journeyVehicleModes } from './lib/journeyVehicles';
 import { alightAlert } from './lib/alightAlert';
@@ -145,11 +145,13 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Map settings states with localStorage persistence
-  const [mapTheme, setMapTheme] = useState<MapTheme>(() => {
-    const stored = readStorage('mapTheme');
-    return stored === 'dark' || stored === 'satellite' ? stored : 'light';
-  });
+  // Map settings, remembered across reloads.
+  const [mapTheme, setMapTheme] = usePersistedState<MapTheme>(
+    'mapTheme',
+    'light',
+    (raw) => (raw === 'dark' || raw === 'satellite' || raw === 'light' ? raw : null),
+    String
+  );
   // The satellite basemap needs a National Land Survey key, which the
   // deployment may not have. Without one the mode is not offered at all --
   // better than a chip that switches the map to a grid of 401s. A stored
@@ -161,43 +163,26 @@ function App() {
       setSatelliteAvailable(available);
       if (!available) setMapTheme((theme) => (theme === 'satellite' ? 'dark' : theme));
     });
-  }, []);
-  const [is3D, setIs3D] = useState<boolean>(() => {
-    return readStorage('is3D') === 'true';
-  });
-  const [always3DVehicles, setAlways3DVehicles] = useState<boolean>(() => {
-    return readStorage('always3DVehicles') === 'true';
-  });
-  const [showTrams, setShowTrams] = useState<boolean>(() => {
-    return readStorage('showTrams') !== 'false';
-  });
-  const [showBuses, setShowBuses] = useState<boolean>(() => {
-    // Buses default OFF: they are ~80% of the vehicle feed, so the backend only
-    // ingests them once a user opts in. Respect a prior explicit choice.
-    return readStorage('showBuses') === 'true';
-  });
-  // Metro and commuter trains ride the same HFP feed as trams and buses and are
-  // opt-in for the same reason: the backend only subscribes to a mode while
-  // somebody is looking at it.
-  const [showMetro, setShowMetro] = useState<boolean>(() => {
-    return readStorage('showMetro') === 'true';
-  });
-  const [showTrains, setShowTrains] = useState<boolean>(() => {
-    return readStorage('showTrains') === 'true';
-  });
-  // Ferries are the smallest feed of the five — one year-round crossing — but
-  // opt-in on the same principle: the backend subscribes to a mode only while
-  // somebody is looking at it.
-  const [showFerries, setShowFerries] = useState<boolean>(() => {
-    return readStorage('showFerries') === 'true';
-  });
+    // setMapTheme is a useState setter passed through usePersistedState, so it
+    // is stable; the rule cannot see that through a custom hook's return, and
+    // listing it is both truthful and free.
+  }, [setMapTheme]);
+  const [is3D, setIs3D] = usePersistedFlag('is3D', false);
+  const [always3DVehicles, setAlways3DVehicles] = usePersistedFlag('always3DVehicles', false);
+  const [showTrams, setShowTrams] = usePersistedFlag('showTrams', true);
+  // Every mode but trams defaults OFF: buses alone are ~80% of the vehicle
+  // feed, and the backend only subscribes to a mode while somebody is looking
+  // at it. Ferries are the smallest feed of the five — one year-round crossing
+  // — but they are opt-in on the same principle.
+  const [showBuses, setShowBuses] = usePersistedFlag('showBuses', false);
+  const [showMetro, setShowMetro] = usePersistedFlag('showMetro', false);
+  const [showTrains, setShowTrains] = usePersistedFlag('showTrains', false);
+  const [showFerries, setShowFerries] = usePersistedFlag('showFerries', false);
   // Route lines (the JORE background network and the highlighted per-line
   // ribbons) are the map's densest ink: handy for seeing where a line goes,
   // in the way when you only want the vehicles and the streets under them.
   // On by default — hiding them is the deliberate choice.
-  const [showRoutes, setShowRoutes] = useState<boolean>(() => {
-    return readStorage('showRoutes') !== 'false';
-  });
+  const [showRoutes, setShowRoutes] = usePersistedFlag('showRoutes', true);
 
   // What the map draws: the reader's own toggles, plus the modes a selected
   // journey or stop needs in order to answer for itself.
@@ -236,43 +221,10 @@ function App() {
   });
 
   useEffect(() => {
-    writeStorage('mapTheme', mapTheme);
     // The app's own chrome has two skins, not three: over the orthophotos the
     // dark one is the readable pairing.
     document.documentElement.setAttribute('data-theme', mapTheme === 'light' ? 'light' : 'dark');
   }, [mapTheme]);
-
-  useEffect(() => {
-    writeStorage('is3D', String(is3D));
-  }, [is3D]);
-
-  useEffect(() => {
-    writeStorage('always3DVehicles', String(always3DVehicles));
-  }, [always3DVehicles]);
-
-  useEffect(() => {
-    writeStorage('showTrams', String(showTrams));
-  }, [showTrams]);
-
-  useEffect(() => {
-    writeStorage('showBuses', String(showBuses));
-  }, [showBuses]);
-
-  useEffect(() => {
-    writeStorage('showMetro', String(showMetro));
-  }, [showMetro]);
-
-  useEffect(() => {
-    writeStorage('showTrains', String(showTrains));
-  }, [showTrains]);
-
-  useEffect(() => {
-    writeStorage('showFerries', String(showFerries));
-  }, [showFerries]);
-
-  useEffect(() => {
-    writeStorage('showRoutes', String(showRoutes));
-  }, [showRoutes]);
 
   // UI Selection States
   const [selectedTram, setSelectedTram] = useState<VehiclePosition | null>(null);
@@ -444,20 +396,8 @@ function App() {
       window.removeEventListener('touchend', handleTouchEnd);
     };
   }, [isFilterCollapsed, isDetailCollapsed, isMobile]);
-  const [selectedLines, setSelectedLines] = useState<string[]>(() => {
-    try {
-      const stored = readStorage('selectedLines');
-      const parsed = stored ? JSON.parse(stored) : [];
-      return Array.isArray(parsed) ? parsed.filter((l): l is string => typeof l === 'string') : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // Persist the line filter (favorite lines) across reloads
-  useEffect(() => {
-    writeStorage('selectedLines', JSON.stringify(selectedLines));
-  }, [selectedLines]);
+  // The line filter (favourite lines), remembered across reloads.
+  const [selectedLines, setSelectedLines] = usePersistedLines('selectedLines');
 
   const [selectedStopRoutes, setSelectedStopRoutes] = useState<string[]>([]);
   const [mapBearing, setMapBearing] = useState<number>(0);
