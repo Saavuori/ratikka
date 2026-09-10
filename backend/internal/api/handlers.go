@@ -181,11 +181,11 @@ func (h *Handlers) Config(w http.ResponseWriter, r *http.Request) {
 
 // Trip Details Output Structs
 type TripDetailsResponse struct {
-	TripId   string              `json:"tripId"`
-	Route    RouteResponse       `json:"route"`
-	Headsign string              `json:"headsign"`
-	Stops    []StopArrival       `json:"stops"`
-	Geometry string              `json:"geometry,omitempty"`
+	TripId   string        `json:"tripId"`
+	Route    RouteResponse `json:"route"`
+	Headsign string        `json:"headsign"`
+	Stops    []StopArrival `json:"stops"`
+	Geometry string        `json:"geometry,omitempty"`
 }
 
 type RouteResponse struct {
@@ -296,17 +296,7 @@ func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
 
 	key := "trip:" + tripId
 
-	if cached, ok := h.apiCache.Get(key); ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(cached)
-		return
-	}
-
-	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
-		// Double-check cache inside singleflight
-		if cached, ok := h.apiCache.Get(key); ok {
-			return cached, nil
-		}
+	serveCached(h, w, key, 10*time.Second, func() (TripDetailsResponse, error) {
 
 		queryStr := `
 			query GetTripDetails($tripId: String!) {
@@ -346,7 +336,7 @@ func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
 
 		if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
 			log.Printf("GraphQL query error for trip %s: %v\n", tripId, err)
-			return nil, fmt.Errorf("upstream api error")
+			return TripDetailsResponse{}, errUpstream
 		}
 
 		if raw.Trip == nil {
@@ -395,17 +385,17 @@ func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
 				}
 
 				type fuzzyTripData struct {
-					GtfsId           string       `json:"gtfsId"`
-					Route            rawRouteInfo `json:"route"`
-					TripHeadsign     string       `json:"tripHeadsign"`
-					Stoptimes []struct {
-						ScheduledArrival   int `json:"scheduledArrival"`
-						RealtimeArrival    int `json:"realtimeArrival"`
-						ArrivalDelay       int `json:"arrivalDelay"`
-						ScheduledDeparture int `json:"scheduledDeparture"`
-						RealtimeDeparture  int `json:"realtimeDeparture"`
-						DepartureDelay     int `json:"departureDelay"`
-						Realtime           bool `json:"realtime"`
+					GtfsId       string       `json:"gtfsId"`
+					Route        rawRouteInfo `json:"route"`
+					TripHeadsign string       `json:"tripHeadsign"`
+					Stoptimes    []struct {
+						ScheduledArrival   int    `json:"scheduledArrival"`
+						RealtimeArrival    int    `json:"realtimeArrival"`
+						ArrivalDelay       int    `json:"arrivalDelay"`
+						ScheduledDeparture int    `json:"scheduledDeparture"`
+						RealtimeDeparture  int    `json:"realtimeDeparture"`
+						DepartureDelay     int    `json:"departureDelay"`
+						Realtime           bool   `json:"realtime"`
 						RealtimeState      string `json:"realtimeState"`
 						Stop               struct {
 							GtfsId string  `json:"gtfsId"`
@@ -489,7 +479,7 @@ func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if raw.Trip == nil {
-			return nil, fmt.Errorf("trip not found")
+			return TripDetailsResponse{}, notFound("trip not found")
 		}
 
 		// Format response
@@ -523,26 +513,8 @@ func (h *Handlers) TripDetails(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
-		jsonBytes, err := json.Marshal(resp)
-		if err != nil {
-			return nil, err
-		}
-
-		h.apiCache.Set(key, jsonBytes, 10*time.Second)
-		return jsonBytes, nil
+		return resp, nil
 	})
-
-	if err != nil {
-		if err.Error() == "trip not found" {
-			http.Error(w, "trip not found", http.StatusNotFound)
-		} else {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-		}
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(dataInterface.([]byte))
 }
 
 // Stop Details Output Structs
@@ -602,17 +574,7 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 
 	key := fmt.Sprintf("stop:%s:%d", stopId, numDepartures)
 
-	if cached, ok := h.apiCache.Get(key); ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(cached)
-		return
-	}
-
-	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
-		// Double-check cache inside singleflight
-		if cached, ok := h.apiCache.Get(key); ok {
-			return cached, nil
-		}
+	serveCached(h, w, key, 10*time.Second, func() (StopDetailsResponse, error) {
 
 		queryStr := `
 			query GetStopTimetable($stopId: String!, $numberOfDepartures: Int!) {
@@ -642,11 +604,11 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 
 		if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
 			log.Printf("GraphQL query error for stop %s: %v\n", stopId, err)
-			return nil, fmt.Errorf("upstream api error")
+			return StopDetailsResponse{}, errUpstream
 		}
 
 		if raw.Stop == nil {
-			return nil, fmt.Errorf("stop not found")
+			return StopDetailsResponse{}, notFound("stop not found")
 		}
 
 		s := raw.Stop
@@ -677,26 +639,8 @@ func (h *Handlers) StopDetails(w http.ResponseWriter, r *http.Request) {
 			resp.Departures = append(resp.Departures, toStopDeparture(dep))
 		}
 
-		jsonBytes, err := json.Marshal(resp)
-		if err != nil {
-			return nil, err
-		}
-
-		h.apiCache.Set(key, jsonBytes, 10*time.Second)
-		return jsonBytes, nil
+		return resp, nil
 	})
-
-	if err != nil {
-		if err.Error() == "stop not found" {
-			http.Error(w, "stop not found", http.StatusNotFound)
-		} else {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-		}
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(dataInterface.([]byte))
 }
 
 // toStopDeparture maps one upstream stoptime onto the departure the API
@@ -801,17 +745,7 @@ func (h *Handlers) RouteDetails(w http.ResponseWriter, r *http.Request) {
 
 	key := "route:" + shortName
 
-	if cached, ok := h.apiCache.Get(key); ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(cached)
-		return
-	}
-
-	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
-		// Double-check cache inside singleflight
-		if cached, ok := h.apiCache.Get(key); ok {
-			return cached, nil
-		}
+	serveCached(h, w, key, 1*time.Hour, func() (RouteDetailsResponse, error) {
 
 		queryStr := `
 			query GetRouteDetails($shortName: String!) {
@@ -838,11 +772,11 @@ func (h *Handlers) RouteDetails(w http.ResponseWriter, r *http.Request) {
 
 		if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
 			log.Printf("GraphQL query error for route %s: %v\n", shortName, err)
-			return nil, fmt.Errorf("upstream api error")
+			return RouteDetailsResponse{}, errUpstream
 		}
 
 		if len(raw.Routes) == 0 {
-			return nil, fmt.Errorf("route not found")
+			return RouteDetailsResponse{}, notFound("route not found")
 		}
 
 		// Find exact match or fallback to first
@@ -903,26 +837,8 @@ func (h *Handlers) RouteDetails(w http.ResponseWriter, r *http.Request) {
 			Stops:      stops,
 		}
 
-		jsonBytes, err := json.Marshal(resp)
-		if err != nil {
-			return nil, err
-		}
-
-		h.apiCache.Set(key, jsonBytes, 1*time.Hour)
-		return jsonBytes, nil
+		return resp, nil
 	})
-
-	if err != nil {
-		if err.Error() == "route not found" {
-			http.Error(w, "route not found", http.StatusNotFound)
-		} else {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-		}
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(dataInterface.([]byte))
 }
 
 type BikeStationDetailsResponse struct {
@@ -992,17 +908,7 @@ func (h *Handlers) BikeStationDetails(w http.ResponseWriter, r *http.Request) {
 
 	key := "bike:" + stationId
 
-	if cached, ok := h.apiCache.Get(key); ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(cached)
-		return
-	}
-
-	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
-		// Double-check cache inside singleflight
-		if cached, ok := h.apiCache.Get(key); ok {
-			return cached, nil
-		}
+	serveCached(h, w, key, 15*time.Second, func() (BikeStationDetailsResponse, error) {
 
 		queryStr := `
 			query GetBikeStationDetails($stationId: String!) {
@@ -1038,11 +944,11 @@ func (h *Handlers) BikeStationDetails(w http.ResponseWriter, r *http.Request) {
 
 		if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
 			log.Printf("GraphQL query error for bike station %s: %v\n", stationId, err)
-			return nil, fmt.Errorf("upstream api error")
+			return BikeStationDetailsResponse{}, errUpstream
 		}
 
 		if raw.VehicleRentalStation == nil {
-			return nil, fmt.Errorf("bike station not found")
+			return BikeStationDetailsResponse{}, notFound("bike station not found")
 		}
 
 		s := raw.VehicleRentalStation
@@ -1058,26 +964,8 @@ func (h *Handlers) BikeStationDetails(w http.ResponseWriter, r *http.Request) {
 			SpacesAvailable: spaces,
 		}
 
-		jsonBytes, err := json.Marshal(resp)
-		if err != nil {
-			return nil, err
-		}
-
-		h.apiCache.Set(key, jsonBytes, 15*time.Second)
-		return jsonBytes, nil
+		return resp, nil
 	})
-
-	if err != nil {
-		if err.Error() == "bike station not found" {
-			http.Error(w, "bike station not found", http.StatusNotFound)
-		} else {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-		}
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(dataInterface.([]byte))
 }
 
 // GeoJSON output for the full set of city-bike stations, consumed by the map
@@ -1128,16 +1016,7 @@ type rawBikeStationsResponse struct {
 func (h *Handlers) BikeStations(w http.ResponseWriter, r *http.Request) {
 	const key = "bike:stations:all"
 
-	if cached, ok := h.apiCache.Get(key); ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(cached)
-		return
-	}
-
-	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
-		if cached, ok := h.apiCache.Get(key); ok {
-			return cached, nil
-		}
+	serveCached(h, w, key, 20*time.Second, func() (bikeStationsFeatureCollection, error) {
 
 		queryStr := `
 			query GetBikeStations {
@@ -1173,7 +1052,7 @@ func (h *Handlers) BikeStations(w http.ResponseWriter, r *http.Request) {
 		var raw rawBikeStationsResponse
 		if err := h.gql.query(r.Context(), queryStr, nil, &raw); err != nil {
 			log.Printf("GraphQL query error for bike stations: %v\n", err)
-			return nil, fmt.Errorf("upstream api error")
+			return bikeStationsFeatureCollection{}, errUpstream
 		}
 
 		fc := bikeStationsFeatureCollection{
@@ -1199,22 +1078,8 @@ func (h *Handlers) BikeStations(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
-		jsonBytes, err := json.Marshal(fc)
-		if err != nil {
-			return nil, err
-		}
-
-		h.apiCache.Set(key, jsonBytes, 20*time.Second)
-		return jsonBytes, nil
+		return fc, nil
 	})
-
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(dataInterface.([]byte))
 }
 
 // Disruption Alert Output Structs
@@ -1256,12 +1121,6 @@ func (h *Handlers) Alerts(w http.ResponseWriter, r *http.Request) {
 
 	key := "alerts:" + lang
 
-	if cached, ok := h.apiCache.Get(key); ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(cached)
-		return
-	}
-
 	// Fetch from Digitransit GraphQL API
 	queryStr := `
 		query GetServiceAlerts {
@@ -1292,18 +1151,15 @@ func (h *Handlers) Alerts(w http.ResponseWriter, r *http.Request) {
 		}
 	`
 
-	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
-		// Double-check cache inside singleflight
-		if cached, ok := h.apiCache.Get(key); ok {
-			return cached, nil
-		}
+	serveCached(h, w, key, 60*time.Second, func() (AlertsListResponse, error) {
 
 		// Context with the accept-language value
 		ctx := context.WithValue(r.Context(), AcceptLanguageKey, lang)
 
 		var raw rawAlertResponse
 		if err := h.gql.query(ctx, queryStr, nil, &raw); err != nil {
-			return nil, err
+			log.Printf("GraphQL query error for alerts: %v\n", err)
+			return AlertsListResponse{}, errUpstream
 		}
 
 		// Map rawAlerts to AlertResponse
@@ -1335,19 +1191,6 @@ func (h *Handlers) Alerts(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
-		payload, err := json.Marshal(AlertsListResponse{Alerts: alerts})
-		if err != nil {
-			return nil, err
-		}
-		h.apiCache.Set(key, payload, 60*time.Second)
-		return payload, nil
+		return AlertsListResponse{Alerts: alerts}, nil
 	})
-	if err != nil {
-		log.Printf("GraphQL query error for alerts: %v\n", err)
-		http.Error(w, "upstream api error", http.StatusBadGateway)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(dataInterface.([]byte))
 }

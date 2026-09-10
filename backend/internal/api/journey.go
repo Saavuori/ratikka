@@ -67,16 +67,7 @@ func (h *Handlers) Geocode(w http.ResponseWriter, r *http.Request) {
 
 	key := fmt.Sprintf("geocode:%s:%s:%s", strings.ToLower(text), focusLat, focusLon)
 
-	if cached, ok := h.apiCache.Get(key); ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(cached)
-		return
-	}
-
-	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
-		if cached, ok := h.apiCache.Get(key); ok {
-			return cached, nil
-		}
+	serveCached(h, w, key, 60*time.Second, func() (GeocodeResponse, error) {
 
 		params := url.Values{}
 		params.Set("text", text)
@@ -96,7 +87,7 @@ func (h *Handlers) Geocode(w http.ResponseWriter, r *http.Request) {
 		reqURL := GeocodeURLEndpoint + "?" + params.Encode()
 		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, reqURL, nil)
 		if err != nil {
-			return nil, fmt.Errorf("failed to build geocode request: %w", err)
+			return GeocodeResponse{}, fmt.Errorf("failed to build geocode request: %w", err)
 		}
 		if apiKey := h.gql.APIKey(); apiKey != "" {
 			req.Header.Set("digitransit-subscription-key", apiKey)
@@ -105,19 +96,19 @@ func (h *Handlers) Geocode(w http.ResponseWriter, r *http.Request) {
 		resp, err := h.gql.HTTPClient().Do(req)
 		if err != nil {
 			log.Printf("geocode request failed for %q: %v", text, err)
-			return nil, fmt.Errorf("upstream api error")
+			return GeocodeResponse{}, errUpstream
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 			log.Printf("geocode upstream status %d for %q: %s", resp.StatusCode, text, string(body))
-			return nil, fmt.Errorf("upstream api error")
+			return GeocodeResponse{}, errUpstream
 		}
 
 		var raw rawGeocodeResponse
 		if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-			return nil, fmt.Errorf("failed to decode geocode response: %w", err)
+			return GeocodeResponse{}, fmt.Errorf("failed to decode geocode response: %w", err)
 		}
 
 		out := GeocodeResponse{Results: make([]GeocodeResult, 0, len(raw.Features))}
@@ -140,22 +131,8 @@ func (h *Handlers) Geocode(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
-		jsonBytes, err := json.Marshal(out)
-		if err != nil {
-			return nil, err
-		}
-
-		h.apiCache.Set(key, jsonBytes, 60*time.Second)
-		return jsonBytes, nil
+		return out, nil
 	})
-
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(dataInterface.([]byte))
 }
 
 // --- Journey Plan ----------------------------------------------------------
@@ -362,16 +339,7 @@ func (h *Handlers) Plan(w http.ResponseWriter, r *http.Request) {
 	key := fmt.Sprintf("plan:%g,%g>%g,%g:%d:%v:%s:%s:%s",
 		fromLat, fromLon, toLat, toLon, numItineraries, arriveBy, q.Get("modes"), date, clock)
 
-	if cached, ok := h.apiCache.Get(key); ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(cached)
-		return
-	}
-
-	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
-		if cached, ok := h.apiCache.Get(key); ok {
-			return cached, nil
-		}
+	serveCached(h, w, key, 20*time.Second, func() (JourneyPlanResponse, error) {
 
 		queryStr := `
 			query PlanJourney(
@@ -419,11 +387,11 @@ func (h *Handlers) Plan(w http.ResponseWriter, r *http.Request) {
 		var raw rawPlanResponse
 		if err := h.gql.query(r.Context(), queryStr, variables, &raw); err != nil {
 			log.Printf("GraphQL plan query error: %v", err)
-			return nil, fmt.Errorf("upstream api error")
+			return JourneyPlanResponse{}, errUpstream
 		}
 
 		if raw.Plan == nil {
-			return nil, fmt.Errorf("no plan")
+			return JourneyPlanResponse{}, notFound("no journey found")
 		}
 
 		resp := JourneyPlanResponse{FetchedAt: time.Now().UnixMilli(), Itineraries: make([]JourneyItinerary, 0, len(raw.Plan.Itineraries))}
@@ -453,24 +421,6 @@ func (h *Handlers) Plan(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
-		jsonBytes, err := json.Marshal(resp)
-		if err != nil {
-			return nil, err
-		}
-
-		h.apiCache.Set(key, jsonBytes, 20*time.Second)
-		return jsonBytes, nil
+		return resp, nil
 	})
-
-	if err != nil {
-		if err.Error() == "no plan" {
-			http.Error(w, "no journey found", http.StatusNotFound)
-		} else {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-		}
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(dataInterface.([]byte))
 }

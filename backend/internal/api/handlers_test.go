@@ -375,7 +375,6 @@ func TestParseTripIdForFuzzy(t *testing.T) {
 	}
 }
 
-
 func TestHandlers_RouteDetails(t *testing.T) {
 	mockGraphQLResponse := `{
 		"data": {
@@ -832,8 +831,6 @@ func TestHandlers_Alerts(t *testing.T) {
 		t.Errorf("expected query count to remain 1 due to caching, got %d", queryCount)
 	}
 }
-
-
 
 func TestHandlers_StopDetails_TripIdentity(t *testing.T) {
 	// serviceDay 1781470800 is 2026-06-15 00:00 in Europe/Helsinki (UTC+3).
