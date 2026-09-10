@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
-  haversineMeters,
   findNearestJunction,
   findJunctionById,
   classifyStopReason,
 } from './trafficLights';
+import { haversineMeters } from './geo';
 import type { TrafficLightFeature } from '../types';
 
 function junction(

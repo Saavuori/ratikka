@@ -17,7 +17,7 @@ import {
 } from './bikeStationModels';
 import type { BikeStationState } from './bikeStationModels';
 import { SELECTED_COLOR } from './vehicleModels';
-import { metersBetween } from './stopModels';
+import { metersBetween } from './geo';
 
 const HELSINKI: [number, number] = [24.94, 60.17];
 

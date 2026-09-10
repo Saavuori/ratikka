@@ -54,8 +54,9 @@ import {
   snappedLinesInFeed,
   trackSpine,
 } from '../lib/railTracks';
+import { advanceAlongHeading } from '../lib/geo';
+import { useSyncRef } from '../hooks/useSyncRef';
 import {
-  advanceAlongHeading,
   glideFraction,
   hasMoved,
   predictedAdvance,
@@ -461,10 +462,7 @@ export const Map: React.FC<MapProps> = ({
   const mapRef = useRef<maplibregl.Map | null>(null);
 
   const selectedTripDetailsRef = useRef<TripDetailsResponse | null>(selectedTripDetails);
-
-  useEffect(() => {
-    selectedTripDetailsRef.current = selectedTripDetails;
-  }, [selectedTripDetails]);
+  useSyncRef(selectedTripDetailsRef, selectedTripDetails);
 
   const arrivalLabelsRef = useRef(arrivalLabels);
   const arrivalLabelStopsRef = useRef<Array<{ stopId: string; lng: number; lat: number }>>([]);
@@ -472,19 +470,9 @@ export const Map: React.FC<MapProps> = ({
   const arrivalFocusRef = useRef<ArrivalFocus | null>(arrivalFocus);
   const arrivalTripDetailsRef = useRef<TripDetailsResponse | null>(arrivalTripDetails);
   const arrivalStopCoordsRef = useRef<[number, number] | null>(selectedStopCoords ?? null);
-
-  useEffect(() => {
-    arrivalFocusRef.current = arrivalFocus;
-  }, [arrivalFocus]);
-
-
-  useEffect(() => {
-    arrivalTripDetailsRef.current = arrivalTripDetails;
-  }, [arrivalTripDetails]);
-
-  useEffect(() => {
-    arrivalStopCoordsRef.current = selectedStopCoords ?? null;
-  }, [selectedStopCoords]);
+  useSyncRef(arrivalFocusRef, arrivalFocus);
+  useSyncRef(arrivalTripDetailsRef, arrivalTripDetails);
+  useSyncRef(arrivalStopCoordsRef, selectedStopCoords ?? null);
 
   const [apiKey, setApiKey] = React.useState<string | null>(null);
   // MapLibre 6 requires WebGL2 (WebGL 1 support was dropped). Without this the
@@ -511,7 +499,6 @@ export const Map: React.FC<MapProps> = ({
   const selectedTramIdRef = useRef<string | null>(selectedTramId);
   const journeyVehicleIdsRef = useRef<string[]>(journeyVehicleIds);
   const selectedLineRef = useRef<string | null>(selectedLine);
-  const selectedStopIdRef = useRef<string | null>(selectedStopId);
   const selectedBikeStationIdRef = useRef<string | null>(selectedBikeStationId);
   const lineFiltersRef = useRef<string[]>(lineFilters);
   const showTramsRef = useRef<boolean>(showTrams);
@@ -522,6 +509,22 @@ export const Map: React.FC<MapProps> = ({
   const showRoutesRef = useRef<boolean>(showRoutes);
   const is3DRef = useRef<boolean>(is3D);
   const always3DVehiclesRef = useRef<boolean>(always3DVehicles);
+  useSyncRef(latestTramsRef, trams);
+  useSyncRef(callbacksRef, { onSelectTram, onSelectStop, onSelectBikeStation, onSelectJunction, onDisableFollowing, onMapBearingChange, onLocatingChange, onVisibleStopsChange });
+  useSyncRef(routeGeometriesRef, routeGeometries);
+  useSyncRef(selectedTramIdRef, selectedTramId);
+  useSyncRef(journeyVehicleIdsRef, journeyVehicleIds);
+  useSyncRef(selectedLineRef, selectedLine);
+  useSyncRef(selectedBikeStationIdRef, selectedBikeStationId);
+  useSyncRef(lineFiltersRef, lineFilters);
+  useSyncRef(showTramsRef, showTrams);
+  useSyncRef(showBusesRef, showBuses);
+  useSyncRef(showMetroRef, showMetro);
+  useSyncRef(showTrainsRef, showTrains);
+  useSyncRef(showFerriesRef, showFerries);
+  useSyncRef(showRoutesRef, showRoutes);
+  useSyncRef(is3DRef, is3D);
+  useSyncRef(always3DVehiclesRef, always3DVehicles);
   const doorAnimationsRef = useRef<Record<string, DoorAnimation>>({});
   // Whether the 3D source currently holds bodies, so it is emptied exactly once
   // when 3D is switched off or the view zooms back out.
@@ -544,6 +547,8 @@ export const Map: React.FC<MapProps> = ({
   }>({ key: '', stopId: null, boarding: false, coords: null });
   const mapThemeRef = useRef<MapTheme>(mapTheme);
   const isFollowingRef = useRef<boolean>(isFollowing);
+  useSyncRef(mapThemeRef, mapTheme);
+  useSyncRef(isFollowingRef, isFollowing);
   const isInteractingRef = useRef<boolean>(false);
   // Latest live city-bike station GeoJSON, refreshed on an interval. Kept in a
   // ref so a theme/style reload can re-seed the recreated source without
@@ -569,10 +574,11 @@ export const Map: React.FC<MapProps> = ({
   // Signatures: the junction source is only rebuilt when the set of live
   // exchanges actually changes, not on every positions message.
   const junctionPrioritySigRef = useRef<string>('');
-  const selectedJunctionIdRef = useRef<number | null>(selectedJunctionId);
 
   const journeyLegsRef = useRef<JourneyLeg[] | null>(journeyLegs);
   const journeyEndpointsRef = useRef<{ from: JourneyEndpoint; to: JourneyEndpoint } | null>(journeyEndpoints);
+  useSyncRef(journeyLegsRef, journeyLegs);
+  useSyncRef(journeyEndpointsRef, journeyEndpoints);
   const journeyFitKeyRef = useRef<string>('');
 
   const lastSeenStopIdRef = useRef<string | null>(null);
@@ -580,82 +586,6 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     lastSeenStopIdRef.current = null;
   }, [selectedTramId]);
-
-  useEffect(() => {
-    latestTramsRef.current = trams;
-  }, [trams]);
-
-  useEffect(() => {
-    callbacksRef.current = { onSelectTram, onSelectStop, onSelectBikeStation, onSelectJunction, onDisableFollowing, onMapBearingChange, onLocatingChange, onVisibleStopsChange };
-  }, [onSelectTram, onSelectStop, onSelectBikeStation, onSelectJunction, onDisableFollowing, onMapBearingChange, onLocatingChange, onVisibleStopsChange]);
-
-  useEffect(() => {
-    routeGeometriesRef.current = routeGeometries;
-  }, [routeGeometries]);
-
-  useEffect(() => {
-    selectedTramIdRef.current = selectedTramId;
-  }, [selectedTramId]);
-
-  useEffect(() => {
-    journeyVehicleIdsRef.current = journeyVehicleIds;
-  }, [journeyVehicleIds]);
-
-  useEffect(() => {
-    selectedLineRef.current = selectedLine;
-  }, [selectedLine]);
-
-  useEffect(() => {
-    selectedStopIdRef.current = selectedStopId;
-  }, [selectedStopId]);
-
-  useEffect(() => {
-    selectedBikeStationIdRef.current = selectedBikeStationId;
-  }, [selectedBikeStationId]);
-
-  useEffect(() => {
-    lineFiltersRef.current = lineFilters;
-  }, [lineFilters]);
-
-  useEffect(() => {
-    showTramsRef.current = showTrams;
-  }, [showTrams]);
-
-  useEffect(() => {
-    showBusesRef.current = showBuses;
-  }, [showBuses]);
-
-  useEffect(() => {
-    showMetroRef.current = showMetro;
-  }, [showMetro]);
-
-  useEffect(() => {
-    showTrainsRef.current = showTrains;
-  }, [showTrains]);
-
-  useEffect(() => {
-    showFerriesRef.current = showFerries;
-  }, [showFerries]);
-
-  useEffect(() => {
-    showRoutesRef.current = showRoutes;
-  }, [showRoutes]);
-
-  useEffect(() => {
-    is3DRef.current = is3D;
-  }, [is3D]);
-
-  useEffect(() => {
-    always3DVehiclesRef.current = always3DVehicles;
-  }, [always3DVehicles]);
-
-  useEffect(() => {
-    mapThemeRef.current = mapTheme;
-  }, [mapTheme]);
-
-  useEffect(() => {
-    isFollowingRef.current = isFollowing;
-  }, [isFollowing]);
 
   // Helper to toggle visibility of the HSL background route network. The network
   // uses HSL's mode colours (green trams, blue buses, orange metro, purple
@@ -1788,9 +1718,7 @@ export const Map: React.FC<MapProps> = ({
   // Read inside the animation frame and the snapshot effect, which must not be
   // torn down and rebuilt when the playback speed changes.
   const timeScaleRef = useRef<number>(timeScale);
-  useEffect(() => {
-    timeScaleRef.current = timeScale;
-  }, [timeScale]);
+  useSyncRef(timeScaleRef, timeScale);
   // How many seconds of *history* the current window carries. At one times this
   // is the window itself; at two hundred and forty times a window an eighth of
   // a second long carries half a minute of travel, which is what the teleport
@@ -4266,7 +4194,6 @@ export const Map: React.FC<MapProps> = ({
 
   // The selected junction takes the gold on its ring.
   useEffect(() => {
-    selectedJunctionIdRef.current = selectedJunctionId;
     const map = mapRef.current;
     if (!map || !map.getStyle()) return;
     if (map.getLayer(TRAFFIC_LIGHT_SELECTION_LAYER)) {
@@ -4403,9 +4330,6 @@ export const Map: React.FC<MapProps> = ({
   // Update planned journey rendering. Fit the camera only when the journey
   // itself changes (not on unrelated re-renders) to avoid fighting the user.
   useEffect(() => {
-    journeyLegsRef.current = journeyLegs;
-    journeyEndpointsRef.current = journeyEndpoints;
-
     const map = mapRef.current;
     if (!map || !map.getStyle() || !map.getSource('journey-lines')) return;
 

@@ -3,6 +3,7 @@
 
 import { ROUTE_COLORS, METRO_COLORS, TRAIN_COLORS, FERRY_COLORS, TRAM_GREEN, METRO_ORANGE, TRAIN_PURPLE, BUS_BLUE, FERRY_CYAN } from './routeColors';
 import { occupancyColor } from './occupancy';
+import { offsetMeters } from './geo';
 
 /** One rigid section of a body: a box measured from the vehicle's centre. */
 export interface BodySection {
@@ -217,29 +218,6 @@ export const HEADLIGHT_COLOR = '#fff3ad';
 export const TAILLIGHT_COLOR = '#a92532';
 export const BRAKE_LIGHT_COLOR = '#ff3344';
 export const BRAKE_INDICATOR_COLOR = '#ff962b';
-
-const EARTH_RADIUS = 6378137;
-const DEG = 180 / Math.PI;
-
-/**
- * Offset a point by metres along and across a heading. `along` is towards the
- * nose, `across` is towards the vehicle's right-hand side; `hdg` is the HFP
- * heading in degrees clockwise from north.
- */
-export function offsetMeters(
-  lng: number,
-  lat: number,
-  hdg: number,
-  along: number,
-  across: number,
-): [number, number] {
-  const h = hdg * (Math.PI / 180);
-  const east = along * Math.sin(h) + across * Math.cos(h);
-  const north = along * Math.cos(h) - across * Math.sin(h);
-  const dLat = (north / EARTH_RADIUS) * DEG;
-  const dLng = (east / (EARTH_RADIUS * Math.cos(lat / DEG))) * DEG;
-  return [lng + dLng, lat + dLat];
-}
 
 /** Close a ring of vehicle-space points into lng/lat coordinates. */
 function ringOf(

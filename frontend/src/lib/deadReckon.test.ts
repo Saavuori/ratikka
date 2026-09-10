@@ -5,13 +5,13 @@ import {
   MAX_SPEED,
   METRO_LIMITS,
   SURFACE_MAX_AGE,
-  advanceAlongHeading,
   glideFraction,
   predictedAdvance,
   predictedSpeed,
   reckonLimits,
   hasMoved,
 } from './deadReckon';
+import { advanceAlongHeading, metersBetween } from './geo';
 
 describe('predictedSpeed', () => {
   it('holds a cruising speed', () => {
@@ -245,6 +245,13 @@ describe('glideFraction over a window that is not one second', () => {
 describe('advanceAlongHeading', () => {
   const HELSINKI = { lat: 60.1699, lng: 24.9384 };
 
+  /** Metres north of HELSINKI, holding longitude. */
+  const northingMeters = (lat: number) =>
+    metersBetween([HELSINKI.lng, HELSINKI.lat], [HELSINKI.lng, lat]);
+  /** Metres east of HELSINKI, holding latitude. */
+  const eastingMeters = (lng: number) =>
+    metersBetween([HELSINKI.lng, HELSINKI.lat], [lng, HELSINKI.lat]);
+
   it('moves north, east, south and west by the heading given', () => {
     const north = advanceAlongHeading(HELSINKI.lat, HELSINKI.lng, 0, 100);
     expect(north.lat).toBeGreaterThan(HELSINKI.lat);
@@ -262,15 +269,12 @@ describe('advanceAlongHeading', () => {
   });
 
   it('moves the distance it was asked to', () => {
-    // A degree of latitude is ~111.19 km on a sphere of this radius; 100 m north
-    // is that many degrees. Longitude is the same scaled by cos(lat).
+    // Measured back with the module's own inverse rather than by re-deriving
+    // the degrees-to-metres conversion here: a test that carries its own copy
+    // of the Earth's radius is a test that can only agree with itself.
     const moved = advanceAlongHeading(HELSINKI.lat, HELSINKI.lng, 45, 100);
-    const dNorth = (moved.lat - HELSINKI.lat) * (Math.PI / 180) * 6371000;
-    const dEast =
-      (moved.lng - HELSINKI.lng) *
-      (Math.PI / 180) *
-      6371000 *
-      Math.cos((HELSINKI.lat * Math.PI) / 180);
+    const dNorth = northingMeters(moved.lat);
+    const dEast = eastingMeters(moved.lng);
     expect(Math.hypot(dNorth, dEast)).toBeCloseTo(100, 3);
     expect(dNorth).toBeCloseTo(dEast, 3);
   });
@@ -287,11 +291,6 @@ describe('advanceAlongHeading', () => {
     const tram = reckonLimits('tram');
     const metres = predictedAdvance(8, 0, 0, 1, tram);
     const next = advanceAlongHeading(HELSINKI.lat, HELSINKI.lng, 90, metres);
-    const dEast =
-      (next.lng - HELSINKI.lng) *
-      (Math.PI / 180) *
-      6371000 *
-      Math.cos((HELSINKI.lat * Math.PI) / 180);
-    expect(dEast).toBeCloseTo(8, 2);
+    expect(eastingMeters(next.lng)).toBeCloseTo(8, 2);
   });
 });
