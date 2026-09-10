@@ -1,23 +1,25 @@
 import React from 'react';
 import { TramFront, Bus, TrainFrontTunnel, TrainFront, Ship } from 'lucide-react';
 import { TRAM_GREEN, BUS_BLUE, METRO_ORANGE, TRAIN_PURPLE, FERRY_CYAN } from '../lib/routeColors';
+import { TRANSPORT_MODES, type ModeFlags, type TransportMode } from '../lib/modes';
 
 interface ModeTogglesProps {
   /** Faded out and taken out of the tab order while a mobile bottom sheet covers the map. */
   hidden?: boolean;
-  showTrams: boolean;
-  setShowTrams: (show: boolean) => void;
-  showBuses: boolean;
-  setShowBuses: (show: boolean) => void;
-  showMetro: boolean;
-  setShowMetro: (show: boolean) => void;
-  showTrains: boolean;
-  setShowTrains: (show: boolean) => void;
-  showFerries: boolean;
-  setShowFerries: (show: boolean) => void;
+  modes: ModeFlags;
+  onToggle: (mode: TransportMode, on: boolean) => void;
 }
 
 const ICON_SIZE = 16;
+
+/** How each mode presents itself in the row: its accent, its icon, its name. */
+const MODE_CHIPS: Record<TransportMode, { label: string; color: string; icon: React.ReactNode }> = {
+  tram: { label: 'trams', color: TRAM_GREEN, icon: <TramFront size={ICON_SIZE} /> },
+  bus: { label: 'buses', color: BUS_BLUE, icon: <Bus size={ICON_SIZE} /> },
+  metro: { label: 'metro', color: METRO_ORANGE, icon: <TrainFrontTunnel size={ICON_SIZE} /> },
+  train: { label: 'commuter trains', color: TRAIN_PURPLE, icon: <TrainFront size={ICON_SIZE} /> },
+  ferry: { label: 'ferries', color: FERRY_CYAN, icon: <Ship size={ICON_SIZE} /> },
+};
 
 /**
  * Floating corner shortcut for the five vehicle-mode toggles, and the only place
@@ -26,88 +28,40 @@ const ICON_SIZE = 16;
  * one tap away on the map rather than behind a drawer. ViewToggles mirrors it in
  * the opposite corner with the theme and 3D switches.
  */
-export const ModeToggles: React.FC<ModeTogglesProps> = ({
-  hidden = false,
-  showTrams,
-  setShowTrams,
-  showBuses,
-  setShowBuses,
-  showMetro,
-  setShowMetro,
-  showTrains,
-  setShowTrains,
-  showFerries,
-  setShowFerries,
-}) => {
-  const modes = [
-    {
-      key: 'tram',
-      label: 'trams',
-      color: TRAM_GREEN,
-      icon: <TramFront size={ICON_SIZE} />,
-      active: showTrams,
-      toggle: () => setShowTrams(!showTrams),
-    },
-    {
-      key: 'bus',
-      label: 'buses',
-      color: BUS_BLUE,
-      icon: <Bus size={ICON_SIZE} />,
-      active: showBuses,
-      toggle: () => setShowBuses(!showBuses),
-    },
-    {
-      key: 'metro',
-      label: 'metro',
-      color: METRO_ORANGE,
-      icon: <TrainFrontTunnel size={ICON_SIZE} />,
-      active: showMetro,
-      toggle: () => setShowMetro(!showMetro),
-    },
-    {
-      key: 'train',
-      label: 'commuter trains',
-      color: TRAIN_PURPLE,
-      icon: <TrainFront size={ICON_SIZE} />,
-      active: showTrains,
-      toggle: () => setShowTrains(!showTrains),
-    },
-    {
-      key: 'ferry',
-      label: 'ferries',
-      color: FERRY_CYAN,
-      icon: <Ship size={ICON_SIZE} />,
-      active: showFerries,
-      toggle: () => setShowFerries(!showFerries),
-    },
-  ];
-
-  return (
-    <div className={`corner-toggles mode-toggles${hidden ? ' corner-toggles--hidden' : ''}`} role="group" aria-label="Vehicle modes">
-      {modes.map((mode) => (
+export const ModeToggles: React.FC<ModeTogglesProps> = ({ hidden = false, modes, onToggle }) => (
+  <div
+    className={`corner-toggles mode-toggles${hidden ? ' corner-toggles--hidden' : ''}`}
+    role="group"
+    aria-label="Vehicle modes"
+  >
+    {TRANSPORT_MODES.map((mode) => {
+      const chip = MODE_CHIPS[mode];
+      const active = modes[mode];
+      const action = `${active ? 'Hide' : 'Show'} ${chip.label}`;
+      return (
         <button
-          key={mode.key}
+          key={mode}
           type="button"
-          className={`corner-toggle ${mode.active ? 'active' : ''}`}
-          onClick={mode.toggle}
-          aria-pressed={mode.active}
-          aria-label={`${mode.active ? 'Hide' : 'Show'} ${mode.label}`}
-          title={`${mode.active ? 'Hide' : 'Show'} ${mode.label}`}
+          className={`corner-toggle ${active ? 'active' : ''}`}
+          onClick={() => onToggle(mode, !active)}
+          aria-pressed={active}
+          aria-label={action}
+          title={action}
           style={
-            mode.active
+            active
               ? {
                   // Tint the chip with the mode's own accent when it is on, so
                   // the row reads as a legend as well as a set of switches.
-                  color: mode.color,
-                  borderColor: mode.color,
-                  background: `${mode.color}26`,
+                  color: chip.color,
+                  borderColor: chip.color,
+                  background: `${chip.color}26`,
                 }
               : undefined
           }
         >
-          {mode.icon}
+          {chip.icon}
         </button>
-      ))}
-    </div>
-  );
-};
+      );
+    })}
+  </div>
+);

@@ -3,6 +3,7 @@ import type { VehiclePosition, Alert } from '../types';
 import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, AlertTriangle, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { getRouteColor, BUS_BLUE } from '../lib/routeColors';
+import { asTransportMode, type ModeFlags } from '../lib/modes';
 
 interface FilterPanelProps {
   trams: Record<string, VehiclePosition>;
@@ -14,11 +15,7 @@ interface FilterPanelProps {
   onToggleCollapse: () => void;
   /** Mode visibility, used to keep the line list in step with the map. The
       switches themselves live in the map's corner chip groups. */
-  showTrams: boolean;
-  showBuses: boolean;
-  showMetro: boolean;
-  showTrains: boolean;
-  showFerries: boolean;
+  modes: ModeFlags;
   alerts: Alert[];
   selectedTram: VehiclePosition | null;
   selectedStop: { id: string; name: string; code: string; } | null;
@@ -33,11 +30,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   connectionStatus,
   isCollapsed,
   onToggleCollapse,
-  showTrams,
-  showBuses,
-  showMetro,
-  showTrains,
-  showFerries,
+  modes,
   alerts = [],
   selectedTram = null,
   selectedStop = null,
@@ -144,12 +137,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     new Set(
       Object.values(trams)
         .filter((t) => {
-          if (t.mode === 'tram' && !showTrams) return false;
-          if (t.mode === 'bus' && !showBuses) return false;
-          if (t.mode === 'metro' && !showMetro) return false;
-          if (t.mode === 'train' && !showTrains) return false;
-          if (t.mode === 'ferry' && !showFerries) return false;
-          return true;
+          const mode = asTransportMode(t.mode);
+          return mode === null || modes[mode];
         })
         .map((t) => t.desi)
     )

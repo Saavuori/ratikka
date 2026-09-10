@@ -5,6 +5,7 @@ import { useTramData } from './hooks/useTramData';
 import { useReplay } from './hooks/useReplay';
 import { useIsMobile } from './hooks/useIsMobile';
 import { Map } from './components/Map';
+import { RIBBONED_MODES } from './map/routeNetwork';
 import { FilterPanel } from './components/FilterPanel';
 import { TramPopup } from './components/TramPopup';
 import { TramCard } from './components/TramCard';
@@ -22,7 +23,16 @@ import { RidePanel } from './components/RidePanel';
 import { AlightBanner } from './components/AlightBanner';
 import { fetchRouteDetails, fetchAlerts, fetchTripDetails, fetchStopsArrivals, fetchMapConfig } from './lib/api';
 import type { MapTheme } from './lib/stopPlatforms';
-import { usePersistedFlag, usePersistedLines, usePersistedState } from './hooks/usePersisted';
+import { usePersistedFlag, usePersistedLines, usePersistedModes, usePersistedState } from './hooks/usePersisted';
+import {
+  NO_MODES,
+  anyMode,
+  asTransportMode,
+  modeFlags,
+  withMode,
+  type ModeFlags,
+  type TransportMode,
+} from './lib/modes';
 import { areTripsEquivalent } from './lib/trip';
 import { findJourneyVehicle, journeyVehicleModes } from './lib/journeyVehicles';
 import { alightAlert } from './lib/alightAlert';
@@ -59,12 +69,10 @@ function App() {
     () => (replay.active ? [] : Object.values(liveTrams)), [replay.active, liveTrams]);
   const ride = useRideDetection(rideCandidates);
   const rideSearching = ride.status === 'scanning' || ride.status === 'suggesting';
-  const rideModes = useMemo(() => ({
-    bus: rideSearching || ride.rideMode === 'bus',
-    metro: rideSearching || ride.rideMode === 'metro',
-    train: rideSearching || ride.rideMode === 'train',
-    ferry: rideSearching || ride.rideMode === 'ferry',
-  }), [rideSearching, ride.rideMode]);
+  const rideModes = useMemo(
+    () => modeFlags((mode) => rideSearching || ride.rideMode === mode),
+    [rideSearching, ride.rideMode]
+  );
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const isMobile = useIsMobile();
   const [journey, setJourney] = useState<JourneySelection | null>(null);
@@ -125,7 +133,7 @@ function App() {
   // Which optional feeds the selected stop's own departures need. Selecting a
   // bus stop turns the bus feed on for as long as the stop is open: without it
   // there is no vehicle to match an arrival to in the first place.
-  const [stopModes, setStopModes] = useState({ bus: false, metro: false, train: false, tram: false, ferry: false });
+  const [stopModes, setStopModes] = useState<ModeFlags>(NO_MODES);
   // The arrival the map is following, published by the stop panel.
   const [arrivalFocus, setArrivalFocus] = useState<ArrivalFocus | null>(null);
 
@@ -169,15 +177,18 @@ function App() {
   }, [setMapTheme]);
   const [is3D, setIs3D] = usePersistedFlag('is3D', false);
   const [always3DVehicles, setAlways3DVehicles] = usePersistedFlag('always3DVehicles', false);
-  const [showTrams, setShowTrams] = usePersistedFlag('showTrams', true);
-  // Every mode but trams defaults OFF: buses alone are ~80% of the vehicle
-  // feed, and the backend only subscribes to a mode while somebody is looking
-  // at it. Ferries are the smallest feed of the five — one year-round crossing
-  // — but they are opt-in on the same principle.
-  const [showBuses, setShowBuses] = usePersistedFlag('showBuses', false);
-  const [showMetro, setShowMetro] = usePersistedFlag('showMetro', false);
-  const [showTrains, setShowTrains] = usePersistedFlag('showTrains', false);
-  const [showFerries, setShowFerries] = usePersistedFlag('showFerries', false);
+  // The reader's own mode switches. Every mode but trams defaults OFF: buses
+  // alone are ~80% of the vehicle feed, and the backend only subscribes to a
+  // mode while somebody is looking at it. Ferries are the smallest feed of the
+  // five — one year-round crossing — but they are opt-in on the same principle.
+  const [showModes, setShowModes] = usePersistedModes('showModes', {
+    ...NO_MODES,
+    tram: true,
+  });
+  const toggleMode = useCallback(
+    (mode: TransportMode, on: boolean) => setShowModes((current) => withMode(current, mode, on)),
+    [setShowModes]
+  );
   // Route lines (the JORE background network and the highlighted per-line
   // ribbons) are the map's densest ink: handy for seeing where a line goes,
   // in the way when you only want the vehicles and the streets under them.
@@ -187,15 +198,8 @@ function App() {
   // What the map draws: the reader's own toggles, plus the modes a selected
   // journey or stop needs in order to answer for itself.
   const shownModes = useMemo(
-    () => ({
-      bus: showBuses || journeyModes.bus || stopModes.bus,
-      metro: showMetro || journeyModes.metro || stopModes.metro,
-      train: showTrains || journeyModes.train || stopModes.train,
-      ferry: showFerries || journeyModes.ferry || stopModes.ferry,
-    }),
-    [showBuses, showMetro, showTrains, showFerries,
-      journeyModes.bus, journeyModes.metro, journeyModes.train, journeyModes.ferry,
-      stopModes.bus, stopModes.metro, stopModes.train, stopModes.ferry]
+    () => anyMode(showModes, journeyModes, stopModes),
+    [showModes, journeyModes, stopModes]
   );
   // What the backend is asked to ingest, declared here (after the mode toggles)
   // so the WebSocket below knows which optional feeds to subscribe to; trams
@@ -206,15 +210,7 @@ function App() {
   // invisible; the one vehicle the search settles on is drawn whatever the
   // toggles say (see `displayedTrams`), which is the only marker the reader
   // actually asked for.
-  const wantsModes = useMemo(
-    () => ({
-      bus: shownModes.bus || rideModes.bus,
-      metro: shownModes.metro || rideModes.metro,
-      train: shownModes.train || rideModes.train,
-      ferry: shownModes.ferry || rideModes.ferry,
-    }),
-    [shownModes, rideModes]
-  );
+  const wantsModes = useMemo(() => anyMode(shownModes, rideModes), [shownModes, rideModes]);
   const { status: connectionStatus } = useWebSocket({
     onMessage: (data) => handleUpdate(data.vehicles),
     wantsModes,
@@ -408,13 +404,10 @@ function App() {
   // highlighted ribbons, so they are also the ones whose geometry is fetched.
   // Joined into a string first so the effect below re-runs when a line enters or
   // leaves service, not on every position update.
-  const ribbonModes = useMemo(() => {
-    const modes = new Set<string>();
-    if (showTrams) modes.add('tram');
-    if (showMetro) modes.add('metro');
-    if (showTrains) modes.add('train');
-    return modes;
-  }, [showTrams, showMetro, showTrains]);
+  const ribbonModes = useMemo(
+    () => new Set<string>(RIBBONED_MODES.filter((mode) => showModes[mode])),
+    [showModes]
+  );
 
   const activeRibbonLinesKey = useMemo(
     () =>
@@ -523,7 +516,7 @@ function App() {
     setSelectedBikeStation(null);
     setSelectedJunctionId(null);
     setSelectedStopRoutes([]); // Reset selected stop routes!
-    setStopModes({ bus: false, metro: false, train: false, tram: false, ferry: false });
+    setStopModes(NO_MODES);
     setArrivalFocus(null);
     setSelectedStop({ id: stopId, name, code, lat, lng, mode, isTrunkStop, ...extras });
     setIsDetailCollapsed(false); // Auto-expand detail panel to show schedule
@@ -552,7 +545,7 @@ function App() {
   const handleCloseStop = () => {
     setSelectedStop(null);
     setSelectedStopRoutes([]);
-    setStopModes({ bus: false, metro: false, train: false, tram: false, ferry: false });
+    setStopModes(NO_MODES);
     setArrivalFocus(null);
   };
 
@@ -633,11 +626,8 @@ function App() {
       // The vehicle the reader is riding in outranks every filter, for the
       // same reason: hiding it is exactly what riding along is meant to stop.
       if (ride.rideVehicleId === tram.veh) return true;
-      if (tram.mode === 'tram' && !showTrams && !journeyModes.tram) return false;
-      if (tram.mode === 'bus' && !shownModes.bus) return false;
-      if (tram.mode === 'metro' && !shownModes.metro) return false;
-      if (tram.mode === 'train' && !shownModes.train) return false;
-      if (tram.mode === 'ferry' && !shownModes.ferry) return false;
+      const mode = asTransportMode(tram.mode);
+      if (mode !== null && !shownModes[mode]) return false;
       if (selectedLines.length > 0 && !selectedLines.includes(tram.desi)) {
         return false;
       }
@@ -835,11 +825,7 @@ function App() {
         onDisableFollowing={() => setIsFollowing(false)}
         onMapBearingChange={setMapBearing}
         onLocatingChange={setLocating}
-        showTrams={showTrams || journeyModes.tram}
-        showBuses={shownModes.bus}
-        showMetro={shownModes.metro}
-        showTrains={shownModes.train}
-        showFerries={shownModes.ferry}
+        modes={shownModes}
         showRoutes={showRoutes}
         selectedTripDetails={selectedTripDetails}
         journeyLegs={journey?.itinerary.legs ?? null}
@@ -861,11 +847,7 @@ function App() {
           connectionStatus={connectionStatus}
           isCollapsed={isFilterCollapsed}
           onToggleCollapse={() => setIsFilterCollapsed(!isFilterCollapsed)}
-          showTrams={showTrams}
-          showBuses={showBuses}
-          showMetro={showMetro}
-          showTrains={showTrains}
-          showFerries={showFerries}
+          modes={showModes}
           alerts={alerts}
           selectedTram={liveTram}
           selectedStop={selectedStop}
@@ -990,16 +972,8 @@ function App() {
       {/* Quick vehicle-mode shortcuts (top-right corner) */}
       <ModeToggles
         hidden={mobileSheetOpen || replayActive}
-        showTrams={showTrams}
-        setShowTrams={setShowTrams}
-        showBuses={showBuses}
-        setShowBuses={setShowBuses}
-        showMetro={showMetro}
-        setShowMetro={setShowMetro}
-        showTrains={showTrains}
-        setShowTrains={setShowTrains}
-        showFerries={showFerries}
-        setShowFerries={setShowFerries}
+        modes={showModes}
+        onToggle={toggleMode}
       />
 
       {/* Map view shortcuts: light/dark and 3D (top-left corner) */}

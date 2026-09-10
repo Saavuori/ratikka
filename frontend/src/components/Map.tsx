@@ -15,6 +15,7 @@ import type { Feature, FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
+import type { ModeFlags, TransportMode } from '../lib/modes';
 import {
   ensureBackgroundRouteNetwork,
   forgetBaseFilters,
@@ -195,6 +196,16 @@ const STOP_MODE: maplibregl.ExpressionSpecification = [
 // The stop next-arrival labels. Their own source and layer, because they are
 // the only stop annotation that is neither in the vector tiles nor a colour
 // swap on something already drawn.
+// The sign-board layer filters on GTFS mode names, in the order the style
+// stacks them.
+const GTFS_SIGN_MODES: Array<{ mode: TransportMode; gtfs: string }> = [
+  { mode: 'tram', gtfs: 'TRAM' },
+  { mode: 'bus', gtfs: 'BUS' },
+  { mode: 'metro', gtfs: 'SUBWAY' },
+  { mode: 'train', gtfs: 'RAIL' },
+  { mode: 'ferry', gtfs: 'FERRY' },
+];
+
 const ARRIVAL_LABEL_SOURCE = 'stop-arrival-labels';
 const ARRIVAL_LABEL_LAYER = 'stop-arrival-labels-layer';
 
@@ -242,11 +253,8 @@ interface MapProps {
    * are, so the offer follows this.
    */
   onLocatingChange?: (locating: boolean) => void;
-  showTrams: boolean;
-  showBuses: boolean;
-  showMetro: boolean;
-  showTrains: boolean;
-  showFerries: boolean;
+  /** Which vehicle modes the map draws, and with them their stops and routes. */
+  modes: ModeFlags;
   showRoutes: boolean;
   selectedTripDetails: TripDetailsResponse | null;
   journeyLegs?: JourneyLeg[] | null;
@@ -445,11 +453,7 @@ export const Map: React.FC<MapProps> = ({
   onDisableFollowing,
   onMapBearingChange,
   onLocatingChange,
-  showTrams,
-  showBuses,
-  showMetro,
-  showTrains,
-  showFerries,
+  modes,
   showRoutes,
   selectedTripDetails,
   journeyLegs = null,
@@ -499,11 +503,7 @@ export const Map: React.FC<MapProps> = ({
   const selectedLineRef = useRef<string | null>(selectedLine);
   const selectedBikeStationIdRef = useRef<string | null>(selectedBikeStationId);
   const lineFiltersRef = useRef<string[]>(lineFilters);
-  const showTramsRef = useRef<boolean>(showTrams);
-  const showBusesRef = useRef<boolean>(showBuses);
-  const showMetroRef = useRef<boolean>(showMetro);
-  const showTrainsRef = useRef<boolean>(showTrains);
-  const showFerriesRef = useRef<boolean>(showFerries);
+  const modesRef = useRef<ModeFlags>(modes);
   const showRoutesRef = useRef<boolean>(showRoutes);
   const is3DRef = useRef<boolean>(is3D);
   const always3DVehiclesRef = useRef<boolean>(always3DVehicles);
@@ -515,11 +515,7 @@ export const Map: React.FC<MapProps> = ({
   useSyncRef(selectedLineRef, selectedLine);
   useSyncRef(selectedBikeStationIdRef, selectedBikeStationId);
   useSyncRef(lineFiltersRef, lineFilters);
-  useSyncRef(showTramsRef, showTrams);
-  useSyncRef(showBusesRef, showBuses);
-  useSyncRef(showMetroRef, showMetro);
-  useSyncRef(showTrainsRef, showTrains);
-  useSyncRef(showFerriesRef, showFerries);
+  useSyncRef(modesRef, modes);
   useSyncRef(showRoutesRef, showRoutes);
   useSyncRef(is3DRef, is3D);
   useSyncRef(always3DVehiclesRef, always3DVehicles);
@@ -3453,19 +3449,13 @@ export const Map: React.FC<MapProps> = ({
     // Apply active route visibility and 3D mode setting. With no line filter the
     // whole network shows; selecting lines narrows it to just those routes.
     updateRouteVisibility(map, {
-      modes: {
-        tram: showTramsRef.current,
-        bus: showBusesRef.current,
-        metro: showMetroRef.current,
-        train: showTrainsRef.current,
-        ferry: showFerriesRef.current,
-      },
+      modes: modesRef.current,
       lines: lineFiltersRef.current,
       selectedLine: selectedLineRef.current,
       ribbonLines: Object.keys(routeGeometriesRef.current),
       routes: showRoutesRef.current,
     });
-    updateMetroSignVisibility(map, showMetroRef.current);
+    updateMetroSignVisibility(map, modesRef.current.metro);
     update3DMode(map, is3DRef.current, mapThemeRef.current);
     updateVehicle3DMode(map, vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current));
     // The style reload recreated every source, so whatever the furniture was
@@ -4048,21 +4038,15 @@ export const Map: React.FC<MapProps> = ({
     const map = mapRef.current;
     if (map && map.getStyle()) {
       updateRouteVisibility(map, {
-        modes: {
-          tram: showTrams,
-          bus: showBuses,
-          metro: showMetro,
-          train: showTrains,
-          ferry: showFerries,
-        },
+        modes,
         lines: lineFilters,
         selectedLine,
         ribbonLines: Object.keys(routeGeometries),
         routes: showRoutes,
       });
-      updateMetroSignVisibility(map, showMetro);
+      updateMetroSignVisibility(map, modes.metro);
     }
-  }, [lineFilters, showTrams, showBuses, showMetro, showTrains, showFerries, showRoutes, selectedLine, routeGeometries]);
+  }, [lineFilters, modes, showRoutes, selectedLine, routeGeometries]);
 
   // Dynamic Stop Route Filtering
   useEffect(() => {
@@ -4102,95 +4086,58 @@ export const Map: React.FC<MapProps> = ({
       : ['literal', true]; // Always true when no stop is selected
 
 
-    // 1. Tram Stops
-    if (map.getLayer('stops_tram')) {
-      if (!showTrams) {
-        map.setFilter('stops_tram', ['==', '1', '2']);
-      } else if (activeRoutes.length === 0) {
-        map.setFilter('stops_tram', [
-          'all',
-          ['==', ['get', 'mode'], 'TRAM'],
-          excludeSelectedStopFilter
-        ]);
-      } else if (allowedStopIds.length === 0) {
-        map.setFilter('stops_tram', ['==', '1', '2']);
-      } else {
-        map.setFilter('stops_tram', [
-          'all',
-          ['==', ['get', 'mode'], 'TRAM'],
-          ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]],
-          excludeSelectedStopFilter
+    // Stops follow their mode's toggle, and narrow to the highlighted lines'
+    // stops while a line filter or vehicle selection is active. Disc size is
+    // not settled here — a quay takes the street-stop radius and a station the
+    // larger one, both from where the layers are styled.
+    //
+    // The bus layers are hidden by visibility rather than by an impossible
+    // filter: they are the only ones the style also draws at other zooms.
+    const stopLayers: Array<{
+      id: string;
+      match: maplibregl.ExpressionSpecification;
+      show: boolean;
+      hideWith?: 'visibility';
+    }> = [
+      { id: 'stops_tram', match: ['==', ['get', 'mode'], 'TRAM'], show: modes.tram },
+      { id: 'stops_metro', match: ['==', STOP_MODE, 'SUBWAY'], show: modes.metro },
+      { id: 'stops_train', match: ['==', STOP_MODE, 'RAIL'], show: modes.train },
+      { id: 'stops_ferry', match: ['==', STOP_MODE, 'FERRY'], show: modes.ferry },
+      { id: 'stops_bus', match: ['==', ['get', 'mode'], 'BUS'], show: modes.bus, hideWith: 'visibility' },
+      { id: 'stops_trunk', match: ['==', ['get', 'mode'], 'BUS'], show: modes.bus, hideWith: 'visibility' },
+    ];
+
+    const NOTHING: maplibregl.FilterSpecification = ['==', '1', '2'];
+
+    for (const { id, match, show, hideWith } of stopLayers) {
+      if (!map.getLayer(id)) continue;
+      // Narrowed to specific lines, but none of their stops are in view: there
+      // is nothing to draw, which is not the same as the mode being off.
+      const narrowedToNothing = activeRoutes.length > 0 && allowedStopIds.length === 0;
+      const visible = show && !narrowedToNothing;
+
+      if (hideWith === 'visibility') {
+        map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+        if (!visible) continue;
+      } else if (!visible) {
+        map.setFilter(id, NOTHING);
+        continue;
+      }
+
+      const clauses: maplibregl.ExpressionSpecification[] = [match];
+      if (activeRoutes.length > 0) {
+        clauses.push([
+          'in',
+          ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']],
+          ['literal', allowedStopIds],
         ]);
       }
+      clauses.push(excludeSelectedStopFilter as maplibregl.ExpressionSpecification);
+      map.setFilter(id, ['all', ...clauses]);
     }
 
-    // 2. Metro and commuter-train stations, and the ferry quays. Same shape as
-    //    the tram-stop filter above: hidden with their mode toggle off,
-    //    narrowed to the highlighted lines' stops while a line filter or
-    //    vehicle selection is active. Disc size is not settled here — a quay
-    //    takes the street-stop radius and a station the larger one, both from
-    //    where the layers are styled.
-    const modeStopLayers: Array<{ id: string; mode: string; show: boolean }> = [
-      { id: 'stops_metro', mode: 'SUBWAY', show: showMetro },
-      { id: 'stops_train', mode: 'RAIL', show: showTrains },
-      { id: 'stops_ferry', mode: 'FERRY', show: showFerries },
-    ];
-    modeStopLayers.forEach(({ id, mode, show }) => {
-      if (!map.getLayer(id)) return;
-      if (!show) {
-        map.setFilter(id, ['==', '1', '2']);
-      } else if (activeRoutes.length === 0) {
-        map.setFilter(id, [
-          'all',
-          ['==', STOP_MODE, mode],
-          excludeSelectedStopFilter
-        ]);
-      } else if (allowedStopIds.length === 0) {
-        map.setFilter(id, ['==', '1', '2']);
-      } else {
-        map.setFilter(id, [
-          'all',
-          ['==', STOP_MODE, mode],
-          ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]],
-          excludeSelectedStopFilter
-        ]);
-      }
-    });
-
-    // 3. Bus and Trunk Stop POIs
-    const busStopLayers = ['stops_bus', 'stops_trunk'];
-    busStopLayers.forEach((layerId) => {
-      if (map.getLayer(layerId)) {
-        if (!showBuses) {
-          map.setLayoutProperty(layerId, 'visibility', 'none');
-        } else if (activeRoutes.length === 0) {
-          map.setLayoutProperty(layerId, 'visibility', 'visible');
-          map.setFilter(layerId, [
-            'all',
-            ['==', ['get', 'mode'], 'BUS'],
-            excludeSelectedStopFilter
-          ]);
-        } else if (allowedStopIds.length === 0) {
-          map.setLayoutProperty(layerId, 'visibility', 'none');
-        } else {
-          map.setLayoutProperty(layerId, 'visibility', 'visible');
-          map.setFilter(layerId, [
-            'all',
-            ['==', ['get', 'mode'], 'BUS'],
-            ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]],
-            excludeSelectedStopFilter
-          ]);
-        }
-      }
-    });
-
     // 4. Stops Signs Symbol Layer
-    const signModes: string[] = [];
-    if (showTrams) signModes.push('TRAM');
-    if (showBuses) signModes.push('BUS');
-    if (showMetro) signModes.push('SUBWAY');
-    if (showTrains) signModes.push('RAIL');
-    if (showFerries) signModes.push('FERRY');
+    const signModes = GTFS_SIGN_MODES.filter(({ mode }) => modes[mode]).map(({ gtfs }) => gtfs);
 
     if (map.getLayer('stops_signs')) {
       if (signModes.length === 0) {
@@ -4212,7 +4159,7 @@ export const Map: React.FC<MapProps> = ({
         ]);
       }
     }
-  }, [lineFilters, selectedTramId, trams, routeGeometries, showTrams, showBuses, showMetro, showTrains, showFerries, selectedStopId]);
+  }, [lineFilters, selectedTramId, trams, routeGeometries, modes, selectedStopId]);
 
   return (
     <div className="map-wrapper">

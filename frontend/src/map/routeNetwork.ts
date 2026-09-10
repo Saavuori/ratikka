@@ -4,9 +4,7 @@ import type {
   Map as MapLibreMap,
 } from 'maplibre-gl';
 import { NETWORK_COLORS } from '../lib/routeColors';
-
-/** The modes the route network is drawn in, as the Settings toggles name them. */
-export type NetworkMode = 'tram' | 'bus' | 'metro' | 'train' | 'ferry';
+import type { ModeFlags, TransportMode } from '../lib/modes';
 
 /** A `line-width` ramp, in the `{ stops }` form the HSL style writes them in. */
 type WidthStops = { stops: [number, number][] };
@@ -30,7 +28,7 @@ const widths = (low: number, high: number): WidthStops => ({
  */
 interface NetworkBand {
   id: string;
-  mode: NetworkMode;
+  mode: TransportMode;
   /** Which network features this band draws, on the JORE `routes` tiles. */
   filter: FilterSpecification;
   color: string;
@@ -153,6 +151,15 @@ export const NETWORK_BANDS: NetworkBand[] = [
     ribboned: false,
     lineFiltered: false,
   },
+];
+
+/**
+ * The modes whose per-line ribbons are fetched and drawn over the tiles. Read
+ * from the table so the set the app fetches geometry for cannot drift from the
+ * set whose tiles give way to it.
+ */
+export const RIBBONED_MODES: TransportMode[] = [
+  ...new Set(NETWORK_BANDS.filter((band) => band.ribboned).map((band) => band.mode)),
 ];
 
 /**
@@ -290,7 +297,7 @@ export function forgetBaseFilters(map: MapLibreMap): void {
 
 export interface RouteVisibility {
   /** Which modes the reader has switched on. */
-  modes: Record<NetworkMode, boolean>;
+  modes: ModeFlags;
   /** Lines the reader has filtered down to; the ribbons draw these instead. */
   lines: string[];
   /** The selected vehicle's line, drawn as context with the rest faded. */
