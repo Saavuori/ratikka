@@ -15,7 +15,11 @@ import type { Feature, FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
 import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
-import { approachSegment } from '../lib/approachPath';
+import {
+  ensureBackgroundRouteNetwork,
+  forgetBaseFilters,
+  updateRouteVisibility,
+} from '../map/routeNetwork';
 import { tripProgress, isBoardingAt } from '../lib/nextStop';
 import { ARRIVAL_LABEL_MIN_ZOOM, ARRIVAL_LABEL_STOP_LIMIT } from '../lib/stopArrivals';
 import type { ArrivalFocus } from '../lib/stopArrivals';
@@ -178,12 +182,6 @@ const DARK_STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/st
  */
 const basemapStyleUrl = (theme: MapTheme): string =>
   theme === 'light' ? `${window.location.origin}/style.json` : DARK_STYLE_URL;
-
-// The gold route segment drawn from a selected vehicle to its next stop relies
-// on closest-point matching against the trip polyline, which produced unreliable
-// (jumping/back-tracking) paths. Disabled until the matching is made robust. The
-// next-stop signpost highlight itself is unaffected and remains enabled.
-const HIGHLIGHT_NEXT_STOP_ROUTE = false;
 
 // A stop's mode, whichever of the two stop tilesets it came from: the JORE tiles
 // the light basemap ships (`mode`) or the Digitransit v3 stops the dark theme
@@ -587,174 +585,6 @@ export const Map: React.FC<MapProps> = ({
     lastSeenStopIdRef.current = null;
   }, [selectedTramId]);
 
-  // Helper to toggle visibility of the HSL background route network. The network
-  // uses HSL's mode colours (green trams, blue buses, orange metro, purple
-  // trains) rather than our per-line palette, and each mode's layers follow that
-  // mode's Settings toggle. Ferries are never drawn here. The whole network is the
-  // "show all" state: it is drawn whenever no line filter is active (`show`),
-  // and hidden as soon as the user selects specific lines — at which point only
-  // those lines' highlighted per-line route paths remain. When `show` is off
-  // nothing shows regardless of the mode toggles.
-  const tramRouteLayers = [
-    'route_tram_case',
-    'route_tram',
-    'route_tram_inner',
-    'route_lrail_case',
-    'route_lrail',
-    'route_lrail_inner',
-  ];
-  const busRouteLayers = [
-    'route_bus_case',
-    'route_bus',
-    'route_bus_inner',
-    'route_trunk_case',
-    'route_trunk',
-    'route_trunk_inner',
-  ];
-  const metroRouteLayers = [
-    'route_subway_case',
-    'route_subway',
-    'route_subway_underground',
-  ];
-  const trainRouteLayers = [
-    'route_rail_case',
-    'route_rail',
-  ];
-  const ferryRouteLayers = [
-    'route_ferry',
-  ];
-  // The highlighted per-line ribbons drawn from the fetched pattern geometry.
-  // They are route lines too, so the "route lines" switch has to take them with
-  // it — hiding only the tiled network would leave the selection's ribbons
-  // painted on an otherwise bare map.
-  const routeRibbonLayers = [
-    'route-lines-casing',
-    'route-lines-layer',
-  ];
-
-  // Each background route layer's own (mode/trunk) filter, mirrored from the
-  // light `style.json` and the dark-theme recreation in
-  // `backgroundRouteNetworkLayers`. Narrowing the network to the selected lines
-  // combines the layer's base filter with a `routeIdParsed` line match, so we
-  // keep the base filter here to restore "show all of this mode" when no line
-  // filter is active.
-  const routeLayerBaseFilters: Record<string, maplibregl.FilterSpecification> = {
-    route_tram_case: ['==', ['get', 'mode'], 'TRAM'],
-    route_tram: ['==', ['get', 'mode'], 'TRAM'],
-    route_tram_inner: ['==', ['get', 'mode'], 'TRAM'],
-    route_lrail_case: ['==', ['get', 'mode'], 'L_RAIL'],
-    route_lrail: ['==', ['get', 'mode'], 'L_RAIL'],
-    route_lrail_inner: ['==', ['get', 'mode'], 'L_RAIL'],
-    route_bus_case: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
-    route_bus: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
-    route_bus_inner: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
-    route_trunk_case: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
-    route_trunk: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
-    route_trunk_inner: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
-    route_subway_case: ['==', ['get', 'mode'], 'SUBWAY'],
-    route_subway: ['==', ['get', 'mode'], 'SUBWAY'],
-    route_subway_underground: ['==', ['get', 'mode'], 'SUBWAY'],
-    route_rail_case: ['==', ['get', 'mode'], 'RAIL'],
-    route_rail: ['==', ['get', 'mode'], 'RAIL'],
-  };
-
-  // The HSL background route network (the `routes` vector source + its per-mode
-  // line layers) ships only in the light `style.json`. The dark theme loads
-  // Carto's dark-matter basemap, which has neither, so the Settings "Routes"
-  // toggle used to do nothing there — the route lines never appeared. This
-  // recreates that source and the tram/bus/light-rail/trunk layers (matching the
-  // style.json definitions, case → main → inner) whenever they are missing, so
-  // the network — and its mode colours — show in both themes. Guarded by
-  // `getSource`/`getLayer`, it is a no-op in light mode where the style already
-  // provides them.
-  const backgroundRouteNetworkLayers: maplibregl.LayerSpecification[] = [
-    // Trams (green)
-    { id: 'route_tram_case', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['==', ['get', 'mode'], 'TRAM'], layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 4], [22, 8]] } } },
-    { id: 'route_tram', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['==', ['get', 'mode'], 'TRAM'], layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
-      paint: { 'line-color': '#00985F', 'line-width': { stops: [[10, 2], [22, 6]] } } },
-    { id: 'route_tram_inner', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['==', ['get', 'mode'], 'TRAM'],
-      paint: { 'line-color': '#00bb75', 'line-width': { stops: [[10, 0.5], [22, 2]] } } },
-    // Light rail / Raide-Jokeri (teal)
-    { id: 'route_lrail_case', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['==', ['get', 'mode'], 'L_RAIL'], layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 4], [22, 8]] } } },
-    { id: 'route_lrail', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['==', ['get', 'mode'], 'L_RAIL'], layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
-      paint: { 'line-color': '#0098A1', 'line-width': { stops: [[10, 2], [22, 6]] } } },
-    { id: 'route_lrail_inner', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['==', ['get', 'mode'], 'L_RAIL'],
-      paint: { 'line-color': '#19a2aa', 'line-width': { stops: [[10, 0.5], [22, 2]] } } },
-    // Buses (blue)
-    { id: 'route_bus_case', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 4], [22, 8]] } } },
-    { id: 'route_bus', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
-      layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
-      paint: { 'line-color': '#007ac9', 'line-width': { stops: [[10, 2], [22, 6]] } } },
-    { id: 'route_bus_inner', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['all', ['!=', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
-      paint: { 'line-color': '#3395d4', 'line-width': { stops: [[10, 0.5], [22, 2]] } } },
-    // Trunk buses (orange)
-    { id: 'route_trunk_case', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 4], [22, 8]] } } },
-    { id: 'route_trunk', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
-      layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
-      paint: { 'line-color': '#CA4300', 'line-width': { stops: [[10, 2], [22, 6]] } } },
-    { id: 'route_trunk_inner', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['all', ['==', ['get', 'trunk_route'], '1'], ['==', ['get', 'mode'], 'BUS']],
-      paint: { 'line-color': '#FF6319', 'line-width': { stops: [[10, 1], [22, 4]] } } },
-    // Metro (orange). Drawn wider than the street modes: two lines carry the
-    // whole east-west spine, so the network reads as the trunk it is.
-    { id: 'route_subway_case', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['==', ['get', 'mode'], 'SUBWAY'], layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 5], [22, 10]] } } },
-    { id: 'route_subway', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['==', ['get', 'mode'], 'SUBWAY'], layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
-      paint: { 'line-color': '#FF6319', 'line-width': { stops: [[10, 3], [22, 7]] } } },
-    // Commuter rail (purple)
-    { id: 'route_rail_case', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['==', ['get', 'mode'], 'RAIL'], layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#fff', 'line-width': { stops: [[10, 5], [22, 10]] } } },
-    { id: 'route_rail', type: 'line', source: 'routes', 'source-layer': 'routes',
-      filter: ['==', ['get', 'mode'], 'RAIL'], layout: { 'line-cap': 'round', 'line-join': 'round', 'line-round-limit': 1 },
-      paint: { 'line-color': '#8C4799', 'line-width': { stops: [[10, 3], [22, 7]] } } },
-  ] as unknown as maplibregl.LayerSpecification[];
-
-  const ensureBackgroundRouteNetwork = (map: maplibregl.Map) => {
-    // Add the JORE routes vector source if the base style doesn't provide it.
-    if (!map.getSource('routes')) {
-      map.addSource('routes', {
-        type: 'vector',
-        url: 'https://kartat.hsl.fi/jore/tiles/routes/index.json',
-      });
-    }
-
-    // Keep the network beneath the highlighted route path (casing included, or
-    // the network would draw over it) and the vehicles.
-    const beforeId = map.getLayer('route-lines-casing')
-      ? 'route-lines-casing'
-      : map.getLayer('route-lines-layer')
-      ? 'route-lines-layer'
-      : map.getLayer('trams-circles')
-      ? 'trams-circles'
-      : undefined;
-
-    backgroundRouteNetworkLayers.forEach((layer) => {
-      if (!map.getLayer(layer.id)) {
-        map.addLayer(layer, beforeId);
-      }
-    });
-  };
-
   // Tint the tram / light-rail route network by our per-line palette instead of
   // HSL's single mode green, so a line's route on the map reads in the same
   // colour as its vehicles and badges. The JORE routes tiles expose the friendly
@@ -779,97 +609,6 @@ export const Map: React.FC<MapProps> = ({
     setColor('route_lrail_inner', lrailColor);
     setColor('route_subway', metroColor);
     setColor('route_rail', trainColor);
-  };
-
-  // The background network and the highlighted route paths must never draw the
-  // same line at once. They come from different sources — JORE vector tiles vs.
-  // the fetched pattern geometry — and only the highlighted path is offset into
-  // its own slot, so a line drawn by both appears twice: once on the street and
-  // once beside it, in the same palette colour.
-  //
-  // `ribbonLines` is what the fetched geometry covers, which is every tram line
-  // running — "Show All" highlights them all rather than falling back to the
-  // flat mode-coloured tiles, so the map looks the same whether you picked no
-  // lines or all of them. The tram tiles are therefore hidden whenever any
-  // ribbon is drawn. Buses have no pattern geometry to draw from (the route
-  // endpoint is tram-only), so the bus network stays exactly as it was: shown
-  // until the user narrows to specific lines.
-  //
-  //   line filters active → hidden. The highlighted ribbons *are* those routes,
-  //     drawn better (per-line offset, casing, selection emphasis).
-  //   only a vehicle selected → buses drawn as context, minus that vehicle's
-  //     line, faded so the selected route reads first.
-  //   nothing selected → trams as ribbons, the bus network at full strength.
-  //
-  // `routes` is the ViewToggles "route lines" switch and sits above all of that:
-  // when it is off nothing route-shaped is drawn — neither the tiled network nor
-  // the highlighted ribbons — leaving the vehicles, stops and any planned
-  // journey on a clean basemap.
-  const updateRouteVisibility = (
-    map: maplibregl.Map,
-    trams: boolean,
-    buses: boolean,
-    metro: boolean,
-    trains: boolean,
-    ferries: boolean,
-    lines: string[],
-    selectedLine: string | null,
-    ribbonLines: string[] = [],
-    routes = true,
-  ) => {
-    const highlighted = lines.length > 0;
-    const context = !highlighted && !!selectedLine;
-    const ribboned = ribbonLines.length > 0;
-
-    const setVisible = (layerId: string, visible: boolean) => {
-      if (map.getLayer(layerId)) {
-        map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
-      }
-    };
-    // `routeIdParsed` is the JORE tiles' friendly line number — the same key as
-    // a vehicle's `desi` and our palette — so excluding the selected line is a
-    // plain negated match on it.
-    const applyLineFilter = (layerId: string) => {
-      if (!map.getLayer(layerId)) return;
-      const base = routeLayerBaseFilters[layerId];
-      if (!base) return;
-      if (context) {
-        map.setFilter(layerId, [
-          'all',
-          base,
-          ['!', ['in', ['get', 'routeIdParsed'], ['literal', [selectedLine]]]],
-        ] as maplibregl.FilterSpecification);
-      } else {
-        map.setFilter(layerId, base);
-      }
-      map.setPaintProperty(layerId, 'line-opacity', context ? 0.3 : 1);
-    };
-    tramRouteLayers.forEach((layerId) => {
-      setVisible(layerId, routes && trams && !highlighted && !ribboned);
-      applyLineFilter(layerId);
-    });
-    busRouteLayers.forEach((layerId) => {
-      setVisible(layerId, routes && buses && !highlighted);
-      applyLineFilter(layerId);
-    });
-    // Metro and train lines are ribboned like trams (few enough lines to fetch a
-    // pattern each), so their tiles give way to the ribbons the same way.
-    metroRouteLayers.forEach((layerId) => {
-      setVisible(layerId, routes && metro && !highlighted && !ribboned);
-      applyLineFilter(layerId);
-    });
-    trainRouteLayers.forEach((layerId) => {
-      setVisible(layerId, routes && trains && !highlighted && !ribboned);
-      applyLineFilter(layerId);
-    });
-    // The ferry route is the style's own dashed cyan line across the water. It
-    // is not ribboned — there is one crossing and the tiles already draw it in
-    // the mode colour the vessels are painted in — so it follows its mode
-    // toggle and the line filter, and nothing else.
-    ferryRouteLayers.forEach((layerId) => {
-      setVisible(layerId, routes && ferries && !highlighted);
-    });
-    routeRibbonLayers.forEach((layerId) => setVisible(layerId, routes));
   };
 
   // The basemap's own metro furniture: the orange "M" entrance pins (with their
@@ -2073,20 +1812,17 @@ export const Map: React.FC<MapProps> = ({
         }
       }
 
-      // Update next stop highlight and route line segment
-      let selectedVehiclePos: [number, number] | null = null;
+      // Update the next-stop highlight. Whether a vehicle is selected decides
+      // which end the highlight is read from, below.
+      let vehicleSelected = false;
       let nextStopCoords: [number, number] | null = null;
       let nextStopId: string | null = null;
       let nextStopBoarding = false;
-      let routeSegmentCoords: [number, number][] = [];
 
       if (selectedTramIdRef.current && selectedTripDetailsRef.current) {
         const selectedTram = latestTramsRef.current[selectedTramIdRef.current];
         if (selectedTram) {
-          const activeFeature = features.find((f) => f.properties.veh === selectedTramIdRef.current);
-          if (activeFeature) {
-            selectedVehiclePos = activeFeature.geometry.coordinates as [number, number];
-          }
+          vehicleSelected = features.some((f) => f.properties.veh === selectedTramIdRef.current);
 
           if (selectedTram.stop) {
             lastSeenStopIdRef.current = selectedTram.stop;
@@ -2103,14 +1839,6 @@ export const Map: React.FC<MapProps> = ({
             // Doors open at the stop we are pointing at: the platform edge
             // lights up while passengers are actually boarding.
             nextStopBoarding = isBoardingAt(selectedTram, nextStopId);
-
-            if (HIGHLIGHT_NEXT_STOP_ROUTE && selectedVehiclePos && selectedTripDetailsRef.current.geometry) {
-              routeSegmentCoords = approachSegment(
-                decodePolyline(selectedTripDetailsRef.current.geometry),
-                selectedVehiclePos,
-                nextStopCoords,
-              );
-            }
           }
         }
       }
@@ -2121,24 +1849,15 @@ export const Map: React.FC<MapProps> = ({
       // one is bringing the next departure to it.
       const focus = arrivalFocusRef.current;
       let focusVehicleMode: string | null = null;
-      if (!selectedVehiclePos && focus) {
+      if (!vehicleSelected && focus) {
         const focusStopCoords = arrivalStopCoordsRef.current;
         const focusFeature = features.find((f) => f.properties.veh === focus.vehicleId);
         if (focusFeature && focusStopCoords) {
-          selectedVehiclePos = focusFeature.geometry.coordinates as [number, number];
           focusVehicleMode = focusFeature.properties.mode;
           nextStopCoords = focusStopCoords;
           nextStopId = focus.stopId;
           // Doors open at the stop being watched: it is boarding right now.
           nextStopBoarding = latestTramsRef.current[focus.vehicleId]?.drst === 1;
-          const geometry = arrivalTripDetailsRef.current?.tripId === focus.tripId
-            ? arrivalTripDetailsRef.current?.geometry
-            : undefined;
-          routeSegmentCoords = approachSegment(
-            geometry ? decodePolyline(geometry) : [],
-            selectedVehiclePos,
-            nextStopCoords,
-          );
         }
       }
 
@@ -2199,22 +1918,6 @@ export const Map: React.FC<MapProps> = ({
         map.setPaintProperty('stop-pulse-ring', 'circle-radius', 14 + 16 * phase);
         map.setPaintProperty('stop-pulse-ring', 'circle-opacity', 0.28 * (1 - phase));
         map.setPaintProperty('stop-pulse-ring', 'circle-stroke-opacity', 0.9 * (1 - phase));
-      }
-
-      // Update route line source
-      const routeSource = map.getSource('next-stop-route') as maplibregl.GeoJSONSource;
-      if (routeSource) {
-        routeSource.setData({
-          type: 'FeatureCollection',
-          features: routeSegmentCoords.length > 0 ? [{
-            type: 'Feature',
-            geometry: {
-              type: 'LineString',
-              coordinates: routeSegmentCoords,
-            },
-            properties: {},
-          }] : [],
-        });
       }
 
       // Smooth camera tracking
@@ -3467,17 +3170,6 @@ export const Map: React.FC<MapProps> = ({
       }, TRAFFIC_LIGHT_ICON_LAYER);
     }
 
-    // Source for selected vehicle to next stop route
-    if (!map.getSource('next-stop-route')) {
-      map.addSource('next-stop-route', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: [],
-        },
-      });
-    }
-
     // Source for selected stop (to remain visible when zoomed out)
     if (!map.getSource('selected-stop-source')) {
       map.addSource('selected-stop-source', {
@@ -3594,24 +3286,6 @@ export const Map: React.FC<MapProps> = ({
             20, 2.1
           ]
         }
-      }, 'trams-circles');
-    }
-
-    // Route segment to next stop layer (rendered under trams-circles)
-    if (HIGHLIGHT_NEXT_STOP_ROUTE && !map.getLayer('next-stop-route-layer')) {
-      map.addLayer({
-        id: 'next-stop-route-layer',
-        type: 'line',
-        source: 'next-stop-route',
-        layout: {
-          'line-join': 'round',
-          'line-cap': 'round',
-        },
-        paint: {
-          'line-color': '#fdcb6e', // gold-yellow matching selection border
-          'line-width': 7.5,
-          'line-opacity': 0.9,
-        },
       }, 'trams-circles');
     }
 
@@ -3778,18 +3452,19 @@ export const Map: React.FC<MapProps> = ({
 
     // Apply active route visibility and 3D mode setting. With no line filter the
     // whole network shows; selecting lines narrows it to just those routes.
-    updateRouteVisibility(
-      map,
-      showTramsRef.current,
-      showBusesRef.current,
-      showMetroRef.current,
-      showTrainsRef.current,
-      showFerriesRef.current,
-      lineFiltersRef.current,
-      selectedLineRef.current,
-      Object.keys(routeGeometriesRef.current),
-      showRoutesRef.current,
-    );
+    updateRouteVisibility(map, {
+      modes: {
+        tram: showTramsRef.current,
+        bus: showBusesRef.current,
+        metro: showMetroRef.current,
+        train: showTrainsRef.current,
+        ferry: showFerriesRef.current,
+      },
+      lines: lineFiltersRef.current,
+      selectedLine: selectedLineRef.current,
+      ribbonLines: Object.keys(routeGeometriesRef.current),
+      routes: showRoutesRef.current,
+    });
     updateMetroSignVisibility(map, showMetroRef.current);
     update3DMode(map, is3DRef.current, mapThemeRef.current);
     updateVehicle3DMode(map, vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current));
@@ -4135,6 +3810,9 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    // The new style brings its own layers, so the filters captured from the
+    // outgoing one no longer describe them.
+    forgetBaseFilters(map);
     map.setStyle(basemapStyleUrl(mapTheme));
   }, [mapTheme]);
 
@@ -4369,18 +4047,19 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     const map = mapRef.current;
     if (map && map.getStyle()) {
-      updateRouteVisibility(
-        map,
-        showTrams,
-        showBuses,
-        showMetro,
-        showTrains,
-        showFerries,
-        lineFilters,
+      updateRouteVisibility(map, {
+        modes: {
+          tram: showTrams,
+          bus: showBuses,
+          metro: showMetro,
+          train: showTrains,
+          ferry: showFerries,
+        },
+        lines: lineFilters,
         selectedLine,
-        Object.keys(routeGeometries),
-        showRoutes,
-      );
+        ribbonLines: Object.keys(routeGeometries),
+        routes: showRoutes,
+      });
       updateMetroSignVisibility(map, showMetro);
     }
   }, [lineFilters, showTrams, showBuses, showMetro, showTrains, showFerries, showRoutes, selectedLine, routeGeometries]);
