@@ -13,9 +13,14 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import type { Feature, FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
-import { lerp, lerpAngle, clamp, smoothstep, easeByAccel } from '../lib/lerp';
 import { decodePolyline } from '../lib/polyline';
 import type { ModeFlags, TransportMode } from '../lib/modes';
+import {
+  createAnimationState,
+  receivePositions,
+  startAnimationLoop,
+} from '../map/animation';
+import type { AnimationState, FrameInputs } from '../map/animation';
 import type {
   ArrivalOverlay,
   JourneyOverlay,
@@ -35,45 +40,19 @@ import {
   updateMetroSignVisibility,
   updateVehicle3DMode,
 } from '../map/layers';
-import { tripProgress, isBoardingAt } from '../lib/nextStop';
 import { ARRIVAL_LABEL_MIN_ZOOM, ARRIVAL_LABEL_STOP_LIMIT } from '../lib/stopArrivals';
 import type { ArrivalFocus } from '../lib/stopArrivals';
 import {
   getRouteColor,
 } from '../lib/routeColors';
 import {
-  ferryIconBucket,
-} from '../lib/ferryIcon';
-import { occupancyFraction } from '../lib/occupancy';
-import {
   buildPatternTracks,
-  distanceBetween,
-  hfpDirectionId,
-  isHelsinkiCentralStationZone,
-  isSnappedMode,
-  orientOnTracks,
-  placeOnTracks,
-  pointOnTrack,
   snappedLinesInFeed,
-  trackSpine,
 } from '../lib/railTracks';
-import { advanceAlongHeading } from '../lib/geo';
 import { useSyncRef } from '../hooks/useSyncRef';
-import {
-  glideFraction,
-  hasMoved,
-  predictedAdvance,
-  reckonLimits,
-} from '../lib/deadReckon';
-import type { ReckonLimits } from '../lib/deadReckon';
-import type { PlaceOptions, RailTrack, TrackPlacement } from '../lib/railTracks';
+import type { RailTrack } from '../lib/railTracks';
 import { assignCorridorSlots, directionalPaths } from '../lib/routeSlots';
 import type { RoutePath } from '../lib/routeSlots';
-import {
-  vehicleExtrusionCollection,
-  VEHICLE_3D_MIN_ZOOM,
-} from '../lib/vehicleModels';
-import type { BodySpine, VehicleState } from '../lib/vehicleModels';
 import {
   PLATFORM_FILL_LAYER,
 } from '../lib/stopPlatforms';
@@ -112,8 +91,7 @@ import {
   BIKE_STATION_LAYER,
 } from '../lib/bikeStationModels';
 import type { BikeStationState } from '../lib/bikeStationModels';
-import { advanceDoors, isVehicleBraking, vehicles3DEnabled } from '../lib/vehicleAnimation';
-import type { DoorAnimation } from '../lib/vehicleAnimation';
+import { vehicles3DEnabled } from '../lib/vehicleAnimation';
 import { fetchBikeStations, fetchMapConfig } from '../lib/api';
 import {
   signalPriorityIndex,
@@ -179,138 +157,6 @@ interface MapProps {
    * the wall figure would conclude that every vehicle on it had teleported.
    */
   timeScale?: number;
-}
-
-// One vehicle in the GeoJSON collection the map's icon layers read. Named so
-// the per-frame rebuild can push into a typed array rather than mapping over
-// every vehicle in the feed and throwing most of the result away.
-interface VehicleFeature {
-  type: 'Feature';
-  geometry: { type: 'Point'; coordinates: [number, number] };
-  properties: {
-    veh: string;
-    desi: string;
-    hdg: number;
-    stopped: boolean;
-    mode: string;
-    spd: number;
-    acc: number;
-    speedNorm: number;
-    doorsOpen: boolean;
-    /**
-     * Which load step the vessel is reporting, as an index into
-     * `OCCUPANCY_BUCKETS`; -1 for every mode that does not measure occupancy and
-     * for a ferry whose counter is silent. The vehicle-body layer matches on it
-     * to pick the marker with the right deck gauge.
-     */
-    occuBucket: number;
-  };
-}
-
-interface RenderPosition {
-  lat: number;
-  lng: number;
-  hdg: number;
-  // Rail modes only: where this position sits on the line's own track
-  // geometry, so the animation can slide a vehicle *along* its rails between
-  // two snapshots instead of cutting across the ground between them, and so an
-  // articulated body can be bent along them. See lib/railTracks.
-  track?: TrackPlacement;
-}
-
-// A metro position is only pulled onto the tracks if it is within this far of
-// them. Underground, HFP positions are dead-reckoned and drift by a couple of
-// hundred metres; past that the message is more likely stale or bogus than a
-// train, and snapping it would invent a confident-looking position.
-const METRO_SNAP_MAX_OFFSET = 400;
-
-// A tram is pulled onto its rails only from this close. Its GPS is ordinary
-// street-level GPS — good to some tens of metres, worse between tall buildings
-// — so this has to cover the error without covering the next street: past 35 m
-// the nearest rail is as likely to be a different line's as this tram's own,
-// and a tram genuinely off its route (a diversion, a depot run, a replacement
-// working) should be drawn where it says it is rather than dragged onto rails
-// it is not using.
-const TRAM_SNAP_MAX_OFFSET = 35;
-
-// Commuter-train GPS is better than metro odometry, but still cannot identify
-// parallel railway tracks. Keep the match conservative outside station throats.
-const TRAIN_SNAP_MAX_OFFSET = 80;
-
-// How far the rails may be for a train inside Helsinki Central to be *turned* by
-// them without being moved onto them. Wider than the snap above on purpose:
-// nothing is being asserted about which of the station's tracks the train is on,
-// only about which way that whole fan of tracks runs, and the fan is some
-// hundred metres wide. Metres.
-const TRAIN_ORIENT_MAX_OFFSET = 150;
-
-// How much closer another pattern has to be before a tram is moved onto it.
-// The two directions of a tram line are one carriageway apart, so the margin
-// that keeps a metro train on its (all but coincident) pattern would instead
-// pin a tram to whichever rail it first snapped to. Metres.
-const TRAM_TRACK_SWITCH_MARGIN = 4;
-
-// How much slack the junction test allows around where a tram is expected to
-// have got to, on top of the distance its own reported speed accounts for.
-// Wide enough that ordinary running, a late snapshot and a stretch of standing
-// still all stay inside it; far narrower than the distance between two passes
-// of the same junction, which is what it exists to tell apart. Metres.
-const TRAM_CONTINUITY_SLACK = 40;
-
-// The last position report from a vehicle that actually said something new,
-// kept so the animation can carry it forward until the next one.
-//
-// Every mode needs this, for two different reasons.
-//
-// A metro's HFP messages arrive every second like everything else's, but only
-// their timestamp moves at that rate: the coordinate and speed are held and
-// refreshed in steps of a few seconds. Measured on the live feed, 74% of
-// consecutive messages between stations repeat the previous coordinate exactly,
-// and 96% of them do at a platform — so a train stands still for about three
-// seconds and then arrives some fifty metres further down the line. That is what
-// makes a metro look stuck and then lurch, and it is why the timestamp cannot be
-// what marks a new report: it ticks either way.
-//
-// A tram, bus or commuter train does report a fresh coordinate every second, so
-// it never looks stuck — but drawn by gliding to the newest report it is always
-// a full second behind, and every report lands a second of travel away and has
-// to be tugged in. On the captured feed that tug is 9.6 m for a tram, 13.1 m for
-// a bus and 32.6 m for a train at the ninetieth percentile. Anchoring here and
-// aiming the glide at the end of the window instead cuts it to 0.6, 1.1 and
-// 2.2 m. See lib/deadReckon.
-interface VehicleFix {
-  // HFP timestamp and coordinates of the last message whose *coordinate* was
-  // new. The coordinate is what tells a fresh position from a repeat of the one
-  // we already have; `ts` moves every second regardless.
-  ts: number;
-  lat: number;
-  lng: number;
-  // Wall clock (performance.now()) when the report first reached us. Ages are
-  // measured against this rather than against `ts`, so a client whose clock
-  // disagrees with HSL's by a few seconds still predicts correctly.
-  seenAt: number;
-  // Speed and acceleration the vehicle reported, which is what is integrated.
-  spd: number;
-  acc: number;
-  // Reported heading, which is the direction a surface vehicle is carried in.
-  // A metro ignores it and follows its track instead.
-  hdg: number;
-  // How far and how fast this mode may be predicted.
-  limits: ReckonLimits;
-  // Metro only: where the report put the train on the network.
-  track?: TrackPlacement;
-}
-
-// How the current glide window should be shaped: by the speed profile the
-// vehicle is actually predicted to follow, rather than by a generic easing
-// curve. `ageStart` is how old the underlying report already was when the
-// window opened, so a window that opens into a gap in the feed is animated at
-// the speed the vehicle has by then rather than the speed it last reported.
-interface Glide {
-  spd: number;
-  acc: number;
-  ageStart: number;
-  limits: ReckonLimits;
 }
 
 export const Map: React.FC<MapProps> = ({
@@ -415,10 +261,6 @@ export const Map: React.FC<MapProps> = ({
   useSyncRef(showRoutesRef, showRoutes);
   useSyncRef(is3DRef, is3D);
   useSyncRef(always3DVehiclesRef, always3DVehicles);
-  const doorAnimationsRef = useRef<Record<string, DoorAnimation>>({});
-  // Whether the 3D source currently holds bodies, so it is emptied exactly once
-  // when 3D is switched off or the view zooms back out.
-  const vehicles3dDrawnRef = useRef<boolean>(false);
   const stopFurnitureDrawnRef = useRef<boolean>(false);
   // Cheap signature of what the furniture was last built for, so the `idle`
   // event — which fires on every tile that lands — does no work in the common
@@ -1032,746 +874,41 @@ export const Map: React.FC<MapProps> = ({
    * direction from the feed, and where the feed omits it, by whether the rails
    * run the way the tram is heading.
    */
-  const placeOnRails = (
-    tram: VehiclePosition,
-    previous: TrackPlacement | undefined,
-    // How long the previous placement has had to go stale, in seconds. It sets
-    // how far along the route the vehicle may have got since, which is what the
-    // junction test is measured against.
-    age: number,
-  ) => {
-    if (!isSnappedMode(tram.mode)) return null;
-    const tracks = tracksRef.current[tram.desi];
-    if (!tracks || tracks.length === 0) return null;
-
-    // Helsinki Central has twenty-odd platform tracks and reversing movements
-    // inside one compact area, and which platform a train is standing at is not
-    // something its route polyline knows. Until Fintraffic track events are
-    // integrated, the reported position is more honest than a route-polyline
-    // guess there — but the *heading* is not a guess at all, because every track
-    // in the throat runs parallel to every other, so the polyline's bearing is
-    // the bearing of whichever track the train is really on. Turning the train
-    // without moving it is what stops a 75 m body lying diagonally across the
-    // station's tracks on whatever heading the last GPS fix that moved reported.
-    if (tram.mode === 'train' && isHelsinkiCentralStationZone(tram.lng, tram.lat)) {
-      return orientOnTracks(tracks, tram, {
-        maxOffset: TRAIN_ORIENT_MAX_OFFSET,
-        direction: hfpDirectionId(tram.dir),
-        heading: tram.hdg,
-      });
-    }
-
-    if (tram.mode === 'metro') {
-      return placeOnTracks(tram.desi, tracks, tram, previous, {
-        maxOffset: METRO_SNAP_MAX_OFFSET,
-      });
-    }
-
-    if (tram.mode === 'train') {
-      const travelled = Math.abs(tram.spd ?? 0) * Math.max(age, 0);
-      return placeOnTracks(tram.desi, tracks, tram, previous, {
-        maxOffset: TRAIN_SNAP_MAX_OFFSET,
-        direction: hfpDirectionId(tram.dir),
-        heading: tram.hdg,
-        expectedAdvance: travelled,
-        continuityWindow: travelled + 100,
-      });
-    }
-
-    // How far the tram can have gone since it was last placed, from the speed
-    // it reported. The window is that plus a fixed allowance, so a tram running
-    // normally always finds itself inside it and only a fix somewhere else on
-    // the route falls out.
-    const travelled = Math.abs(tram.spd ?? 0) * Math.max(age, 0);
-    const options: PlaceOptions = {
-      maxOffset: TRAM_SNAP_MAX_OFFSET,
-      direction: hfpDirectionId(tram.dir),
-      heading: tram.hdg,
-      // The pair of tracks is only metres apart, so the hysteresis that holds a
-      // metro on its pattern would instead pin a tram to the wrong rail of the
-      // two. Just wide enough to absorb GPS jitter along one track, not wide
-      // enough to hold it on the other.
-      switchMargin: TRAM_TRACK_SWITCH_MARGIN,
-      expectedAdvance: travelled,
-      continuityWindow: TRAM_CONTINUITY_SLACK + travelled,
-    };
-    return placeOnTracks(tram.desi, tracks, tram, previous, options);
-  };
-
-  // Dead-reckoning state, per vehicle: the last real report, and the speed
-  // profile the current glide window follows.
-  const fixRef = useRef<Record<string, VehicleFix>>({});
-  const glideRef = useRef<Record<string, Glide>>({});
-
-  // How long the current glide window is, in seconds. Snapshots are broadcast
-  // once a second, so this is normally 1 — but a tab that was throttled, a
-  // stalled connection or a hiccup in the backend can stretch the gap, and a
-  // window that assumes 1 s regardless finishes early and leaves every vehicle
-  // standing still until the next snapshot lands. Measured from the snapshots
-  // themselves and clamped either side of a second: shorter than 0.7 s is
-  // indistinguishable from a jump, and past 2.5 s the feed is broken rather
-  // than slow, so the vehicles should stop rather than be flung onward.
-  const windowSecRef = useRef<number>(1);
-  // The same window measured in seconds of history rather than of wall clock.
-  // Identical to windowSecRef at one times; see the `timeScale` prop.
-  const dataWindowSecRef = useRef<number>(1);
-  // Read inside the animation frame and the snapshot effect, which must not be
-  // torn down and rebuilt when the playback speed changes.
-  const timeScaleRef = useRef<number>(timeScale);
-  useSyncRef(timeScaleRef, timeScale);
-  // How many seconds of *history* the current window carries. At one times this
-  // is the window itself; at two hundred and forty times a window an eighth of
-  // a second long carries half a minute of travel, which is what the teleport
-  // guard has to be measured against.
-  const stepSecRef = useRef<number>(1);
-  const MIN_WINDOW_SEC = 0.7;
-  const MAX_WINDOW_SEC = 2.5;
-  // The floor above exists because the live feed speaks once a second and a
-  // window measured shorter than that is a hiccup, not a cadence. A fast replay
-  // genuinely does deliver a snapshot every eighth of a second, and holding it
-  // to seven tenths would mean every glide is cut off at a fifth of its length
-  // by the next one — vehicles crawling a step behind the map and then jumping
-  // to catch up, which is exactly what a fast timelapse looked like. So at
-  // speed the floor is only there to keep the division below finite.
-  const MIN_REPLAY_WINDOW_SEC = 0.03;
 
   /**
-   * Where a vehicle should be drawn at the end of the current glide window,
-   * given a report that is already `age` seconds old and has not been followed
-   * by another.
-   *
-   * This is the whole of the accuracy story. Aiming at the reported position
-   * draws the vehicle where it *was* when it last spoke, which by the time the
-   * window closes is a second and a half of travel in the past; aiming here
-   * draws it where its own speed and acceleration say it will be. A gap in the
-   * feed is then simply a longer `age`, animated at the speed the vehicle has
-   * by then, instead of a freeze and a lurch.
-   *
-   * A metro is carried along the very track it was last seen on, because it has
-   * rails and we have their geometry — which keeps it inside its tunnel through
-   * curves where a straight line would cut across them. Everything else runs
-   * along the heading it reported.
-   *
-   * Returns null when there is nothing to carry it along: no motion predicted,
-   * the metro pattern geometry went away, or the prediction horizon has passed
-   * and the last known point is the honest answer again.
+   * Everything the animation remembers between frames — glides, dead-reckoning
+   * fixes, rail geometry, clocks. A plain object rather than twenty refs: none
+   * of it should cause a render, and the loop writes to it sixty times a
+   * second. Created once per mount.
    */
-  const predictPosition = (fix: VehicleFix, age: number): RenderPosition | null => {
-    const advance = predictedAdvance(
-      fix.spd,
-      fix.acc,
-      0,
-      age + dataWindowSecRef.current,
-      fix.limits
-    );
-    if (advance <= 0) return null;
-
-    if (fix.track) {
-      const track = tracksRef.current[fix.track.line]?.[fix.track.index];
-      if (!track) return null;
-      // `distance` is arc length along the pattern polyline; a train running
-      // against that polyline's own direction covers it backwards.
-      const distance = fix.track.distance + (fix.track.forward ? advance : -advance);
-      const point = pointOnTrack(track, distance);
-      return {
-        lat: point.lat,
-        lng: point.lng,
-        hdg: fix.track.forward ? point.bearing : (point.bearing + 180) % 360,
-        track: { ...fix.track, distance },
-      };
-    }
-
-    const moved = advanceAlongHeading(fix.lat, fix.lng, fix.hdg, advance);
-    return { lat: moved.lat, lng: moved.lng, hdg: fix.hdg };
-  };
-
-  // Animation references to run independent of React re-renders
-  const prevPositionsRef = useRef<Record<string, RenderPosition>>({});
-  const targetPositionsRef = useRef<Record<string, RenderPosition>>({});
-  // What was actually drawn on the last frame. A new snapshot interpolates from
-  // here rather than from the previous *target*, so a correction that arrives
-  // mid-glide is eased in from where the vehicle currently is instead of
-  // yanking it back to where the last snapshot ended.
-  const renderedPositionsRef = useRef<Record<string, RenderPosition>>({});
-  const lastUpdateRef = useRef<number>(0);
-  // Wall-clock of the last vehicle-feature rebuild, used to adaptively throttle
-  // the (O(n)) per-frame rebuild when the map is crowded (see tickFrame).
-  const lastRenderRef = useRef<number>(0);
-  // How many vehicles were in view on the last rebuild, which is what the
-  // render throttle is scaled by.
-  const visibleCountRef = useRef<number>(0);
-  const animationFrameRef = useRef<number | null>(null);
-
-  // Interpolation and GeoJSON updates loop
-  function startAnimationLoop() {
-    const tick = () => {
-      // This loop is the sole driver of vehicle movement: an uncaught throw
-      // (e.g. malformed trip data) must not stop the next frame from being
-      // scheduled, or every vehicle would freeze for the rest of the session.
-      try {
-        tickFrame();
-      } catch (err) {
-        console.error('Vehicle animation frame failed', err);
-      }
-      animationFrameRef.current = requestAnimationFrame(tick);
-    };
-
-    const tickFrame = () => {
-      const map = mapRef.current;
-      if (!map || !map.getSource('trams')) {
-        return;
-      }
-
-      const now = performance.now();
-      // How far through the current glide window we are. The window is as long
-      // as the gap between the last two snapshots (normally a second), so a late
-      // snapshot stretches the glide instead of leaving the vehicles standing
-      // still waiting for it.
-      const elapsed = now - lastUpdateRef.current;
-      const t = Math.min(elapsed / 1000 / windowSecRef.current, 1.0);
-
-      // Only what is on screen is drawn. Rebuilding a vehicle's GeoJSON feature
-      // and pushing the collection through `setData` is O(n), and with buses on
-      // the feed carries several hundred vehicles of which a few dozen are ever
-      // in view — so the whole cost of the crowd used to be paid at the zoom
-      // where the crowd is invisible anyway. Padded by a comfortable margin so a
-      // vehicle is already in the collection before it reaches the edge, and
-      // recomputed every frame so panning brings them in.
-      //
-      // Interpolated positions are still computed for every vehicle, in and out
-      // of view: that keeps `rendered` complete, so a vehicle panned back into
-      // view resumes its glide instead of restarting it.
-      const bounds = map.getBounds();
-      const padLng = (bounds.getEast() - bounds.getWest()) * 0.25;
-      const padLat = (bounds.getNorth() - bounds.getSouth()) * 0.25;
-      const west = bounds.getWest() - padLng;
-      const east = bounds.getEast() + padLng;
-      const south = bounds.getSouth() - padLat;
-      const north = bounds.getNorth() + padLat;
-
-      // Adaptive render throttle. At 60 fps with a full map the rebuild
-      // dominates the frame budget and makes the whole animation stutter, and
-      // the sub-pixel movement between two 1 Hz snapshots is imperceptible when
-      // the map is zoomed out — so when a lot of vehicles are *visible* the
-      // rebuild rate is capped. It is the visible count that matters, not the
-      // size of the feed: switching buses on used to drop a close-in view of
-      // three trams to ten frames a second because of several hundred vehicles
-      // nowhere near the screen. Interpolation stays correct (each render still
-      // computes the right position for `now`), it just updates less often.
-      // Chasing a vehicle is never throttled — that view needs every frame.
-      const visibleCount = visibleCountRef.current;
-      const following = !!selectedTramIdRef.current;
-      if (!following && visibleCount > 25) {
-        const zoom = map.getZoom();
-        const minInterval = visibleCount > 60
-          ? (zoom < 13.5 ? 100 : 50)
-          : (zoom < 13.5 ? 66 : 33);
-        if (now - lastRenderRef.current < minInterval) {
-          return;
-        }
-      }
-      lastRenderRef.current = now;
-
-      // Rebuilt from scratch each frame so vehicles that left the feed do not
-      // linger in it.
-      const rendered: Record<string, RenderPosition> = {};
-      let visible = 0;
-
-      const features: VehicleFeature[] = [];
-      // The path each vehicle's body follows this frame, for the ones being
-      // drawn along their rails. Filled here rather than in the 3D block below
-      // because it is only honest on the frames where the drawn position came
-      // off the track itself: on the one frame after a vehicle changes pattern
-      // the position is a plain interpolation, and bending the body to a track
-      // the vehicle is not being drawn on would tear it away from its own icon.
-      const spines: Record<string, BodySpine> = {};
-      Object.entries(targetPositionsRef.current).forEach(([id, target]) => {
-        const prev = prevPositionsRef.current[id] || target;
-
-        const tramInfo = latestTramsRef.current[id];
-        const spd = tramInfo?.spd ?? 0;
-        const acc = tramInfo?.acc ?? 0;
-
-        // Shape position interpolation by acceleration so the on-screen motion
-        // mirrors the physical vehicle: ease-in while accelerating away from a
-        // stop, ease-out while braking into one. Heading eases smoothly.
-        //
-        // A vehicle with a dead-reckoning anchor has something better than an
-        // easing curve to follow: the speed profile its own readings imply,
-        // which is also what placed this window's target. Using it here means
-        // the vehicle covers the window at the rate it is actually predicted to
-        // travel — and that a window opened into a gap in the feed is animated
-        // with the speed it has by then, not the speed it had when it last
-        // spoke. `easeByAccel` remains the fallback for a vehicle with no
-        // anchor: one that has only just appeared, or a metro too far off its
-        // tracks to place.
-        //
-        // None of that shaping survives a fast replay, though, and it should
-        // not: past a couple of seconds of history per window the two ends of
-        // the glide are both *measured* positions, several hundred metres
-        // apart, and the honest way between them is a straight constant-rate
-        // line. Easing one in and out of every one of eight windows a second
-        // would make the whole city pulse.
-        const longStep = stepSecRef.current > MAX_WINDOW_SEC;
-        const glide = glideRef.current[id];
-        const tPos = longStep
-          ? t
-          : glide
-            ? glideFraction(
-                glide.spd,
-                glide.acc,
-                glide.ageStart,
-                t,
-                glide.limits,
-                stepSecRef.current
-              )
-            : easeByAccel(t, acc);
-        let lat = lerp(prev.lat, target.lat, tPos);
-        let lng = lerp(prev.lng, target.lng, tPos);
-        let hdg = lerpAngle(prev.hdg, target.hdg, longStep ? t : smoothstep(t));
-        let renderTrack: TrackPlacement | undefined;
-
-        // A rail vehicle that stayed on the same track between two snapshots is
-        // moved *along* it: interpolating arc length and reading the position
-        // back off the geometry keeps a train in its tunnel and a tram on its
-        // rails through curves, where interpolating the endpoints would cut
-        // straight across them.
-        if (
-          target.track &&
-          prev.track &&
-          prev.track.line === target.track.line &&
-          prev.track.index === target.track.index
-        ) {
-          const track = tracksRef.current[target.track.line]?.[target.track.index];
-          if (track) {
-            const distance = lerp(prev.track.distance, target.track.distance, tPos);
-            const point = pointOnTrack(track, distance);
-            lat = point.lat;
-            lng = point.lng;
-            // Face along the track. A standing vehicle keeps the heading it
-            // had: the tangent alone cannot say which end is the front.
-            hdg = target.track.forward ? point.bearing : (point.bearing + 180) % 360;
-            renderTrack = { ...target.track, distance };
-            spines[id] = trackSpine(track, distance, target.track.forward);
-          }
-        } else if (target.track) {
-          // No shared track to slide along — the vehicle has only just
-          // appeared, or it changed pattern — so this frame falls back to the
-          // straight interpolation above. The placement is still carried forward so the
-          // next snapshot can resume along-track motion immediately; a line's
-          // patterns run within a few metres of each other, so the distance is
-          // at most that far out for the one frame it is used.
-          renderTrack = target.track;
-        }
-
-        rendered[id] = { lat, lng, hdg, track: renderTrack };
-
-        // Off-screen vehicles keep their interpolated position but are not put
-        // in the collection. The selected one always is, whatever the viewport
-        // says: the popup, the next-stop highlight and the follow camera all
-        // read its feature from here.
-        const onScreen = lng >= west && lng <= east && lat >= south && lat <= north;
-        if (onScreen) visible++;
-        if (!onScreen && id !== selectedTramIdRef.current) return;
-
-        const doorsOpen = tramInfo?.drst === 1;
-        // Normalise speed to 0..1 for the aura sizing. Capped low (~8 m/s ≈ 29 km/h)
-        // so the aura reaches its full, clearly-visible size at ordinary city-tram
-        // cruising speeds rather than only when a vehicle is racing.
-        const speedNorm = clamp(spd / 8, 0, 1);
-        // Passenger load, where the mode measures it — which today is the ferry
-        // and nothing else. See lib/occupancy.
-        const load = occupancyFraction(tramInfo?.mode, tramInfo?.occu);
-
-        features.push({
-          type: 'Feature' as const,
-          geometry: {
-            type: 'Point' as const,
-            coordinates: [lng, lat],
-          },
-          properties: {
-            veh: id,
-            desi: tramInfo?.desi || '',
-            hdg: hdg,
-            stopped: doorsOpen || spd === 0,
-            mode: tramInfo?.mode || 'tram',
-            spd: spd,
-            acc: acc,
-            speedNorm: speedNorm,
-            doorsOpen: doorsOpen,
-            occuBucket: ferryIconBucket(load),
-          },
-        });
-      });
-
-      renderedPositionsRef.current = rendered;
-      visibleCountRef.current = visible;
-
-      const source = map.getSource('trams') as maplibregl.GeoJSONSource;
-      if (source) {
-        source.setData({
-          type: 'FeatureCollection',
-          features,
-        });
-      }
-
-      // 3D bodies from the same interpolated positions the flat icons use.
-      // Built only while models are enabled and the view is close enough
-      // for the layer to draw: extruding every vehicle is several polygons each,
-      // and there is no point paying for it to render nothing.
-      const source3d = map.getSource('vehicles-3d') as maplibregl.GeoJSONSource | undefined;
-      if (source3d) {
-        const draw3d = vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current) &&
-          map.getZoom() >= VEHICLE_3D_MIN_ZOOM;
-        if (draw3d || vehicles3dDrawnRef.current) {
-          // A detailed body has many polygons, against one point for the flat icon,
-          // so only what is actually on screen is built. Padded by a body length
-          // so a train is not clipped as it enters the view.
-          const bounds = draw3d ? map.getBounds().toArray() : null;
-          const pad = 0.0012;
-          const onScreen = (lng: number, lat: number) =>
-            !bounds ||
-            (lng >= bounds[0][0] - pad && lng <= bounds[1][0] + pad &&
-             lat >= bounds[0][1] - pad && lat <= bounds[1][1] + pad);
-          const doorAnimations: Record<string, DoorAnimation> = {};
-          const states: VehicleState[] = draw3d
-            ? features
-                .filter((f) => onScreen(f.geometry.coordinates[0], f.geometry.coordinates[1]))
-                .map((f) => {
-                  const id = f.properties.veh;
-                  const telemetry = latestTramsRef.current[id];
-                  const doors = advanceDoors(doorAnimationsRef.current[id], f.properties.doorsOpen, now);
-                  doorAnimations[id] = doors;
-                  return {
-                    veh: f.properties.veh,
-                    lng: f.geometry.coordinates[0],
-                    lat: f.geometry.coordinates[1],
-                    hdg: f.properties.hdg,
-                    mode: f.properties.mode,
-                    desi: f.properties.desi,
-                    doorsOpen: f.properties.doorsOpen,
-                    doorProgress: doors.progress,
-                    braking: isVehicleBraking(telemetry?.spd, telemetry?.acc, f.properties.doorsOpen),
-                    selected: f.properties.veh === selectedTramIdRef.current,
-                    // The ferry's 3D deck gauge reads the same number the flat
-                    // marker's does, so the two never disagree at the zoom
-                    // where they cross over.
-                    occupancy: occupancyFraction(telemetry?.mode, telemetry?.occu),
-                    // A vehicle being drawn along its rails is *built* along
-                    // them too: each rigid section of the body sits at its own
-                    // point on the track, so an articulated tram bends through
-                    // a corner instead of ploughing across it. One with no path
-                    // (a bus, or a tram off its route) stays a rigid box on its
-                    // single heading, exactly as before.
-                    spine: spines[id],
-                  };
-                })
-            : [];
-          doorAnimationsRef.current = doorAnimations;
-          source3d.setData(vehicleExtrusionCollection(states, map.getZoom() >= 16));
-          vehicles3dDrawnRef.current = draw3d;
-        }
-      }
-
-      // Update the next-stop highlight. Whether a vehicle is selected decides
-      // which end the highlight is read from, below.
-      let vehicleSelected = false;
-      let nextStopCoords: [number, number] | null = null;
-      let nextStopId: string | null = null;
-      let nextStopBoarding = false;
-
-      if (selectedTramIdRef.current && selectedTripDetailsRef.current) {
-        const selectedTram = latestTramsRef.current[selectedTramIdRef.current];
-        if (selectedTram) {
-          vehicleSelected = features.some((f) => f.properties.veh === selectedTramIdRef.current);
-
-          if (selectedTram.stop) {
-            lastSeenStopIdRef.current = selectedTram.stop;
-          }
-          const tripStops = selectedTripDetailsRef.current.stops;
-          const { nextStopIndex } = tripProgress(selectedTram, tripStops, {
-            lastSeenStopId: lastSeenStopIdRef.current,
-          });
-
-          if (nextStopIndex !== -1) {
-            const matchedStop = tripStops[nextStopIndex];
-            nextStopCoords = [matchedStop.lon, matchedStop.lat];
-            nextStopId = matchedStop.gtfsId ?? null;
-            // Doors open at the stop we are pointing at: the platform edge
-            // lights up while passengers are actually boarding.
-            nextStopBoarding = isBoardingAt(selectedTram, nextStopId);
-          }
-        }
-      }
-
-      // Arrival focus: the same highlight, read from the stop's end. There is
-      // no vehicle selected in this mode (App keeps the two exclusive), so the
-      // stop is the one the reader is walking to and the vehicle is whichever
-      // one is bringing the next departure to it.
-      const focus = arrivalFocusRef.current;
-      let focusVehicleMode: string | null = null;
-      if (!vehicleSelected && focus) {
-        const focusStopCoords = arrivalStopCoordsRef.current;
-        const focusFeature = features.find((f) => f.properties.veh === focus.vehicleId);
-        if (focusFeature && focusStopCoords) {
-          focusVehicleMode = focusFeature.properties.mode;
-          nextStopCoords = focusStopCoords;
-          nextStopId = focus.stopId;
-          // Doors open at the stop being watched: it is boarding right now.
-          nextStopBoarding = latestTramsRef.current[focus.vehicleId]?.drst === 1;
-        }
-      }
-
-      // Update next stop highlight source
-      const nextStopSource = map.getSource('next-stop-highlight-source') as maplibregl.GeoJSONSource;
-      if (nextStopSource) {
-        let nextStopMode = focusVehicleMode ? focusVehicleMode.toUpperCase() : 'TRAM';
-        if (selectedTramIdRef.current) {
-          const selectedTram = latestTramsRef.current[selectedTramIdRef.current];
-          if (selectedTram && selectedTram.mode) {
-            nextStopMode = selectedTram.mode.toUpperCase();
-          }
-        }
-        nextStopSource.setData({
-          type: 'FeatureCollection',
-          features: nextStopCoords ? [{
-            type: 'Feature',
-            geometry: {
-              type: 'Point',
-              coordinates: nextStopCoords,
-            },
-            properties: {
-              mode: nextStopMode,
-            },
-          }] : [],
-        });
-      }
-
-      // Phase 4 liveness: the stop a selected vehicle is heading for takes the
-      // gold of the selection ring across its furniture, and pulses. Rebuilding
-      // the furniture is only worth it when the highlight actually changed.
-      const highlightKey = `${nextStopId ?? ''}|${nextStopBoarding}`;
-      if (highlightKey !== stopHighlightRef.current.key) {
-        stopHighlightRef.current = {
-          key: highlightKey,
-          stopId: nextStopId,
-          boarding: nextStopBoarding,
-          coords: nextStopCoords,
-        };
-        const pulseSource = map.getSource('stop-pulse') as maplibregl.GeoJSONSource | undefined;
-        if (pulseSource) {
-          pulseSource.setData({
-            type: 'FeatureCollection',
-            features: nextStopCoords ? [{
-              type: 'Feature',
-              geometry: { type: 'Point', coordinates: nextStopCoords },
-              properties: {},
-            }] : [],
-          });
-        }
-        updateStopFurniture(map, mapThemeRef.current);
-        updateBikeFurniture(map, mapThemeRef.current);
-      }
-      // The pulse itself, driven off the same clock as the vehicles so the two
-      // beat together rather than drifting apart.
-      if (map.getLayer('stop-pulse-ring') && stopHighlightRef.current.coords) {
-        const phase = (now % 1600) / 1600;
-        map.setPaintProperty('stop-pulse-ring', 'circle-radius', 14 + 16 * phase);
-        map.setPaintProperty('stop-pulse-ring', 'circle-opacity', 0.28 * (1 - phase));
-        map.setPaintProperty('stop-pulse-ring', 'circle-stroke-opacity', 0.9 * (1 - phase));
-      }
-
-      // Smooth camera tracking
-      if (isFollowingRef.current && selectedTramIdRef.current) {
-        const activeFeature = features.find((f) => f.properties.veh === selectedTramIdRef.current);
-        if (activeFeature && !isInteractingRef.current) {
-          const [lng, lat] = activeFeature.geometry.coordinates;
-          const hdg = activeFeature.properties.hdg;
-          map.jumpTo({
-            center: [lng, lat],
-            bearing: hdg,
-          });
-        }
-      }
-    };
-
-    animationFrameRef.current = requestAnimationFrame(tick);
-  }
-
-  // Sync incoming tram data to animation refs
+  const animationRef = useRef<AnimationState>(createAnimationState(timeScale));
   useEffect(() => {
-    const now = performance.now();
-    const newPrev: Record<string, RenderPosition> = {};
-    const newTarget: Record<string, RenderPosition> = {};
+    animationRef.current.timeScale = timeScale;
+  }, [timeScale]);
 
-    // How long this glide window gets. The backend broadcasts once a second, so
-    // the gap between two snapshots is what the next window has to cover —
-    // measuring it rather than assuming a second keeps the vehicles moving at
-    // the right rate when the feed is late, instead of arriving early and
-    // standing still until it catches up.
-    if (lastUpdateRef.current > 0) {
-      const wallSec = (now - lastUpdateRef.current) / 1000;
-      const scale = Math.max(timeScaleRef.current, 0.1);
-      const floor = scale > 1 ? MIN_REPLAY_WINDOW_SEC : MIN_WINDOW_SEC;
-      windowSecRef.current = clamp(wallSec, floor, MAX_WINDOW_SEC);
-      // The travel this window covers, which at speed is the step the replay
-      // advanced by rather than the sliver of wall clock it took.
-      stepSecRef.current = windowSecRef.current * scale;
-      // Prediction is still bounded by MAX_WINDOW_SEC: a fast replay may hand
-      // over eight seconds of travel at a time, but carrying a vehicle eight
-      // seconds forward on a stale speed invents more than it draws. Nor is it
-      // ever carried further than the window itself covers.
-      dataWindowSecRef.current = clamp(
-        Math.min(stepSecRef.current, MAX_WINDOW_SEC),
-        MIN_WINDOW_SEC,
-        MAX_WINDOW_SEC
-      );
-    }
+  // What the loop reads from the app on every frame. Called rather than
+  // captured, because the loop outlives the render that started it.
+  const readFrame = (): FrameInputs => ({
+    vehicles: latestTramsRef.current,
+    selectedVehicleId: selectedTramIdRef.current,
+    selectedTripDetails: selectedTripDetailsRef.current,
+    arrivalFocus: arrivalFocusRef.current,
+    arrivalStopCoords: arrivalStopCoordsRef.current,
+    theme: mapThemeRef.current,
+    is3D: is3DRef.current,
+    always3DVehicles: always3DVehiclesRef.current,
+    isFollowing: isFollowingRef.current,
+  });
 
-    // Filter trams based on line filters
-    const filteredTrams = Object.entries(trams).filter((entry) => {
-      const tram = entry[1];
-      if (lineFilters.length === 0) return true;
-      return lineFilters.includes(tram.desi);
-    });
-
-    const newFixes: Record<string, VehicleFix> = {};
-    const newGlides: Record<string, Glide> = {};
-
-    filteredTrams.forEach(([id, tram]) => {
-      const previous = targetPositionsRef.current[id];
-      const fix = fixRef.current[id];
-      const limits = reckonLimits(tram.mode);
-
-      // Which way along the track a train is running is judged by comparing this
-      // report with the one before it — so the comparison has to be against the
-      // last *reported* placement, not against the last target. The target is
-      // normally a prediction that has deliberately run ahead of the feed, and a
-      // new report measured against it reads as travel backwards: the train
-      // turns round, and the next prediction carries it back down its own track
-      // until the following report turns it round again.
-      const previousPlacement: TrackPlacement | undefined = fix?.track ?? previous?.track;
-
-      // Rail vehicles are drawn on their rails, not where the feed claims they
-      // are: a metro because its underground position is dead-reckoned and
-      // drifts out of its tunnel, a tram because its position cannot tell the
-      // two tracks of a street apart and its journey's direction can.
-      //
-      // How stale the placement being continued from is — the age of the anchor
-      // it came from, or one snapshot when the vehicle has only a target — sets
-      // how far along its route the vehicle may have got since.
-      const placementAge = fix
-        ? ((now - fix.seenAt) / 1000) * Math.max(timeScaleRef.current, 0.1)
-        : dataWindowSecRef.current;
-      const snapped = placeOnRails(tram, previousPlacement, placementAge);
-      let target: RenderPosition = snapped
-        ? { lat: snapped.lat, lng: snapped.lng, hdg: snapped.hdg, track: snapped.track }
-        : { lat: tram.lat, lng: tram.lng, hdg: tram.hdg };
-
-      // Only a new *coordinate* is a new report. A metro repeats its position
-      // for seconds at a time while the timestamp keeps ticking, so testing the
-      // timestamp — as this once did — re-anchored the train on its own stale
-      // position every second and left the prediction below with nothing to do.
-      // Surface vehicles repeat a coordinate too, about a fifth of the time,
-      // and for them it almost always means what it looks like: standing still.
-      // Either way the anchor should only move when the vehicle does.
-      const moved = hasMoved(fix, tram);
-      // A metro that could not be snapped — no geometry yet, or too far off the
-      // network to trust — carries no anchor: its raw reported position is
-      // drawn, and the next successful snap starts a fresh one. A tram is
-      // anchored either way: unlike the metro its raw position is a real GPS
-      // fix, so it is worth dead-reckoning from whether or not it snapped.
-      const anchorable = tram.mode !== 'metro' || !!snapped;
-
-      if (anchorable && moved) {
-        // A real report: it becomes the new anchor everything is predicted
-        // from, and this window animates the correction into it.
-        newFixes[id] = {
-          ts: tram.ts,
-          lat: tram.lat,
-          lng: tram.lng,
-          seenAt: now,
-          spd: tram.spd ?? 0,
-          acc: tram.acc ?? 0,
-          hdg: tram.hdg,
-          limits,
-          track: snapped?.track,
-        };
-        newGlides[id] = { spd: tram.spd ?? 0, acc: tram.acc ?? 0, ageStart: 0, limits };
-
-        // Aim at where the vehicle will be at the *end* of this window rather
-        // than at the report itself. Targeting the bare report would draw it a
-        // whole window behind and step it back by the travel already drawn for
-        // it, so every report landed as a small reversal — once a second on
-        // every vehicle on the map.
-        const projected = predictPosition(newFixes[id], 0);
-        if (projected) {
-          target = projected;
-        }
-      } else if (anchorable && fix) {
-        // The coordinate stood still. Carry the vehicle on at the speed it last
-        // reported, and keep the anchor so the next real position corrects a few
-        // metres of prediction error rather than landing as a jump. One that has
-        // genuinely stopped reported zero and therefore stays put; one whose
-        // message froze mid-journey is carried for its mode's horizon and then
-        // holds, which past that horizon is what it is most likely doing anyway.
-        newFixes[id] = fix;
-        const age = ((now - fix.seenAt) / 1000) * Math.max(timeScaleRef.current, 0.1);
-        const predicted = predictPosition(fix, age);
-        if (predicted) {
-          target = predicted;
-        }
-        newGlides[id] = { spd: fix.spd, acc: fix.acc, ageStart: age, limits: fix.limits };
-      }
-
-      // Start the next glide from what is on screen right now — mid-glide when
-      // an update lands early, the last target when it lands on time — so a
-      // correction is eased in rather than snapped back to.
-      const from = renderedPositionsRef.current[id] || previous || target;
-
-      // Unless gliding there would be a lie. The feed does occasionally fling a
-      // coordinate right across the city — single steps implying 427 km/h for a
-      // tram, 1198 for a bus and 2867 for a train all appear in a five-minute
-      // capture — and a smooth glide renders one of those as a vehicle
-      // sprinting down a street it was never on. Past a plainly impossible
-      // speed the honest drawing is a jump: the vehicle is simply somewhere
-      // else now.
-      //
-      // Four times the mode's top speed is where that line sits, and the metro
-      // is what puts it there rather than the surface modes. A metro's
-      // coordinate is held for seconds and then arrives fifty metres on, so its
-      // ordinary steps are large by construction: at twice top speed this would
-      // fire on 96% of them and snap away the very corrections the metro's
-      // dead reckoning exists to smooth. At four times it fires on 0.4% of
-      // metro steps, 0.04% of tram steps, 0.02% of train steps and no bus step
-      // at all — the outliers, and nothing else.
-      // Measured against the history the window covers, not against the wall
-      // clock it took: at sixty times a perfectly ordinary tram moves eight
-      // seconds' worth between snapshots, and a guard sized for one second
-      // would call every one of those a teleport and snap it into place —
-      // turning the whole replay into a slideshow.
-      const leap =
-        distanceBetween(from, target) >
-        limits.maxSpeed * 4 * Math.max(stepSecRef.current, MIN_WINDOW_SEC);
-      newPrev[id] = leap ? target : from;
-      newTarget[id] = target;
-    });
-
-    prevPositionsRef.current = newPrev;
-    targetPositionsRef.current = newTarget;
-    // Rebuilt rather than mutated, so a vehicle that left the feed does not keep
-    // being predicted forward forever.
-    fixRef.current = newFixes;
-    glideRef.current = newGlides;
-    lastUpdateRef.current = now;
-
-    // Every vehicle carries its own traffic light priority exchange, so the
-    // junctions it is talking to are refreshed from the same message the
-    // positions came in on. The signature check inside makes this a no-op
-    // unless a request or an answer actually changed.
+  // A new snapshot: work out where every vehicle is gliding to, then refresh
+  // the junctions they are talking to from the same message.
+  useEffect(() => {
+    receivePositions(animationRef.current, trams, lineFilters);
     const map = mapRef.current;
     if (map && map.getStyle()) updateSignalPriority(map);
   }, [trams, lineFilters]);
+
+  // Sync incoming tram data to animation refs
 
 
   // Setup programmatically created sources, layers, and images
@@ -2176,10 +1313,15 @@ export const Map: React.FC<MapProps> = ({
     });
 
     // Start interpolation tick loop
-    startAnimationLoop();
+    const stopAnimation = startAnimationLoop(map, animationRef.current, readFrame, {
+      rebuildFurniture: () => {
+        updateStopFurniture(map, mapThemeRef.current);
+        updateBikeFurniture(map, mapThemeRef.current);
+      },
+    });
 
     return () => {
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      stopAnimation();
       if (wheelTimeout) clearTimeout(wheelTimeout);
       if (mapContainer) {
         mapContainer.removeEventListener('wheel', handleWheel);
