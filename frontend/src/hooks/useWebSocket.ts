@@ -1,18 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PositionsMessage } from '../types';
+import { OPTIONAL_MODES, type ModeFlags, type OptionalMode } from '../lib/modes';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
-// The optional feeds a client can ask for. Trams always stream; these are
-// ingested by the backend only while at least one client has opted in, because
-// they are either huge (buses) or of narrower interest (metro, train, ferry).
-export type OptionalMode = 'bus' | 'metro' | 'train' | 'ferry';
-
 interface UseWebSocketOptions {
   onMessage: (data: PositionsMessage) => void;
-  // Which optional modes this client wants. Sent to the backend on connect and
-  // whenever the user toggles one.
-  wantsModes: Record<OptionalMode, boolean>;
+  // Which modes this client wants streamed. Sent to the backend on connect and
+  // whenever the user toggles one; trams always stream, so only the optional
+  // feeds go on the wire.
+  wantsModes: ModeFlags;
 }
 
 export function useWebSocket({ onMessage, wantsModes }: UseWebSocketOptions) {
@@ -20,11 +17,14 @@ export function useWebSocket({ onMessage, wantsModes }: UseWebSocketOptions) {
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectDelayRef = useRef<number>(1000); // Start reconnect delay at 1s
-  const wantsModesRef = useRef<Record<OptionalMode, boolean>>(wantsModes);
+  const wantsModesRef = useRef<ModeFlags>(wantsModes);
 
-  const sendModePrefs = (modes: Record<OptionalMode, boolean>) => {
+  const sendModePrefs = (wanted: ModeFlags) => {
     const socket = socketRef.current;
     if (socket && socket.readyState === WebSocket.OPEN) {
+      const modes = Object.fromEntries(
+        OPTIONAL_MODES.map((mode) => [mode, wanted[mode]])
+      ) as Record<OptionalMode, boolean>;
       socket.send(JSON.stringify({ modes }));
     }
   };

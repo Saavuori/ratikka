@@ -141,17 +141,7 @@ func fetchTrafficLightLayer(r *http.Request, h *Handlers, typeName, kind string,
 func (h *Handlers) TrafficLights(w http.ResponseWriter, r *http.Request) {
 	const key = "traffic-lights:all"
 
-	if cached, ok := h.apiCache.Get(key); ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(cached)
-		return
-	}
-
-	dataInterface, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
-		if cached, ok := h.apiCache.Get(key); ok {
-			return cached, nil
-		}
-
+	serveCached(h, w, key, 24*time.Hour, func() (trafficLightsFeatureCollection, error) {
 		fc := trafficLightsFeatureCollection{
 			Type:     "FeatureCollection",
 			Features: make([]trafficLightFeature, 0, 600),
@@ -160,24 +150,9 @@ func (h *Handlers) TrafficLights(w http.ResponseWriter, r *http.Request) {
 		for typeName, kind := range trafficLightLayers {
 			if err := fetchTrafficLightLayer(r, h, typeName, kind, &fc); err != nil {
 				log.Printf("traffic-lights layer %s fetch error: %v\n", typeName, err)
-				return nil, err
+				return trafficLightsFeatureCollection{}, err
 			}
 		}
-
-		jsonBytes, err := json.Marshal(fc)
-		if err != nil {
-			return nil, err
-		}
-
-		h.apiCache.Set(key, jsonBytes, 24*time.Hour)
-		return jsonBytes, nil
+		return fc, nil
 	})
-
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(dataInterface.([]byte))
 }
