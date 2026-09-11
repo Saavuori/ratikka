@@ -10,4 +10,4 @@ export type {
 } from './types';
 export { startAnimationLoop } from './loop';
 export { receivePositions } from './positions';
-export { placeOnRails, predictPosition } from './rails';
+export { placeOnRails, predictPosition, rebuildTracks, setTimeScale } from './rails';

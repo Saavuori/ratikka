@@ -1,5 +1,6 @@
 import type { VehiclePosition } from '../../types';
 import {
+  buildPatternTracks,
   hfpDirectionId,
   isHelsinkiCentralStationZone,
   isSnappedMode,
@@ -18,7 +19,7 @@ import {
   TRAM_TRACK_SWITCH_MARGIN,
   TRAM_CONTINUITY_SLACK,
 } from './types';
-import type { RenderPosition, VehicleFix } from './types';
+import type { AnimationState, RenderPosition, VehicleFix } from './types';
 
 export const placeOnRails = (
   tram: VehiclePosition,
@@ -122,3 +123,31 @@ export const predictPosition = (
   const moved = advanceAlongHeading(fix.lat, fix.lng, fix.hdg, advance);
   return { lat: moved.lat, lng: moved.lng, hdg: fix.hdg };
 };
+/**
+ * Index the rail geometry for every line currently being snapped.
+ *
+ * Indexing walks every point of every pattern, so a line is rebuilt only when
+ * the patterns it was built from actually change; lines that have left the feed
+ * drop out rather than being carried forever.
+ */
+export function rebuildTracks(
+  state: AnimationState,
+  routePatterns: Record<string, unknown[] | undefined>,
+): void {
+  const tracks: Record<string, RailTrack[]> = {};
+  for (const [line, patterns] of Object.entries(routePatterns)) {
+    if (!patterns || patterns.length === 0) continue;
+    if (state.trackSources[line] === patterns) {
+      tracks[line] = state.tracks[line];
+      continue;
+    }
+    state.trackSources[line] = patterns;
+    tracks[line] = buildPatternTracks(patterns as Parameters<typeof buildPatternTracks>[0]);
+  }
+  state.tracks = tracks;
+}
+
+/** How fast history is playing back. One while the live feed is on. */
+export function setTimeScale(state: AnimationState, timeScale: number): void {
+  state.timeScale = timeScale;
+}

@@ -17,7 +17,9 @@ import { decodePolyline } from '../lib/polyline';
 import type { ModeFlags, TransportMode } from '../lib/modes';
 import {
   createAnimationState,
+  rebuildTracks,
   receivePositions,
+  setTimeScale,
   startAnimationLoop,
 } from '../map/animation';
 import type { AnimationState, FrameInputs } from '../map/animation';
@@ -46,11 +48,9 @@ import {
   getRouteColor,
 } from '../lib/routeColors';
 import {
-  buildPatternTracks,
   snappedLinesInFeed,
 } from '../lib/railTracks';
 import { useSyncRef } from '../hooks/useSyncRef';
-import type { RailTrack } from '../lib/railTracks';
 import { assignCorridorSlots, directionalPaths } from '../lib/routeSlots';
 import type { RoutePath } from '../lib/routeSlots';
 import {
@@ -99,7 +99,6 @@ import {
   TRAFFIC_LIGHT_ICON_LAYER,
   TRAFFIC_LIGHT_SELECTION_LAYER,
 } from '../lib/trafficLightModels';
-import type { JunctionPriorityIndex } from '../lib/trafficLightModels';
 import type { BikeStationsFeatureCollection, TrafficLightFeature } from '../types';
 import { useTrafficLights } from '../hooks/useTrafficLights';
 import { useRoutePatterns } from '../hooks/useRoutePatterns';
@@ -269,19 +268,10 @@ export const Map: React.FC<MapProps> = ({
   // Name/code/mode for the stops currently carrying furniture, so a click on a
   // shelter can open the same popup a click on its sign would.
   const stopFurnitureMetaRef = useRef<Record<string, { name: string; code: string; mode: string }>>({});
-  // The stop a selected vehicle is heading for, and whether it is boarding
-  // there right now. Keyed so the furniture is only rebuilt when it changes.
-  const stopHighlightRef = useRef<{
-    key: string;
-    stopId: string | null;
-    boarding: boolean;
-    coords: [number, number] | null;
-  }>({ key: '', stopId: null, boarding: false, coords: null });
   const mapThemeRef = useRef<MapTheme>(mapTheme);
   const isFollowingRef = useRef<boolean>(isFollowing);
   useSyncRef(mapThemeRef, mapTheme);
   useSyncRef(isFollowingRef, isFollowing);
-  const isInteractingRef = useRef<boolean>(false);
   // Latest live city-bike station GeoJSON, refreshed on an interval. Kept in a
   // ref so a theme/style reload can re-seed the recreated source without
   // waiting for the next fetch.
@@ -299,10 +289,6 @@ export const Map: React.FC<MapProps> = ({
   // theme/style reload recreates it.
   const trafficLightsDataRef = useRef<TrafficLightFeature[]>([]);
   const trafficLightFeatures = useTrafficLights();
-  // Which junctions a vehicle is currently asking for a green, folded from the
-  // `tlp` field on the positions. Kept as a ref because it is read while
-  // building the markers, which is not a render.
-  const junctionPrioritiesRef = useRef<JunctionPriorityIndex>(new globalThis.Map());
   // Signatures: the junction source is only rebuilt when the set of live
   // exchanges actually changes, not on every positions message.
   const junctionPrioritySigRef = useRef<string>('');
@@ -313,10 +299,9 @@ export const Map: React.FC<MapProps> = ({
   useSyncRef(journeyEndpointsRef, journeyEndpoints);
   const journeyFitKeyRef = useRef<string>('');
 
-  const lastSeenStopIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    lastSeenStopIdRef.current = null;
+    animationRef.current.lastSeenStopId = null;
   }, [selectedTramId]);
 
 
@@ -431,7 +416,7 @@ export const Map: React.FC<MapProps> = ({
       centre.lat.toFixed(4),
       map.getZoom().toFixed(2),
       map.getBearing().toFixed(0),
-      stopHighlightRef.current.key,
+      animationRef.current.stopHighlight.key,
     ].join('|');
     if (signature === stopFurnitureSigRef.current) return;
     stopFurnitureSigRef.current = signature;
@@ -466,7 +451,7 @@ export const Map: React.FC<MapProps> = ({
       }
     }
 
-    const highlightId = stopHighlightRef.current.stopId?.replace(/^HSL:/, '') ?? null;
+    const highlightId = animationRef.current.stopHighlight.stopId?.replace(/^HSL:/, '') ?? null;
     const seen = new Set<string>();
     const meta: Record<string, { name: string; code: string; mode: string }> = {};
     const stops: Array<{ state: StopFurnitureState; distance: number }> = [];
@@ -508,7 +493,7 @@ export const Map: React.FC<MapProps> = ({
           bearing,
           hasPlatform,
           highlighted: highlightId !== null && stopId === highlightId,
-          boarding: stopHighlightRef.current.boarding && stopId === highlightId,
+          boarding: animationRef.current.stopHighlight.boarding && stopId === highlightId,
         },
         distance: Math.hypot(lng - centre.lng, lat - centre.lat),
       });
@@ -625,7 +610,6 @@ export const Map: React.FC<MapProps> = ({
       .join('|');
     if (signature === junctionPrioritySigRef.current) return;
     junctionPrioritySigRef.current = signature;
-    junctionPrioritiesRef.current = priorities;
 
     const source = map.getSource(TRAFFIC_LIGHT_SOURCE) as maplibregl.GeoJSONSource | undefined;
     if (source && typeof source.setData === 'function') {
@@ -839,23 +823,21 @@ export const Map: React.FC<MapProps> = ({
   const snappedLines = useMemo(() => snappedLinesInFeed(trams), [trams]);
   const routePatterns = useRoutePatterns(snappedLines);
 
-  // Indexed track geometry, per line. Rebuilt only when a line's polylines
-  // actually change: indexing walks every point of every pattern.
-  const tracksRef = useRef<Record<string, RailTrack[]>>({});
-  const patternSourceRef = useRef<Record<string, unknown>>({});
-
+  /**
+   * Everything the animation remembers between frames — glides, dead-reckoning
+   * fixes, rail geometry, clocks. A plain object rather than twenty refs: none
+   * of it should cause a render, and the loop writes to it sixty times a
+   * second. Created once per mount.
+   */
+  const animationRef = useRef<AnimationState>(createAnimationState(timeScale));
   useEffect(() => {
-    const tracks: Record<string, RailTrack[]> = {};
-    Object.entries(routePatterns).forEach(([line, patterns]) => {
-      if (!patterns || patterns.length === 0) return;
-      if (patternSourceRef.current[line] === patterns) {
-        tracks[line] = tracksRef.current[line];
-        return;
-      }
-      patternSourceRef.current[line] = patterns;
-      tracks[line] = buildPatternTracks(patterns);
-    });
-    tracksRef.current = tracks;
+    setTimeScale(animationRef.current, timeScale);
+  }, [timeScale]);
+
+  // Rail geometry for the lines being snapped, kept with the animation that
+  // snaps them.
+  useEffect(() => {
+    rebuildTracks(animationRef.current, routePatterns);
   }, [routePatterns]);
 
   /**
@@ -874,17 +856,6 @@ export const Map: React.FC<MapProps> = ({
    * direction from the feed, and where the feed omits it, by whether the rails
    * run the way the tram is heading.
    */
-
-  /**
-   * Everything the animation remembers between frames — glides, dead-reckoning
-   * fixes, rail geometry, clocks. A plain object rather than twenty refs: none
-   * of it should cause a render, and the loop writes to it sixty times a
-   * second. Created once per mount.
-   */
-  const animationRef = useRef<AnimationState>(createAnimationState(timeScale));
-  useEffect(() => {
-    animationRef.current.timeScale = timeScale;
-  }, [timeScale]);
 
   // What the loop reads from the app on every frame. Called rather than
   // captured, because the loop outlives the render that started it.
@@ -1279,19 +1250,19 @@ export const Map: React.FC<MapProps> = ({
     let wheelTimeout: ReturnType<typeof setTimeout> | null = null;
 
     const handleWheel = () => {
-      isInteractingRef.current = true;
+      animationRef.current.interacting = true;
       if (wheelTimeout) clearTimeout(wheelTimeout);
       wheelTimeout = setTimeout(() => {
-        isInteractingRef.current = false;
+        animationRef.current.interacting = false;
       }, 800); // Resume tracking 800ms after last scroll tick
     };
 
     const handleInteractionStart = () => {
-      isInteractingRef.current = true;
+      animationRef.current.interacting = true;
     };
 
     const handleInteractionEnd = () => {
-      isInteractingRef.current = false;
+      animationRef.current.interacting = false;
     };
 
     if (mapContainer) {

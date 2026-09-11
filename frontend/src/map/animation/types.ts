@@ -153,8 +153,13 @@ export interface AnimationState {
   rendered: Record<string, RenderPosition>;
   /** Door open/shut animations in flight, keyed by vehicle. */
   doors: Record<string, DoorAnimation>;
-  /** Rail geometry per pattern, built once and reused. */
+  /**
+   * Rail geometry per line, and the pattern payload each was built from.
+   * Indexing walks every point of every pattern, so a line is only rebuilt
+   * when its polylines actually change.
+   */
   tracks: Record<string, RailTrack[]>;
+  trackSources: Record<string, unknown>;
   /**
    * How long the current glide window is on the wall clock, how much travel it
    * covers, and how far prediction may carry a vehicle into it. See timeScale.
@@ -194,6 +199,7 @@ export function createAnimationState(timeScale = 1): AnimationState {
     rendered: {},
     doors: {},
     tracks: {},
+    trackSources: {},
     windowSec: 1,
     stepSec: 1,
     dataWindowSec: 1,
