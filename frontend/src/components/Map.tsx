@@ -13,7 +13,10 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import type { FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
-import type { ModeFlags, TransportMode } from '../lib/modes';
+import type { ModeFlags } from '../lib/modes';
+import { bindMapInteractions } from '../map/interactions';
+import { updateStopVisibility } from '../map/overlays/stopVisibility';
+import { NETWORK_COLORS } from '../lib/routeColors';
 import { createOverlayState, bikeAvailabilityChanged, invalidateOverlays } from '../map/overlays/state';
 import type { OverlayState } from '../map/overlays/state';
 import { updateStopFurniture, updateBikeFurniture } from '../map/overlays/furniture';
@@ -40,7 +43,6 @@ import {
   updateRouteVisibility,
 } from '../map/routeNetwork';
 import {
-  STOP_MODE,
   installMapLayers,
   update3DMode,
   updateMetroSignVisibility,
@@ -56,9 +58,6 @@ import {
   SATELLITE_ATTRIBUTION,
 } from '../lib/satelliteBasemap';
 import {
-  STOP_FURNITURE_LAYER,
-} from '../lib/stopModels';
-import {
   STOP_CIRCLE_MIN_ZOOM,
   STATION_CIRCLE_MIN_ZOOM,
   STOP_CIRCLE_FADE_ZOOM,
@@ -70,14 +69,10 @@ import {
   STOP_CIRCLE_LAYERS,
   STATION_CIRCLE_LAYERS,
 } from '../lib/stopCircleStyle';
-import {
-  BIKE_STATION_LAYER,
-} from '../lib/bikeStationModels';
 import { vehicles3DEnabled } from '../lib/vehicleAnimation';
 import { fetchBikeStations, fetchMapConfig } from '../lib/api';
 import {
   TRAFFIC_LIGHT_SOURCE,
-  TRAFFIC_LIGHT_ICON_LAYER,
   TRAFFIC_LIGHT_SELECTION_LAYER,
 } from '../lib/trafficLightModels';
 import type { BikeStationsFeatureCollection, TrafficLightFeature } from '../types';
@@ -85,16 +80,6 @@ import { useTrafficLights } from '../hooks/useTrafficLights';
 import { useRoutePatterns } from '../hooks/useRoutePatterns';
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
-
-// The sign-board layer filters on GTFS mode names, in the order the style
-// stacks them.
-const GTFS_SIGN_MODES: Array<{ mode: TransportMode; gtfs: string }> = [
-  { mode: 'tram', gtfs: 'TRAM' },
-  { mode: 'bus', gtfs: 'BUS' },
-  { mode: 'metro', gtfs: 'SUBWAY' },
-  { mode: 'train', gtfs: 'RAIL' },
-  { mode: 'ferry', gtfs: 'FERRY' },
-];
 
 /** Carto's dark-matter: the dark theme's basemap, and the labels satellite keeps. */
 const DARK_STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
@@ -424,7 +409,6 @@ export const Map: React.FC<MapProps> = ({
 
 
   // Setup programmatically created sources, layers, and images
-  const interactionsBoundMapRef = useRef<maplibregl.Map | null>(null);
   const setupCustomMapElements = (map: maplibregl.Map) => {
     if (!apiKey) return;
 
@@ -524,8 +508,23 @@ export const Map: React.FC<MapProps> = ({
 
     // Ensure all bus stops (including trunk stops) render in blue color in light theme
     if (map.getLayer('stops_trunk')) {
-      map.setPaintProperty('stops_trunk', 'circle-color', '#007ac9');
+      map.setPaintProperty('stops_trunk', 'circle-color', NETWORK_COLORS.bus.line);
     }
+
+    bindMapInteractions(
+      map,
+      callbacksRef.current,
+      {
+        vehicles: () => latestTramsRef.current,
+        stopFurnitureMeta: () => overlayRef.current.stopFurniture.meta,
+        bikeStations: () => bikeStationsDataRef.current,
+      },
+      (settled) => {
+        overlaysRef.current.stopFurniture(settled, mapThemeRef.current);
+        overlaysRef.current.bikeFurniture(settled, mapThemeRef.current);
+        overlaysRef.current.arrivalLabelStops(settled);
+      },
+    );
 
 
     // Give the stop discs the same treatment in both themes. In the light theme
@@ -553,149 +552,6 @@ export const Map: React.FC<MapProps> = ({
 
 
     // Register all layer-specific interactions once per map instance. MapLibre
-    // layer events are delegated by layer id, so they survive style/theme
-    // swaps — re-binding on every style.load would stack duplicate handlers.
-    if (interactionsBoundMapRef.current === map) return;
-    interactionsBoundMapRef.current = map;
-
-    const handleTramClick = (e: maplibregl.MapLayerMouseEvent) => {
-      if (!e.features || e.features.length === 0) return;
-      const feat = e.features[0];
-      const vehId = feat.properties?.veh;
-      const matchingTram = latestTramsRef.current[vehId];
-      if (matchingTram) {
-        callbacksRef.current.onSelectTram(matchingTram);
-      }
-    };
-    // The body symbol is the primary hit target; the aura circle is often
-    // faint/zero-opacity for stationary vehicles, so bind both.
-    map.on('click', 'trams-body', handleTramClick);
-    map.on('click', 'trams-circles', handleTramClick);
-    map.on('click', 'vehicles-3d', handleTramClick);
-
-    const handleStopClick = (e: maplibregl.MapLayerMouseEvent) => {
-      if (!e.features || e.features.length === 0) return;
-      const feat = e.features[0];
-      // Support both Digitransit tile properties (gtfsId, name, code)
-      // and JORE tile properties (stopId, nameFi, shortId)
-      const rawId = feat.properties?.gtfsId || feat.properties?.stopId || feat.properties?.id || feat.id;
-      const name = feat.properties?.name || feat.properties?.nameFi || 'Unknown Stop';
-      const code = feat.properties?.code || feat.properties?.shortId || '';
-
-      const coordinates = feat.geometry.type === 'Point' ? feat.geometry.coordinates : undefined;
-      const lng = coordinates ? coordinates[0] : undefined;
-      const lat = coordinates ? coordinates[1] : undefined;
-      // JORE tiles call it `mode`, Digitransit v3 stops call it `type`.
-      const mode = feat.properties?.mode || feat.properties?.type || 'TRAM';
-      const isTrunkStop = feat.properties?.isTrunkStop === true || feat.properties?.isTrunkStop === 'true';
-
-      if (rawId) {
-        let stopId = rawId.toString();
-        if (!stopId.startsWith('HSL:')) {
-          stopId = 'HSL:' + stopId;
-        }
-        callbacksRef.current.onSelectStop(stopId, name, code, lat, lng, mode, isTrunkStop);
-      }
-    };
-
-    map.on('click', 'stops_tram', handleStopClick);
-    map.on('click', 'stops_metro', handleStopClick);
-    map.on('click', 'stops_train', handleStopClick);
-    map.on('click', 'stops_bus', handleStopClick);
-    map.on('click', 'stops_trunk', handleStopClick);
-    map.on('click', 'stops_signs', handleStopClick);
-
-    // A click on the 3D furniture opens the same popup as its sign. The
-    // extrusions carry only a stop id, so the rest comes from the meta table
-    // built alongside them.
-    map.on('click', STOP_FURNITURE_LAYER, (e: maplibregl.MapLayerMouseEvent) => {
-      const stopId = e.features?.[0]?.properties?.stopId;
-      if (!stopId) return;
-      const info = overlayRef.current.stopFurniture.meta[String(stopId)];
-      if (!info) return;
-      callbacksRef.current.onSelectStop(
-        `HSL:${stopId}`, info.name, info.code, e.lngLat.lat, e.lngLat.lng, info.mode, false,
-      );
-    });
-
-    const handleBikeClick = (e: maplibregl.MapLayerMouseEvent) => {
-      if (!e.features || e.features.length === 0) return;
-      const feat = e.features[0];
-      const stationId = feat.properties?.id || feat.properties?.stationId;
-      const name = feat.properties?.name || 'Bike Station';
-      if (stationId) {
-        callbacksRef.current.onSelectBikeStation({ id: stationId, name });
-      }
-    };
-
-    map.on('click', 'citybike_gauge', handleBikeClick);
-
-    // Up close the rack is the station, so clicking one opens the same panel.
-    // The name lives in the availability payload rather than in the extrusion
-    // properties, which carry only what the geometry needs.
-    map.on('click', BIKE_STATION_LAYER, (e: maplibregl.MapLayerMouseEvent) => {
-      if (!e.features || e.features.length === 0) return;
-      const stationId = e.features[0].properties?.stationId;
-      if (!stationId) return;
-      const id = String(stationId);
-      const known = bikeStationsDataRef.current?.features
-        .find((f) => f.properties.stationId === id);
-      callbacksRef.current.onSelectBikeStation({ id, name: known?.properties.name || 'Bike Station' });
-    });
-
-    // A junction is a thing you can select, because the exchange it is having
-    // has two sides: the vehicle panel says what this tram is asking, and the
-    // junction panel says who is asking *this crossing* and who it has
-    const handleJunctionClick = (e: maplibregl.MapLayerMouseEvent) => {
-      const raw = e.features?.[0]?.properties?.id;
-      const junctionId = Number(raw);
-      if (!Number.isFinite(junctionId)) return;
-      callbacksRef.current.onSelectJunction(junctionId);
-    };
-
-    map.on('click', TRAFFIC_LIGHT_ICON_LAYER, handleJunctionClick);
-
-    // Mouse Hover Effects
-    const setCursorPointer = () => (map.getCanvas().style.cursor = 'pointer');
-    const resetCursor = () => (map.getCanvas().style.cursor = '');
-
-    map.on('mouseenter', 'trams-body', setCursorPointer);
-    map.on('mouseleave', 'trams-body', resetCursor);
-    map.on('mouseenter', 'trams-circles', setCursorPointer);
-    map.on('mouseleave', 'trams-circles', resetCursor);
-    map.on('mouseenter', 'vehicles-3d', setCursorPointer);
-    map.on('mouseleave', 'vehicles-3d', resetCursor);
-    map.on('mouseenter', 'stops_tram', setCursorPointer);
-    map.on('mouseleave', 'stops_tram', resetCursor);
-    map.on('mouseenter', 'stops_metro', setCursorPointer);
-    map.on('mouseleave', 'stops_metro', resetCursor);
-    map.on('mouseenter', 'stops_train', setCursorPointer);
-    map.on('mouseleave', 'stops_train', resetCursor);
-    map.on('mouseenter', 'stops_bus', setCursorPointer);
-    map.on('mouseleave', 'stops_bus', resetCursor);
-    map.on('mouseenter', 'stops_trunk', setCursorPointer);
-    map.on('mouseleave', 'stops_trunk', resetCursor);
-    map.on('mouseenter', 'stops_signs', setCursorPointer);
-    map.on('mouseleave', 'stops_signs', resetCursor);
-    map.on('mouseenter', STOP_FURNITURE_LAYER, setCursorPointer);
-    map.on('mouseleave', STOP_FURNITURE_LAYER, resetCursor);
-    map.on('mouseenter', 'citybike_gauge', setCursorPointer);
-    map.on('mouseleave', 'citybike_gauge', resetCursor);
-    map.on('mouseenter', BIKE_STATION_LAYER, setCursorPointer);
-    map.on('mouseleave', BIKE_STATION_LAYER, resetCursor);
-    map.on('mouseenter', TRAFFIC_LIGHT_ICON_LAYER, setCursorPointer);
-    map.on('mouseleave', TRAFFIC_LIGHT_ICON_LAYER, resetCursor);
-
-    // Stop furniture is rebuilt when the view settles, not per frame. `idle`
-    // rather than `moveend` because the platform polygons it orients itself
-    // from arrive with the tiles, which land after the move has ended.
-    const rebuildFurniture = () => {
-      overlaysRef.current.stopFurniture(map, mapThemeRef.current);
-      overlaysRef.current.bikeFurniture(map, mapThemeRef.current);
-      overlaysRef.current.arrivalLabelStops(map);
-    };
-    map.on('moveend', rebuildFurniture);
-    map.on('idle', rebuildFurniture);
   };
 
   // Initial Map Setup
@@ -840,7 +696,6 @@ export const Map: React.FC<MapProps> = ({
       window.removeEventListener('mouseup', handleInteractionEnd);
       window.removeEventListener('touchend', handleInteractionEnd);
       if (mapRef.current === map) mapRef.current = null;
-      if (interactionsBoundMapRef.current === map) interactionsBoundMapRef.current = null;
       map.remove();
     };
   }, [apiKey]);
@@ -1097,117 +952,19 @@ export const Map: React.FC<MapProps> = ({
     }
   }, [lineFilters, modes, showRoutes, selectedLine, routeGeometries]);
 
-  // Dynamic Stop Route Filtering
+  // Which stops the basemap draws: their mode's toggle, narrowed to the
+  // highlighted lines' stops while a filter or a selection is active.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.getStyle()) return;
-
-    // Build the list of active lines we want to show stops for
-    const activeRoutes = [...lineFilters];
-    const selectedTram = selectedTramId ? trams[selectedTramId] : null;
-    if (selectedTram && !activeRoutes.includes(selectedTram.desi)) {
-      activeRoutes.push(selectedTram.desi);
-    }
-
-    const allowedStopIdsSet = new Set<string>();
-    activeRoutes.forEach((line) => {
-      const routeData = routeGeometries[line];
-      if (routeData && routeData.stops) {
-        routeData.stops.forEach((id) => {
-          allowedStopIdsSet.add(id);
-          allowedStopIdsSet.add(id.replace(/^HSL:/, ''));
-        });
-      }
+    updateStopVisibility(map, {
+      modes,
+      lineFilters,
+      selectedVehicleId: selectedTramId,
+      vehicles: trams,
+      routeGeometries,
+      selectedStopId,
     });
-    const allowedStopIds = Array.from(allowedStopIdsSet);
-
-    const cleanStopId = selectedStopId ? selectedStopId.replace(/^HSL:/, '') : '';
-    const excludeSelectedStopFilter: maplibregl.ExpressionSpecification = selectedStopId
-      ? [
-          '!',
-          [
-            'any',
-            ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', [selectedStopId, cleanStopId]]],
-            ['==', ['to-string', ['id']], selectedStopId],
-            ['==', ['to-string', ['id']], cleanStopId]
-          ]
-        ]
-      : ['literal', true]; // Always true when no stop is selected
-
-
-    // Stops follow their mode's toggle, and narrow to the highlighted lines'
-    // stops while a line filter or vehicle selection is active. Disc size is
-    // not settled here — a quay takes the street-stop radius and a station the
-    // larger one, both from where the layers are styled.
-    //
-    // The bus layers are hidden by visibility rather than by an impossible
-    // filter: they are the only ones the style also draws at other zooms.
-    const stopLayers: Array<{
-      id: string;
-      match: maplibregl.ExpressionSpecification;
-      show: boolean;
-      hideWith?: 'visibility';
-    }> = [
-      { id: 'stops_tram', match: ['==', ['get', 'mode'], 'TRAM'], show: modes.tram },
-      { id: 'stops_metro', match: ['==', STOP_MODE, 'SUBWAY'], show: modes.metro },
-      { id: 'stops_train', match: ['==', STOP_MODE, 'RAIL'], show: modes.train },
-      { id: 'stops_ferry', match: ['==', STOP_MODE, 'FERRY'], show: modes.ferry },
-      { id: 'stops_bus', match: ['==', ['get', 'mode'], 'BUS'], show: modes.bus, hideWith: 'visibility' },
-      { id: 'stops_trunk', match: ['==', ['get', 'mode'], 'BUS'], show: modes.bus, hideWith: 'visibility' },
-    ];
-
-    const NOTHING: maplibregl.FilterSpecification = ['==', '1', '2'];
-
-    for (const { id, match, show, hideWith } of stopLayers) {
-      if (!map.getLayer(id)) continue;
-      // Narrowed to specific lines, but none of their stops are in view: there
-      // is nothing to draw, which is not the same as the mode being off.
-      const narrowedToNothing = activeRoutes.length > 0 && allowedStopIds.length === 0;
-      const visible = show && !narrowedToNothing;
-
-      if (hideWith === 'visibility') {
-        map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
-        if (!visible) continue;
-      } else if (!visible) {
-        map.setFilter(id, NOTHING);
-        continue;
-      }
-
-      const clauses: maplibregl.ExpressionSpecification[] = [match];
-      if (activeRoutes.length > 0) {
-        clauses.push([
-          'in',
-          ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']],
-          ['literal', allowedStopIds],
-        ]);
-      }
-      clauses.push(excludeSelectedStopFilter as maplibregl.ExpressionSpecification);
-      map.setFilter(id, ['all', ...clauses]);
-    }
-
-    // 4. Stops Signs Symbol Layer
-    const signModes = GTFS_SIGN_MODES.filter(({ mode }) => modes[mode]).map(({ gtfs }) => gtfs);
-
-    if (map.getLayer('stops_signs')) {
-      if (signModes.length === 0) {
-        map.setFilter('stops_signs', ['==', '1', '2']);
-      } else if (activeRoutes.length === 0) {
-        map.setFilter('stops_signs', [
-          'all',
-          ['in', STOP_MODE, ['literal', signModes]],
-          excludeSelectedStopFilter
-        ]);
-      } else if (allowedStopIds.length === 0) {
-        map.setFilter('stops_signs', ['==', '1', '2']);
-      } else {
-        map.setFilter('stops_signs', [
-          'all',
-          ['in', STOP_MODE, ['literal', signModes]],
-          ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]],
-          excludeSelectedStopFilter
-        ]);
-      }
-    }
   }, [lineFilters, selectedTramId, trams, routeGeometries, modes, selectedStopId]);
 
   return (
