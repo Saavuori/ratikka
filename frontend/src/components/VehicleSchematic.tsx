@@ -1,6 +1,7 @@
 import React from 'react';
 import { getModeAccent } from '../lib/routeColors';
 import { occupancyColor, occupancyLabel } from '../lib/occupancy';
+import './vehicleSchematic.css';
 
 interface VehicleSchematicProps {
   /** Vehicle mode as the feed reports it: `tram`, `bus`, `metro`, `train` or `ferry`. */

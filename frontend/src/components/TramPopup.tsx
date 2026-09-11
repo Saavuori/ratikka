@@ -15,6 +15,8 @@ import {
 } from '../lib/trafficLightModels';
 import { tripProgress } from '../lib/nextStop';
 import { VehicleSchematic } from './VehicleSchematic';
+import { operatorName } from '../lib/operators';
+import './tramPopup.css';
 
 interface TramPopupProps {
   tram: VehiclePosition;
@@ -146,21 +148,6 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   // else. Null everywhere else, and the load card below is simply not drawn.
   const load = occupancyFraction(tram.mode, tram.occu);
 
-  const resolveOperatorName = (id?: number) => {
-    if (id === undefined) return 'HSL Operator';
-    const ops: Record<number, string> = {
-      6: 'Oy Pohjolan Liikenne Ab',
-      12: 'Helsingin Bussiliikenne',
-      18: 'Oy Pohjolan Liikenne Ab',
-      22: 'Nobina Finland Oy',
-      40: 'Tammelundin Liikenne',
-      47: 'Åbergin Linja Oy',
-      50: 'Pääkaupunkiseudun Kaupunkiliikenne Oy',
-      9: 'Pääkaupunkiseudun Kaupunkiliikenne Oy',
-      90: 'VR-Yhtymä Oyj',
-    };
-    return ops[id] || `Operator #${id}`;
-  };
 
   // Speedometer details
   const speedometerCircumference = 2 * Math.PI * 26; // Radius 26
@@ -186,30 +173,6 @@ export const TramPopup: React.FC<TramPopupProps> = ({
       {/* Drag handle affordance (mobile bottom-sheet only) */}
       <div className="sheet-handle" onClick={() => !isCollapsed && onToggleCollapse()} />
 
-      {/* Dynamic Keyframes injecting locally */}
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes spin-wheels {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        @keyframes blink-light {
-          0%, 100% { opacity: 1; filter: drop-shadow(0 0 5px #00b894); }
-          50% { opacity: 0.2; filter: none; }
-        }
-        .rotating-wheel {
-          transform-origin: center;
-          animation: spin-wheels var(--wheel-speed, 1s) linear infinite;
-        }
-        .blinking-door-light {
-          animation: blink-light 0.8s infinite;
-        }
-        .door-leaf-left {
-          transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .door-leaf-right {
-          transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-      ` }} />
 
       {/* Collapse/Expand Toggle Tab */}
       <button
@@ -495,7 +458,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                 border: '1px solid rgba(255,255,255,0.03)', display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center'
               }}>
-                <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '8px' }}>
+                <span className="tp-caption tp-caption--wide">
                   Speedometer
                 </span>
                 <div style={{ position: 'relative', width: '64px', height: '64px' }}>
@@ -523,7 +486,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                 border: '1px solid rgba(255,255,255,0.03)', display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center'
               }}>
-                <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '8px' }}>
+                <span className="tp-caption tp-caption--wide">
                   Schedule Deviation
                 </span>
                 <div style={{ position: 'relative', width: '64px', height: '64px' }}>
@@ -753,21 +716,21 @@ export const TramPopup: React.FC<TramPopupProps> = ({
               background: 'var(--bg-card)', padding: '10px 12px', borderRadius: '10px',
               border: '1px solid rgba(255,255,255,0.02)', fontSize: '0.7rem', color: '#cbd5e1'
             }}>
-              <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+              <span className="tp-caption">
                 Registry Metadata
               </span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><ShieldCheck size={11} /> Operator</span>
-                  <span style={{ fontWeight: 600 }}>{resolveOperatorName(tram.oper)}</span>
+              <div className="tp-stack">
+                <div className="tp-row">
+                  <span className="tp-label"><ShieldCheck size={11} /> Operator</span>
+                  <span style={{ fontWeight: 600 }}>{operatorName(tram.oper)}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Database size={11} /> Vehicle Chassis</span>
-                  <span style={{ fontFamily: 'monospace' }}>{tram.veh}</span>
+                <div className="tp-row">
+                  <span className="tp-label"><Database size={11} /> Vehicle Chassis</span>
+                  <span className="tp-mono">{tram.veh}</span>
                 </div>
                 {tram.occu !== undefined && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Users size={11} /> Occupancy</span>
+                  <div className="tp-row">
+                    <span className="tp-label"><Users size={11} /> Occupancy</span>
                     {/* The raw field, whatever the mode. Only the ferry's means
                         anything (see lib/occupancy), so the telemetry tab draws
                         the gauge and this stays a plain diagnostic reading. */}
@@ -783,17 +746,17 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                 background: 'var(--bg-card)', padding: '10px 12px', borderRadius: '10px',
                 border: `1px solid ${priorityColor}33`, fontSize: '0.7rem', color: '#cbd5e1'
               }}>
-                <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+                <span className="tp-caption">
                   Traffic Light Priority (HFP tlr/tla)
                 </span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={11} /> Status</span>
+                <div className="tp-stack">
+                  <div className="tp-row">
+                    <span className="tp-label"><Activity size={11} /> Status</span>
                     <span style={{ fontWeight: 700, color: priorityColor ?? SIGNAL_AMBER, textTransform: 'uppercase' }}>{priority.status}</span>
                   </div>
                   {priority.junction !== undefined && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Compass size={11} /> Junction</span>
+                    <div className="tp-row">
+                      <span className="tp-label"><Compass size={11} /> Junction</span>
                       <span style={{ textAlign: 'right' }}>
                         {priorityJunction ? priorityJunction.properties.junction : 'Unknown junction'}
                         <span style={{ fontFamily: 'monospace', color: '#64748b' }}> #{priority.junction}</span>
@@ -801,8 +764,8 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                     </div>
                   )}
                   {priority.requestType && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#94a3b8' }}>Request Type</span>
+                    <div className="tp-row">
+                      <span className="tp-muted">Request Type</span>
                       <span>
                         {priority.requestType}
                         {describeRequestType(priority.requestType) ? ` (${describeRequestType(priority.requestType)})` : ''}
@@ -810,36 +773,36 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                     </div>
                   )}
                   {priority.level && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#94a3b8' }}>Priority Level</span>
+                    <div className="tp-row">
+                      <span className="tp-muted">Priority Level</span>
                       <span>{priority.level}</span>
                     </div>
                   )}
                   {priority.reason && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#94a3b8' }}>Withheld Because</span>
-                      <span style={{ fontFamily: 'monospace' }}>{priority.reason}</span>
+                    <div className="tp-row">
+                      <span className="tp-muted">Withheld Because</span>
+                      <span className="tp-mono">{priority.reason}</span>
                     </div>
                   )}
                   {priority.attempts !== undefined && priority.attempts > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#94a3b8' }}>Attempt</span>
+                    <div className="tp-row">
+                      <span className="tp-muted">Attempt</span>
                       <span>#{priority.attempts}</span>
                     </div>
                   )}
                   {priority.signalGroup !== undefined && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#94a3b8' }}>Signal Group</span>
-                      <span style={{ fontFamily: 'monospace' }}>
+                    <div className="tp-row">
+                      <span className="tp-muted">Signal Group</span>
+                      <span className="tp-mono">
                         {priority.signalGroup}
                         {priority.signalGroupNbr !== undefined ? ` / ${priority.signalGroupNbr}` : ''}
                       </span>
                     </div>
                   )}
                   {priority.protocol && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#94a3b8' }}>Radio Protocol</span>
-                      <span style={{ fontFamily: 'monospace' }}>{priority.protocol}</span>
+                    <div className="tp-row">
+                      <span className="tp-muted">Radio Protocol</span>
+                      <span className="tp-mono">{priority.protocol}</span>
                     </div>
                   )}
                 </div>
@@ -851,25 +814,25 @@ export const TramPopup: React.FC<TramPopupProps> = ({
               background: 'var(--bg-card)', padding: '10px 12px', borderRadius: '10px',
               border: '1px solid rgba(255,255,255,0.02)', fontSize: '0.7rem', color: '#cbd5e1'
             }}>
-              <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+              <span className="tp-caption">
                 GPS Telemetry & Mapping
               </span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Compass size={11} /> Coordinates</span>
+              <div className="tp-stack">
+                <div className="tp-row">
+                  <span className="tp-label"><Compass size={11} /> Coordinates</span>
                   <span>{tram.lat.toFixed(5)}°, {tram.lng.toFixed(5)}°</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Compass size={11} /> Heading (Bearing)</span>
+                <div className="tp-row">
+                  <span className="tp-label"><Compass size={11} /> Heading (Bearing)</span>
                   <span>{tram.hdg}° ({tram.hdg}deg)</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Database size={11} /> Location Source</span>
+                <div className="tp-row">
+                  <span className="tp-label"><Database size={11} /> Location Source</span>
                   <span style={{ fontWeight: 600, color: 'var(--accent-green)' }}>{tram.loc === 'GPS' ? 'Satellite GPS' : (tram.loc || 'GPS')}</span>
                 </div>
                 {tram.odo !== undefined && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Database size={11} /> Odometer Reading</span>
+                  <div className="tp-row">
+                    <span className="tp-label"><Database size={11} /> Odometer Reading</span>
                     <span>{(tram.odo / 1000).toFixed(2)} km</span>
                   </div>
                 )}
@@ -881,23 +844,23 @@ export const TramPopup: React.FC<TramPopupProps> = ({
               background: 'var(--bg-card)', padding: '10px 12px', borderRadius: '10px',
               border: '1px solid rgba(255,255,255,0.02)', fontSize: '0.7rem', color: '#cbd5e1'
             }}>
-              <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+              <span className="tp-caption">
                 WebSocket Signal Quality
               </span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={11} /> HFP Update Drift</span>
+              <div className="tp-stack">
+                <div className="tp-row">
+                  <span className="tp-label"><Activity size={11} /> HFP Update Drift</span>
                   <span style={{ color: Math.abs(latency) < 5000 ? '#34d399' : '#f87171', fontWeight: 600 }}>
                     {Math.abs(latency) < 100000 ? `${latency} ms` : 'Out of sync'}
                   </span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Activity size={11} /> Broadcast Frequency</span>
+                <div className="tp-row">
+                  <span className="tp-label"><Activity size={11} /> Broadcast Frequency</span>
                   <span>1.0 Hz (MQTT)</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}><Cpu size={11} /> Telemetry Epoch</span>
-                  <span style={{ fontFamily: 'monospace' }}>{tram.ts}</span>
+                <div className="tp-row">
+                  <span className="tp-label"><Cpu size={11} /> Telemetry Epoch</span>
+                  <span className="tp-mono">{tram.ts}</span>
                 </div>
               </div>
             </div>
@@ -907,28 +870,28 @@ export const TramPopup: React.FC<TramPopupProps> = ({
               background: 'var(--bg-card)', padding: '10px 12px', borderRadius: '10px',
               border: '1px solid rgba(255,255,255,0.02)', fontSize: '0.7rem', color: '#cbd5e1'
             }}>
-              <span style={{ fontSize: '0.55rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
+              <span className="tp-caption">
                 GTFS Transit Schedule Info
               </span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8' }}>Route GTFS ID</span>
-                  <span style={{ fontFamily: 'monospace' }}>{tram.route}</span>
+              <div className="tp-stack">
+                <div className="tp-row">
+                  <span className="tp-muted">Route GTFS ID</span>
+                  <span className="tp-mono">{tram.route}</span>
                 </div>
                 {tram.dir && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8' }}>Direction ID</span>
+                  <div className="tp-row">
+                    <span className="tp-muted">Direction ID</span>
                     <span>{tram.dir}</span>
                   </div>
                 )}
                 {tram.start && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#94a3b8' }}>Scheduled Start</span>
+                  <div className="tp-row">
+                    <span className="tp-muted">Scheduled Start</span>
                     <span>{tram.start} {tram.oday ? `(${tram.oday})` : ''}</span>
                   </div>
                 )}
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#94a3b8' }}>Trip GTFS ID</span>
+                <div className="tp-row">
+                  <span className="tp-muted">Trip GTFS ID</span>
                   <span style={{ fontFamily: 'monospace', fontSize: '0.62rem', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tram.tripId}>
                     {tram.tripId}
                   </span>
