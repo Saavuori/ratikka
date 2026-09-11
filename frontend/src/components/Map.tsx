@@ -11,10 +11,15 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 // parsed and the map paints nothing. Handing MapLibre a URL Vite *did* emit
 // is what makes v6 render.
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import type { Feature, FeatureCollection } from 'geojson';
+import type { FeatureCollection } from 'geojson';
 import type { VehiclePosition, TripDetailsResponse, JourneyLeg, JourneyEndpoint } from '../types';
-import { decodePolyline } from '../lib/polyline';
 import type { ModeFlags, TransportMode } from '../lib/modes';
+import { createOverlayState, bikeAvailabilityChanged, invalidateOverlays } from '../map/overlays/state';
+import type { OverlayState } from '../map/overlays/state';
+import { updateStopFurniture, updateBikeFurniture } from '../map/overlays/furniture';
+import { updateArrivalLabelStops, drawArrivalLabels, updateSignalPriority } from '../map/overlays/labels';
+import type { LabelInputs } from '../map/overlays/labels';
+import { drawRouteGeometries, updateJourney } from '../map/overlays/routes';
 import {
   createAnimationState,
   rebuildTracks,
@@ -35,42 +40,24 @@ import {
   updateRouteVisibility,
 } from '../map/routeNetwork';
 import {
-  ARRIVAL_LABEL_SOURCE,
   STOP_MODE,
   installMapLayers,
   update3DMode,
   updateMetroSignVisibility,
   updateVehicle3DMode,
 } from '../map/layers';
-import { ARRIVAL_LABEL_MIN_ZOOM, ARRIVAL_LABEL_STOP_LIMIT } from '../lib/stopArrivals';
 import type { ArrivalFocus } from '../lib/stopArrivals';
-import {
-  getRouteColor,
-} from '../lib/routeColors';
 import {
   snappedLinesInFeed,
 } from '../lib/railTracks';
 import { useSyncRef } from '../hooks/useSyncRef';
-import { assignCorridorSlots, directionalPaths } from '../lib/routeSlots';
-import type { RoutePath } from '../lib/routeSlots';
-import {
-  PLATFORM_FILL_LAYER,
-} from '../lib/stopPlatforms';
 import type { MapTheme } from '../lib/stopPlatforms';
 import {
   SATELLITE_ATTRIBUTION,
 } from '../lib/satelliteBasemap';
 import {
-  stopFurnitureCollection,
-  longestEdgeBearing,
-  nearestLineBearing,
-  pointInRing,
-  STOP_3D_MIN_ZOOM,
-  STOP_FURNITURE_LIMIT,
-  STOP_FURNITURE_SOURCE,
   STOP_FURNITURE_LAYER,
 } from '../lib/stopModels';
-import type { StopFurnitureState } from '../lib/stopModels';
 import {
   STOP_CIRCLE_MIN_ZOOM,
   STATION_CIRCLE_MIN_ZOOM,
@@ -84,17 +71,11 @@ import {
   STATION_CIRCLE_LAYERS,
 } from '../lib/stopCircleStyle';
 import {
-  bikeStationCollection,
-  BIKE_3D_MIN_ZOOM,
-  BIKE_STATION_LIMIT,
-  BIKE_STATION_SOURCE,
   BIKE_STATION_LAYER,
 } from '../lib/bikeStationModels';
-import type { BikeStationState } from '../lib/bikeStationModels';
 import { vehicles3DEnabled } from '../lib/vehicleAnimation';
 import { fetchBikeStations, fetchMapConfig } from '../lib/api';
 import {
-  signalPriorityIndex,
   TRAFFIC_LIGHT_SOURCE,
   TRAFFIC_LIGHT_ICON_LAYER,
   TRAFFIC_LIGHT_SELECTION_LAYER,
@@ -208,8 +189,6 @@ export const Map: React.FC<MapProps> = ({
   useSyncRef(selectedTripDetailsRef, selectedTripDetails);
 
   const arrivalLabelsRef = useRef(arrivalLabels);
-  const arrivalLabelStopsRef = useRef<Array<{ stopId: string; lng: number; lat: number }>>([]);
-  const arrivalLabelSigRef = useRef<string>('');
   const arrivalFocusRef = useRef<ArrivalFocus | null>(arrivalFocus);
   const arrivalTripDetailsRef = useRef<TripDetailsResponse | null>(arrivalTripDetails);
   const arrivalStopCoordsRef = useRef<[number, number] | null>(selectedStopCoords ?? null);
@@ -260,14 +239,11 @@ export const Map: React.FC<MapProps> = ({
   useSyncRef(showRoutesRef, showRoutes);
   useSyncRef(is3DRef, is3D);
   useSyncRef(always3DVehiclesRef, always3DVehicles);
-  const stopFurnitureDrawnRef = useRef<boolean>(false);
   // Cheap signature of what the furniture was last built for, so the `idle`
   // event — which fires on every tile that lands — does no work in the common
   // case where nothing that matters has moved.
-  const stopFurnitureSigRef = useRef<string>('');
   // Name/code/mode for the stops currently carrying furniture, so a click on a
   // shelter can open the same popup a click on its sign would.
-  const stopFurnitureMetaRef = useRef<Record<string, { name: string; code: string; mode: string }>>({});
   const mapThemeRef = useRef<MapTheme>(mapTheme);
   const isFollowingRef = useRef<boolean>(isFollowing);
   useSyncRef(mapThemeRef, mapTheme);
@@ -278,11 +254,8 @@ export const Map: React.FC<MapProps> = ({
   const bikeStationsDataRef = useRef<BikeStationsFeatureCollection | null>(null);
   // The 3D racks, tracked the same way as the stop furniture: drawn-or-not, and
   // a signature of what they were last built for.
-  const bikeFurnitureDrawnRef = useRef<boolean>(false);
-  const bikeFurnitureSigRef = useRef<string>('');
   // Bumped on every availability refresh, so the rack signature notices new
   // counts arriving under an unmoved view.
-  const bikeAvailabilityStampRef = useRef<number>(0);
   // Latest signalized-junction features (static reference data, shared with
   // the tram popup via useTrafficLights). Kept in a ref for the same reason
   // as bikeStationsDataRef: re-seed the source immediately after a
@@ -291,12 +264,69 @@ export const Map: React.FC<MapProps> = ({
   const trafficLightFeatures = useTrafficLights();
   // Signatures: the junction source is only rebuilt when the set of live
   // exchanges actually changes, not on every positions message.
-  const junctionPrioritySigRef = useRef<string>('');
 
   const journeyLegsRef = useRef<JourneyLeg[] | null>(journeyLegs);
   const journeyEndpointsRef = useRef<{ from: JourneyEndpoint; to: JourneyEndpoint } | null>(journeyEndpoints);
   useSyncRef(journeyLegsRef, journeyLegs);
   useSyncRef(journeyEndpointsRef, journeyEndpoints);
+
+  /**
+   * Everything the animation remembers between frames — glides, dead-reckoning
+   * fixes, rail geometry, clocks. A plain object rather than twenty refs: none
+   * of it should cause a render, and the loop writes to it sixty times a
+   * second. Created once per mount.
+   */
+  const animationRef = useRef<AnimationState>(createAnimationState(timeScale));
+  useEffect(() => {
+    setTimeScale(animationRef.current, timeScale);
+  }, [timeScale]);
+  /**
+   * The overlays, bound to the state they keep between updates and the values
+   * they read as of now. The plumbing is here once rather than at each of the
+   * twenty call sites that rebuild one.
+   */
+  const overlayRef = useRef<OverlayState>(createOverlayState());
+  // Held in a ref, not rebuilt per render: every binding reads only refs, so
+  // one closure stays correct forever — and a ref is the one thing
+  // `react-hooks/exhaustive-deps` knows is stable, so the effects that call
+  // these need not list them.
+  const overlaysRef = useRef({
+    stopFurniture: (map: maplibregl.Map, theme: MapTheme) =>
+      updateStopFurniture(map, theme, overlayRef.current, {
+        is3D: is3DRef.current,
+        always3DVehicles: always3DVehiclesRef.current,
+        stopHighlight: animationRef.current.stopHighlight,
+        bikeStations: bikeStationsDataRef.current,
+        selectedBikeStationId: selectedBikeStationIdRef.current,
+      }),
+    bikeFurniture: (map: maplibregl.Map, theme: MapTheme) =>
+      updateBikeFurniture(map, theme, overlayRef.current, {
+        is3D: is3DRef.current,
+        always3DVehicles: always3DVehiclesRef.current,
+        stopHighlight: animationRef.current.stopHighlight,
+        bikeStations: bikeStationsDataRef.current,
+        selectedBikeStationId: selectedBikeStationIdRef.current,
+      }),
+    arrivalLabelStops: (map: maplibregl.Map) =>
+      updateArrivalLabelStops(map, overlayRef.current, labelInputs(), callbacksRef.current.onVisibleStopsChange),
+    arrivalLabels: (map: maplibregl.Map) =>
+      drawArrivalLabels(map, overlayRef.current, labelInputs()),
+    signalPriority: (map: maplibregl.Map) =>
+      updateSignalPriority(map, overlayRef.current, labelInputs()),
+    routeGeometries: (
+      map: maplibregl.Map,
+      geometries: Record<string, { geometries: string[]; color?: string }>,
+      selectedLine: string | null,
+    ) => drawRouteGeometries(map, geometries, selectedLine, overlayRef.current),
+  });
+
+  function labelInputs(): LabelInputs {
+    return {
+      labels: arrivalLabelsRef.current ?? {},
+      vehicles: latestTramsRef.current,
+      trafficLights: trafficLightsDataRef.current,
+    };
+  }
   const journeyFitKeyRef = useRef<string>('');
 
 
@@ -309,333 +339,10 @@ export const Map: React.FC<MapProps> = ({
 
 
 
-  /**
-   * Rebuild the 3D stop furniture for what is on screen.
-   *
-   * Nothing in the stop tiles says which way a stop faces, so the bearing is
-   * read off geometry already drawn: the platform polygon the stop stands in
-   * (its long axis runs with the track), or failing that the nearest route
-   * line. A stop with neither gets a square pad and a pole and no shelter —
-   * furniture at a guessed angle would read as data when it is a guess.
-   *
-   * Runs on view changes rather than per frame: the geometry only moves when
-   * the map does, and querying rendered features is far too heavy for 60fps.
-   */
-  /**
-   * Which stops are close enough to the middle of a zoomed-in view to earn a
-   * next-arrival label, reported up so their departures can be fetched.
-   *
-   * Below the sign-board zoom this reports nothing: a city-wide view holds
-   * hundreds of stops, every one of them a departure lookup, and a label on
-   * each would be unreadable even if it were free.
-   */
-  const updateArrivalLabelStops = (map: maplibregl.Map) => {
-    const gated = map.getZoom() < ARRIVAL_LABEL_MIN_ZOOM || !map.getLayer('stops_signs');
-    if (gated) {
-      if (arrivalLabelStopsRef.current.length > 0 || arrivalLabelSigRef.current !== '') {
-        arrivalLabelStopsRef.current = [];
-        arrivalLabelSigRef.current = '';
-        drawArrivalLabels(map);
-        callbacksRef.current.onVisibleStopsChange?.([]);
-      }
-      return;
-    }
 
-    const centre = map.getCenter();
-    const seen = new Set<string>();
-    const stops: Array<{ stopId: string; lng: number; lat: number; distance: number }> = [];
-    // Same source as the 3D furniture: whatever `stops_signs` is drawing, so
-    // labels inherit the mode toggles and route filters already applied to it.
-    for (const feature of map.queryRenderedFeatures({ layers: ['stops_signs'] })) {
-      if (feature.geometry.type !== 'Point') continue;
-      const properties = feature.properties ?? {};
-      const rawId = properties.gtfsId ?? properties.stopId ?? properties.id ?? feature.id;
-      if (rawId === undefined || rawId === null) continue;
-      const stopId = String(rawId).replace(/^HSL:/, '');
-      if (!stopId || seen.has(stopId)) continue;
-      seen.add(stopId);
-      const [lng, lat] = feature.geometry.coordinates as [number, number];
-      stops.push({ stopId, lng, lat, distance: Math.hypot(lng - centre.lng, lat - centre.lat) });
-    }
-    stops.sort((a, b) => a.distance - b.distance);
-    const nearest = stops.slice(0, ARRIVAL_LABEL_STOP_LIMIT);
 
-    // The positions move with every pan; the *set* of stops is what drives a
-    // refetch, so only that goes into the signature.
-    const signature = nearest.map((stop) => stop.stopId).join(',');
-    arrivalLabelStopsRef.current = nearest.map(({ stopId, lng, lat }) => ({ stopId, lng, lat }));
-    drawArrivalLabels(map);
-    if (signature !== arrivalLabelSigRef.current) {
-      arrivalLabelSigRef.current = signature;
-      callbacksRef.current.onVisibleStopsChange?.(nearest.map((stop) => stop.stopId));
-    }
-  };
 
-  /** Paint the labels for whichever visible stops have an arrival to show. */
-  const drawArrivalLabels = (map: maplibregl.Map) => {
-    const source = map.getSource(ARRIVAL_LABEL_SOURCE) as maplibregl.GeoJSONSource | undefined;
-    if (!source) return;
-    const labels = arrivalLabelsRef.current ?? {};
-    const features: Feature[] = [];
-    for (const stop of arrivalLabelStopsRef.current) {
-      const entry = labels[stop.stopId];
-      // No arrival, no label. An empty badge over a stop reads as "nothing
-      // runs here", which is a different claim from "we do not know yet".
-      if (!entry) continue;
-      features.push({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [stop.lng, stop.lat] },
-        properties: { label: entry.label, color: entry.color },
-      });
-    }
-    source.setData({ type: 'FeatureCollection', features });
-  };
 
-  const updateStopFurniture = (map: maplibregl.Map, theme: MapTheme) => {
-    const source = map.getSource(STOP_FURNITURE_SOURCE) as maplibregl.GeoJSONSource | undefined;
-    if (!source) return;
-    const empty = { type: 'FeatureCollection' as const, features: [] };
-
-    const active =
-      vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current) &&
-      map.getZoom() >= STOP_3D_MIN_ZOOM &&
-      map.getLayer('stops_signs') !== undefined;
-    if (!active) {
-      if (stopFurnitureDrawnRef.current) {
-        source.setData(empty);
-        stopFurnitureDrawnRef.current = false;
-        stopFurnitureSigRef.current = '';
-      }
-      return;
-    }
-
-    const centre = map.getCenter();
-    const signature = [
-      theme,
-      centre.lng.toFixed(4),
-      centre.lat.toFixed(4),
-      map.getZoom().toFixed(2),
-      map.getBearing().toFixed(0),
-      animationRef.current.stopHighlight.key,
-    ].join('|');
-    if (signature === stopFurnitureSigRef.current) return;
-    stopFurnitureSigRef.current = signature;
-
-    // The visible stops are whatever `stops_signs` is drawing, so the furniture
-    // inherits the mode toggles and route filters already applied to it.
-    const stopFeatures = map.queryRenderedFeatures({ layers: ['stops_signs'] });
-
-    const platformRings: [number, number][][] = [];
-    if (map.getLayer(PLATFORM_FILL_LAYER)) {
-      for (const feature of map.queryRenderedFeatures({ layers: [PLATFORM_FILL_LAYER] })) {
-        const geometry = feature.geometry;
-        if (geometry.type === 'Polygon') {
-          platformRings.push(geometry.coordinates[0] as [number, number][]);
-        } else if (geometry.type === 'MultiPolygon') {
-          for (const polygon of geometry.coordinates) {
-            platformRings.push(polygon[0] as [number, number][]);
-          }
-        }
-      }
-    }
-
-    const routeLines: [number, number][][] = [];
-    if (map.getLayer('route-lines-layer')) {
-      for (const feature of map.queryRenderedFeatures({ layers: ['route-lines-layer'] })) {
-        const geometry = feature.geometry;
-        if (geometry.type === 'LineString') {
-          routeLines.push(geometry.coordinates as [number, number][]);
-        } else if (geometry.type === 'MultiLineString') {
-          for (const line of geometry.coordinates) routeLines.push(line as [number, number][]);
-        }
-      }
-    }
-
-    const highlightId = animationRef.current.stopHighlight.stopId?.replace(/^HSL:/, '') ?? null;
-    const seen = new Set<string>();
-    const meta: Record<string, { name: string; code: string; mode: string }> = {};
-    const stops: Array<{ state: StopFurnitureState; distance: number }> = [];
-
-    for (const feature of stopFeatures) {
-      if (feature.geometry.type !== 'Point') continue;
-      const properties = feature.properties ?? {};
-      const rawId = properties.gtfsId ?? properties.stopId ?? properties.id ?? feature.id;
-      if (rawId === undefined || rawId === null) continue;
-      const stopId = String(rawId).replace(/^HSL:/, '');
-      if (seen.has(stopId)) continue;
-      seen.add(stopId);
-
-      const [lng, lat] = feature.geometry.coordinates as [number, number];
-      meta[stopId] = {
-        name: String(properties.name ?? properties.nameFi ?? 'Unknown Stop'),
-        code: String(properties.code ?? properties.shortId ?? ''),
-        mode: String(properties.mode ?? properties.type ?? 'TRAM'),
-      };
-      let bearing: number | null = null;
-      let hasPlatform = false;
-      for (const ring of platformRings) {
-        if (pointInRing([lng, lat], ring)) {
-          hasPlatform = true;
-          bearing = longestEdgeBearing(ring);
-          break;
-        }
-      }
-      if (bearing === null) {
-        bearing = nearestLineBearing([lng, lat], routeLines);
-      }
-
-      stops.push({
-        state: {
-          stopId,
-          lng,
-          lat,
-          mode: String(properties.mode ?? properties.type ?? 'TRAM'),
-          bearing,
-          hasPlatform,
-          highlighted: highlightId !== null && stopId === highlightId,
-          boarding: animationRef.current.stopHighlight.boarding && stopId === highlightId,
-        },
-        distance: Math.hypot(lng - centre.lng, lat - centre.lat),
-      });
-    }
-
-    // A dense view can hold hundreds of stops, each several polygons. Nearest
-    // to the middle of the screen wins, which is where the eye is.
-    stops.sort((a, b) => a.distance - b.distance);
-    const states = stops.slice(0, STOP_FURNITURE_LIMIT).map((s) => s.state);
-    stopFurnitureMetaRef.current = meta;
-    source.setData(stopFurnitureCollection(states, theme));
-    stopFurnitureDrawnRef.current = true;
-  };
-
-  // The city-bike counterpart to `updateStopFurniture`: turn the stations the
-  // gauge layer is drawing into racks of real-metre boxes. Same bookkeeping —
-  // built from what is on screen, capped, and skipped entirely when nothing
-  // that matters has moved.
-  const updateBikeFurniture = (map: maplibregl.Map, theme: MapTheme) => {
-    const source = map.getSource(BIKE_STATION_SOURCE) as maplibregl.GeoJSONSource | undefined;
-    if (!source) return;
-    const empty = { type: 'FeatureCollection' as const, features: [] };
-
-    const active =
-      vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current) &&
-      map.getZoom() >= BIKE_3D_MIN_ZOOM &&
-      map.getLayer('citybike_gauge') !== undefined;
-    if (!active) {
-      if (bikeFurnitureDrawnRef.current) {
-        source.setData(empty);
-        bikeFurnitureDrawnRef.current = false;
-        bikeFurnitureSigRef.current = '';
-      }
-      return;
-    }
-
-    const centre = map.getCenter();
-    const signature = [
-      theme,
-      centre.lng.toFixed(4),
-      centre.lat.toFixed(4),
-      map.getZoom().toFixed(2),
-      selectedBikeStationIdRef.current ?? '',
-      // Availability is what the rack is made of, so a refresh has to rebuild
-      // it even when the view has not moved.
-      String(bikeStationsDataRef.current?.features.length ?? 0),
-      bikeAvailabilityStampRef.current,
-    ].join('|');
-    if (signature === bikeFurnitureSigRef.current) return;
-    bikeFurnitureSigRef.current = signature;
-
-    // Route lines give the rack its orientation where one runs past: stations
-    // sit along streets, and the tram or bus line in the street is the only
-    // thing on this map that knows which way the street goes.
-    const routeLines: [number, number][][] = [];
-    if (map.getLayer('route-lines-layer')) {
-      for (const feature of map.queryRenderedFeatures({ layers: ['route-lines-layer'] })) {
-        const geometry = feature.geometry;
-        if (geometry.type === 'LineString') {
-          routeLines.push(geometry.coordinates as [number, number][]);
-        } else if (geometry.type === 'MultiLineString') {
-          for (const line of geometry.coordinates) routeLines.push(line as [number, number][]);
-        }
-      }
-    }
-
-    const selectedId = selectedBikeStationIdRef.current ?? null;
-    const seen = new Set<string>();
-    const stations: Array<{ state: BikeStationState; distance: number }> = [];
-    for (const feature of map.queryRenderedFeatures({ layers: ['citybike_gauge'] })) {
-      if (feature.geometry.type !== 'Point') continue;
-      const properties = feature.properties ?? {};
-      const stationId = String(properties.stationId ?? properties.id ?? '');
-      if (!stationId || seen.has(stationId)) continue;
-      seen.add(stationId);
-      const [lng, lat] = feature.geometry.coordinates as [number, number];
-      stations.push({
-        state: {
-          stationId,
-          lng,
-          lat,
-          bikesAvailable: Number(properties.bikesAvailable ?? 0),
-          spacesAvailable: Number(properties.spacesAvailable ?? 0),
-          bearing: nearestLineBearing([lng, lat], routeLines, 40),
-          highlighted: selectedId !== null && stationId === selectedId,
-        },
-        distance: Math.hypot(lng - centre.lng, lat - centre.lat),
-      });
-    }
-
-    stations.sort((a, b) => a.distance - b.distance);
-    source.setData(bikeStationCollection(
-      stations.slice(0, BIKE_STATION_LIMIT).map((s) => s.state),
-      theme,
-    ));
-    bikeFurnitureDrawnRef.current = true;
-  };
-
-  // Fold the priority exchanges the vehicles are reporting onto the junctions
-  // they name, and paint the result into the junction source.
-  //
-  // Every vehicle carries its own exchange on its position (see the backend's
-  // signal_priority.go), so the join is done here rather than over a second
-  // stream: the junction ID a tram reports is Helsinki's own junction number,
-  // which is the `id` these features already have. The source is only rebuilt
-  // when the set of live exchanges changes — a few times a minute, against the
-  // once a second positions arrive — because it means re-materialising 550-odd
-  // features.
-  const updateSignalPriority = (map: maplibregl.Map) => {
-    const priorities = signalPriorityIndex(Object.values(latestTramsRef.current));
-    const signature = Array.from(priorities.entries())
-      .map(([junction, a]) => `${junction}:${a.vehicles.map((v) => `${v.status}:${v.veh}`).join(',')}`)
-      .sort()
-      .join('|');
-    if (signature === junctionPrioritySigRef.current) return;
-    junctionPrioritySigRef.current = signature;
-
-    const source = map.getSource(TRAFFIC_LIGHT_SOURCE) as maplibregl.GeoJSONSource | undefined;
-    if (source && typeof source.setData === 'function') {
-      source.setData({
-        type: 'FeatureCollection',
-        features: trafficLightsDataRef.current.map((feature) => {
-          const live = priorities.get(feature.properties.id);
-          // `norequest` is a vehicle deciding not to ask; it lights nothing,
-          // so it must not put a `priority` key on the feature either — the
-          // icon size and sort key both key off the presence of one.
-          if (!live || live.status === 'norequest') return feature;
-          return {
-            ...feature,
-            properties: {
-              ...feature.properties,
-              priority: live.status,
-              // The lines in the exchange, so the marker's own tooltip and the
-              // junction panel do not each have to go back to the vehicles.
-              priorityDesi: live.vehicles.map((v) => v.desi).join(', '),
-              priorityCount: live.vehicles.length,
-            },
-          };
-        }),
-      } as unknown as FeatureCollection);
-    }
-  };
 
   // New countdowns arrive every refresh and every second the clock ticks; the
   // set of stops they belong to changes only when the view moves, so this
@@ -643,7 +350,7 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     arrivalLabelsRef.current = arrivalLabels;
     const map = mapRef.current;
-    if (map && map.getStyle()) drawArrivalLabels(map);
+    if (map && map.getStyle()) overlaysRef.current.arrivalLabels(map);
   }, [arrivalLabels]);
 
 
@@ -652,166 +359,8 @@ export const Map: React.FC<MapProps> = ({
   // network highlighted that is tens of thousands of points. The result depends
   // only on the polylines themselves, and those arrive as one array per fetch
   // and are never mutated, so caching against the array's identity is enough.
-  const routePathsCacheRef = useRef<Record<string, { src: string[]; paths: [number, number][][] }>>({});
-  const routePathsOf = (line: string, src: string[]): [number, number][][] => {
-    const cached = routePathsCacheRef.current[line];
-    if (cached && cached.src === src) return cached.paths;
-    const paths = directionalPaths(src.map((poly) => decodePolyline(poly)));
-    routePathsCacheRef.current[line] = { src, paths };
-    return paths;
-  };
 
-  // Helper to draw route geometries on the map.
-  //
-  // Lines sharing a street are fanned out into parallel ribbons via a per-feature
-  // offset slot (see lib/routeSlots) instead of being stacked pixel-on-pixel,
-  // where their colours used to blend into a muddy third colour. The selected
-  // vehicle's line keeps slot 0 — it stays on the true geometry while the others
-  // are pushed aside — and is drawn wider, opaque and on top, with the rest
-  // dimmed.
-  const drawRouteGeometries = (
-    map: maplibregl.Map,
-    geometries: Record<string, { geometries: string[]; color?: string }>,
-    selectedLine: string | null,
-  ) => {
-    const source = map.getSource('route-lines') as maplibregl.GeoJSONSource;
-    if (!source) return;
 
-    const lines = Object.keys(geometries);
-    const hasSelection = !!selectedLine && lines.includes(selectedLine);
-
-    const paths: RoutePath[] = [];
-    lines.forEach((line) => {
-      // The API returns one polyline per pattern — each direction, plus short
-      // turns and branch variants — and the backend dedupes on the raw string,
-      // which no two of them ever share. What survives is one path per direction
-      // of travel plus any real branches: the repeats and short turns would only
-      // be drawn on top of what is already there, but the return leg is the
-      // other track and has to stay, or every vehicle running that way is drawn
-      // beside the line instead of on it.
-      routePathsOf(line, geometries[line].geometries).forEach((coords) =>
-        paths.push({ line, coords })
-      );
-    });
-
-    const features = assignCorridorSlots(paths, selectedLine).map(({ line, coords, slot }) => ({
-      type: 'Feature' as const,
-      geometry: {
-        type: 'LineString' as const,
-        coordinates: coords,
-      },
-      properties: {
-        line,
-        // Colour the highlighted route path by our per-line palette rather than
-        // HSL's mode green (which is identical for every tram line).
-        color: getRouteColor(line),
-        offsetIndex: slot,
-        selected: line === selectedLine,
-        dim: hasSelection && line !== selectedLine,
-      },
-    }));
-
-    source.setData({
-      type: 'FeatureCollection',
-      features,
-    });
-  };
-
-  // Render a planned journey: coloured transit legs, dashed walk legs, the
-  // origin/destination markers, and highlighted board/alight/transfer/via stops.
-  const updateJourney = (
-    map: maplibregl.Map,
-    legs: JourneyLeg[] | null,
-    endpoints: { from: JourneyEndpoint; to: JourneyEndpoint } | null,
-    fitBounds: boolean
-  ) => {
-    const lineSource = map.getSource('journey-lines') as maplibregl.GeoJSONSource | undefined;
-    const stopSource = map.getSource('journey-stops') as maplibregl.GeoJSONSource | undefined;
-    const endpointSource = map.getSource('journey-endpoints') as maplibregl.GeoJSONSource | undefined;
-    if (!lineSource || !stopSource || !endpointSource) return;
-
-    if (!legs || legs.length === 0) {
-      const empty = { type: 'FeatureCollection' as const, features: [] };
-      lineSource.setData(empty);
-      stopSource.setData(empty);
-      endpointSource.setData(empty);
-      return;
-    }
-
-    const lineFeatures: Feature[] = [];
-    const allCoords: [number, number][] = [];
-
-    legs.forEach((leg) => {
-      const coords = leg.geometry ? decodePolyline(leg.geometry) : [];
-      coords.forEach((c) => allCoords.push(c));
-      if (coords.length >= 2) {
-        const color = leg.transit
-          ? getRouteColor(leg.route?.shortName)
-          : '#94a3b8';
-        lineFeatures.push({
-          type: 'Feature',
-          geometry: { type: 'LineString', coordinates: coords },
-          properties: { transit: leg.transit, color },
-        });
-      }
-    });
-
-    // Collect highlighted stops with a priority so transfer/board/alight win
-    // over plain "via" stops sharing the same location.
-    const priority: Record<string, number> = { board: 4, alight: 4, transfer: 3, via: 1 };
-    const stopByKey: Record<string, { lat: number; lon: number; name: string; kind: string }> = {};
-    const addStop = (lat: number, lon: number, name: string, kind: string) => {
-      if (lat === 0 && lon === 0) return;
-      const key = `${lat.toFixed(5)},${lon.toFixed(5)}`;
-      const existing = stopByKey[key];
-      if (!existing || priority[kind] > priority[existing.kind]) {
-        stopByKey[key] = { lat, lon, name, kind };
-      }
-    };
-
-    const transitLegs = legs.filter((l) => l.transit);
-    transitLegs.forEach((leg, i) => {
-      const boardKind = i === 0 ? 'board' : 'transfer';
-      const alightKind = i === transitLegs.length - 1 ? 'alight' : 'transfer';
-      addStop(leg.from.lat, leg.from.lon, leg.from.name, boardKind);
-      addStop(leg.to.lat, leg.to.lon, leg.to.name, alightKind);
-      leg.intermediateStops.forEach((s) => addStop(s.lat, s.lon, s.name, 'via'));
-    });
-
-    const stopFeatures: Feature[] = Object.values(stopByKey).map((s) => ({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
-      properties: { kind: s.kind, name: s.name },
-    }));
-
-    const endpointFeatures: Feature[] = [];
-    if (endpoints) {
-      endpointFeatures.push({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [endpoints.from.lon, endpoints.from.lat] },
-        properties: { role: 'origin' },
-      });
-      endpointFeatures.push({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [endpoints.to.lon, endpoints.to.lat] },
-        properties: { role: 'destination' },
-      });
-      allCoords.push([endpoints.from.lon, endpoints.from.lat]);
-      allCoords.push([endpoints.to.lon, endpoints.to.lat]);
-    }
-
-    lineSource.setData({ type: 'FeatureCollection', features: lineFeatures });
-    stopSource.setData({ type: 'FeatureCollection', features: stopFeatures });
-    endpointSource.setData({ type: 'FeatureCollection', features: endpointFeatures });
-
-    if (fitBounds && allCoords.length >= 2) {
-      const bounds = allCoords.reduce(
-        (b, c) => b.extend(c),
-        new maplibregl.LngLatBounds(allCoords[0], allCoords[0])
-      );
-      map.fitBounds(bounds, { padding: { top: 90, bottom: 90, left: 60, right: 60 }, maxZoom: 16, duration: 700 });
-    }
-  };
 
   // Track geometry for every rail line currently in the feed. This is fetched
   // independently of `routeGeometries` (which only covers lines the user has
@@ -823,16 +372,8 @@ export const Map: React.FC<MapProps> = ({
   const snappedLines = useMemo(() => snappedLinesInFeed(trams), [trams]);
   const routePatterns = useRoutePatterns(snappedLines);
 
-  /**
-   * Everything the animation remembers between frames — glides, dead-reckoning
-   * fixes, rail geometry, clocks. A plain object rather than twenty refs: none
-   * of it should cause a render, and the loop writes to it sixty times a
-   * second. Created once per mount.
-   */
-  const animationRef = useRef<AnimationState>(createAnimationState(timeScale));
-  useEffect(() => {
-    setTimeScale(animationRef.current, timeScale);
-  }, [timeScale]);
+
+
 
   // Rail geometry for the lines being snapped, kept with the animation that
   // snaps them.
@@ -876,7 +417,7 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     receivePositions(animationRef.current, trams, lineFilters);
     const map = mapRef.current;
-    if (map && map.getStyle()) updateSignalPriority(map);
+    if (map && map.getStyle()) overlaysRef.current.signalPriority(map);
   }, [trams, lineFilters]);
 
   // Sync incoming tram data to animation refs
@@ -900,7 +441,7 @@ export const Map: React.FC<MapProps> = ({
     });
 
     // Draw route geometries now that style and layer are loaded
-    drawRouteGeometries(map, routeGeometriesRef.current, selectedLineRef.current);
+    overlaysRef.current.routeGeometries(map, routeGeometriesRef.current, selectedLineRef.current);
 
     // Restore any active journey after a style/theme change
     updateJourney(map, journeyLegsRef.current, journeyEndpointsRef.current, false);
@@ -964,17 +505,14 @@ export const Map: React.FC<MapProps> = ({
     updateMetroSignVisibility(map, modesRef.current.metro);
     update3DMode(map, is3DRef.current, mapThemeRef.current);
     updateVehicle3DMode(map, vehicles3DEnabled(is3DRef.current, always3DVehiclesRef.current));
-    // The style reload recreated every source, so whatever the furniture was
-    // last built for no longer exists.
-    stopFurnitureSigRef.current = '';
-    updateStopFurniture(map, mapThemeRef.current);
-    bikeFurnitureSigRef.current = '';
-    updateBikeFurniture(map, mapThemeRef.current);
-    // The recreated junction source came back without the live states on it.
-    junctionPrioritySigRef.current = '';
-    updateSignalPriority(map);
-    arrivalLabelSigRef.current = '';
-    updateArrivalLabelStops(map);
+    // The style reload recreated every source, so whatever the overlays were
+    // last built for no longer exists — including the live junction states,
+    // which came back off the recreated source.
+    invalidateOverlays(overlayRef.current);
+    overlaysRef.current.stopFurniture(map, mapThemeRef.current);
+    overlaysRef.current.bikeFurniture(map, mapThemeRef.current);
+    overlaysRef.current.signalPriority(map);
+    overlaysRef.current.arrivalLabelStops(map);
 
     // Hide white casing layers
     const casingLayers = ['stops_case', 'stops_rail_case', 'stops_hub', 'stops_rail_hub'];
@@ -1073,7 +611,7 @@ export const Map: React.FC<MapProps> = ({
     map.on('click', STOP_FURNITURE_LAYER, (e: maplibregl.MapLayerMouseEvent) => {
       const stopId = e.features?.[0]?.properties?.stopId;
       if (!stopId) return;
-      const info = stopFurnitureMetaRef.current[String(stopId)];
+      const info = overlayRef.current.stopFurniture.meta[String(stopId)];
       if (!info) return;
       callbacksRef.current.onSelectStop(
         `HSL:${stopId}`, info.name, info.code, e.lngLat.lat, e.lngLat.lng, info.mode, false,
@@ -1152,9 +690,9 @@ export const Map: React.FC<MapProps> = ({
     // rather than `moveend` because the platform polygons it orients itself
     // from arrive with the tiles, which land after the move has ended.
     const rebuildFurniture = () => {
-      updateStopFurniture(map, mapThemeRef.current);
-      updateBikeFurniture(map, mapThemeRef.current);
-      updateArrivalLabelStops(map);
+      overlaysRef.current.stopFurniture(map, mapThemeRef.current);
+      overlaysRef.current.bikeFurniture(map, mapThemeRef.current);
+      overlaysRef.current.arrivalLabelStops(map);
     };
     map.on('moveend', rebuildFurniture);
     map.on('idle', rebuildFurniture);
@@ -1286,8 +824,8 @@ export const Map: React.FC<MapProps> = ({
     // Start interpolation tick loop
     const stopAnimation = startAnimationLoop(map, animationRef.current, readFrame, {
       rebuildFurniture: () => {
-        updateStopFurniture(map, mapThemeRef.current);
-        updateBikeFurniture(map, mapThemeRef.current);
+        overlaysRef.current.stopFurniture(map, mapThemeRef.current);
+        overlaysRef.current.bikeFurniture(map, mapThemeRef.current);
       },
     });
 
@@ -1335,8 +873,8 @@ export const Map: React.FC<MapProps> = ({
           src.setData(data as unknown as FeatureCollection);
         }
         // New counts mean new racks, even if nobody has touched the map.
-        bikeAvailabilityStampRef.current += 1;
-        if (map && map.getStyle()) updateBikeFurniture(map, mapThemeRef.current);
+        bikeAvailabilityChanged(overlayRef.current);
+        if (map && map.getStyle()) overlaysRef.current.bikeFurniture(map, mapThemeRef.current);
       } catch (err) {
         // Transient upstream/network failures just leave the last good data in
         // place; the next tick retries.
@@ -1366,8 +904,8 @@ export const Map: React.FC<MapProps> = ({
     // The junctions have only just arrived, so whatever priority state was
     // already in hand has never been painted onto them.
     if (map && map.getStyle()) {
-      junctionPrioritySigRef.current = '';
-      updateSignalPriority(map);
+      overlayRef.current.signalPriority.sig = '';
+      overlaysRef.current.signalPriority(map);
     }
   }, [trafficLightFeatures]);
 
@@ -1470,8 +1008,8 @@ export const Map: React.FC<MapProps> = ({
     }
     // The selected station's rack is drawn in the highlight colour, so it has
     // to be rebuilt when the selection moves.
-    bikeFurnitureSigRef.current = '';
-    updateBikeFurniture(map, mapThemeRef.current);
+    overlayRef.current.bikeFurniture.sig = '';
+    overlaysRef.current.bikeFurniture(map, mapThemeRef.current);
   }, [selectedBikeStationId]);
 
 
@@ -1502,7 +1040,7 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     const map = mapRef.current;
     if (map && map.getStyle() && map.getSource('route-lines')) {
-      drawRouteGeometries(map, routeGeometries, selectedLine);
+      overlaysRef.current.routeGeometries(map, routeGeometries, selectedLine);
     }
   }, [routeGeometries, selectedLine]);
 
@@ -1533,10 +1071,10 @@ export const Map: React.FC<MapProps> = ({
     const map = mapRef.current;
     if (map && map.getStyle()) {
       updateVehicle3DMode(map, vehicles3DEnabled(is3D, always3DVehicles));
-      stopFurnitureSigRef.current = '';
-      updateStopFurniture(map, mapTheme);
-      bikeFurnitureSigRef.current = '';
-      updateBikeFurniture(map, mapTheme);
+      overlayRef.current.stopFurniture.sig = '';
+      overlaysRef.current.stopFurniture(map, mapTheme);
+      overlayRef.current.bikeFurniture.sig = '';
+      overlaysRef.current.bikeFurniture(map, mapTheme);
     }
   }, [is3D, always3DVehicles, mapTheme]);
 
