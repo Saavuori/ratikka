@@ -4,6 +4,8 @@ import { useWebSocket } from './hooks/useWebSocket';
 import { useTramData } from './hooks/useTramData';
 import { useReplay } from './hooks/useReplay';
 import { useIsMobile } from './hooks/useIsMobile';
+import { useEdgeSwipe } from './hooks/useEdgeSwipe';
+import { useTripDetails } from './hooks/useTripDetails';
 import { Map } from './components/Map';
 import { RIBBONED_MODES } from './map/routeNetwork';
 import type {
@@ -338,67 +340,13 @@ function App() {
     }
   }, [isDetailCollapsed, isMobile]);
 
-  // Slide (swipe) gesture detection for left and right panels on touch devices.
-  // Desktop-only: on mobile the panels are bottom sheets driven by the bottom nav.
-  useEffect(() => {
-    if (isMobile) return;
-    let touchStartX = 0;
-    let touchStartY = 0;
-    const edgeThreshold = 45; // px from screen edge to trigger edge swipes
-    const swipeThreshold = 55; // px of horizontal movement to trigger swipe
-
-    const handleTouchStart = (e: TouchEvent) => {
-      touchStartX = e.touches[0].clientX;
-      touchStartY = e.touches[0].clientY;
-    };
-
-    const handleTouchEnd = (e: TouchEvent) => {
-      if (e.changedTouches.length === 0) return;
-      const touchEndX = e.changedTouches[0].clientX;
-      const touchEndY = e.changedTouches[0].clientY;
-      const deltaX = touchEndX - touchStartX;
-      const deltaY = touchEndY - touchStartY;
-
-      // Ensure it's mostly a horizontal swipe
-      if (Math.abs(deltaX) > Math.abs(deltaY) * 1.5 && Math.abs(deltaX) > swipeThreshold) {
-        const screenWidth = window.innerWidth;
-
-        // Left Panel (FilterPanel) Swipes
-        if (deltaX > 0) {
-          // Swipe right: Open left panel if swipe started near left edge
-          if (touchStartX < edgeThreshold) {
-            setIsFilterCollapsed(false);
-          }
-        } else {
-          // Swipe left: Close left panel if it is currently open and swipe started inside it
-          if (!isFilterCollapsed && touchStartX < 250) {
-            setIsFilterCollapsed(true);
-          }
-        }
-
-        // Right Panel (DetailPopup / StopPopup / BikePopup) Swipes
-        if (deltaX < 0) {
-          // Swipe left: Open right panel if swipe started near right edge
-          if (screenWidth - touchStartX < edgeThreshold) {
-            setIsDetailCollapsed(false);
-          }
-        } else {
-          // Swipe right: Close right panel if it is currently open and swipe started inside it
-          if (!isDetailCollapsed && screenWidth - touchStartX < 350) {
-            setIsDetailCollapsed(true);
-          }
-        }
-      }
-    };
-
-    window.addEventListener('touchstart', handleTouchStart, { passive: true });
-    window.addEventListener('touchend', handleTouchEnd, { passive: true });
-
-    return () => {
-      window.removeEventListener('touchstart', handleTouchStart);
-      window.removeEventListener('touchend', handleTouchEnd);
-    };
-  }, [isFilterCollapsed, isDetailCollapsed, isMobile]);
+  useEdgeSwipe({
+    filterCollapsed: isFilterCollapsed,
+    setFilterCollapsed: setIsFilterCollapsed,
+    detailCollapsed: isDetailCollapsed,
+    setDetailCollapsed: setIsDetailCollapsed,
+    isMobile,
+  });
   // The line filter (favourite lines), remembered across reloads.
   const [selectedLines, setSelectedLines] = usePersistedLines('selectedLines');
 
@@ -656,53 +604,12 @@ function App() {
     ? (selectedTram.veh && selectedTram.veh !== '0' ? trams[selectedTram.veh] || selectedTram : selectedTram)
     : null;
 
-  const [selectedTripDetails, setSelectedTripDetails] = useState<TripDetailsResponse | null>(null);
-  const [isLoadingTripDetails, setIsLoadingTripDetails] = useState<boolean>(false);
-  const [tripDetailsError, setTripDetailsError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const tripId = liveTram?.tripId;
-    if (!tripId) {
-      setSelectedTripDetails(null);
-      setIsLoadingTripDetails(false);
-      setTripDetailsError(null);
-      return;
-    }
-
-    // Don't refetch if we already have the details for this tripId
-    if (selectedTripDetails && selectedTripDetails.tripId === tripId) {
-      return;
-    }
-
-    setIsLoadingTripDetails(true);
-    setTripDetailsError(null);
-    setSelectedTripDetails(null);
-
-    let active = true;
-    fetchTripDetails(tripId)
-      .then((data) => {
-        if (active) {
-          setSelectedTripDetails(data);
-          setTripDetailsError(null);
-        }
-      })
-      .catch((err) => {
-        if (active) {
-          console.error('Failed to fetch trip details:', err);
-          setTripDetailsError('Failed to load trip timetable');
-          setSelectedTripDetails(null);
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setIsLoadingTripDetails(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [liveTram?.tripId]);
+  // The timetable behind the selected vehicle's journey.
+  const {
+    details: selectedTripDetails,
+    loading: isLoadingTripDetails,
+    error: tripDetailsError,
+  } = useTripDetails(liveTram?.tripId);
 
   // Pattern geometry for the arrival being tracked, so the map can draw its
   // approach along the street rather than as a bearing across the blocks.
