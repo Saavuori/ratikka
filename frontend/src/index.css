@@ -1771,9 +1771,6 @@ body {
   .journey-panel.mobile.picking {
     max-height: calc(100dvh - 20px);
   }
-  .journey-panel.mobile.picking .journey-time-controls {
-    display: none;
-  }
 }
 
 /* Floating corner shortcuts — partly see-through chip groups pinned to the two
