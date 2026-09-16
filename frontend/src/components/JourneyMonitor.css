@@ -3,6 +3,7 @@
   flex-wrap: wrap;
   gap: 8px;
   padding: 0 14px 12px;
+  flex: 0 0 auto;
 }
 
 .journey-time-controls label {

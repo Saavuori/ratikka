@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.73.2] - 2026-09-16
+
+### Fixed
+- **"Where to?" shows the places it finds again.** Typing a destination into the journey planner looked like it did nothing: the lookup ran, the places came back, and the list they were drawn into was zero pixels tall, so a rider saw an empty panel and concluded the search was broken. The planner is a column of fixed rows — the two fields, the swap, the depart-at/date/time controls — with the suggestion list beneath them, and the list was the one part allowed to give up its height: a scrollable flex item shrinks to nothing without complaint, while the rows above it keep every pixel they asked for. On a phone the panel is capped at 60% of the screen and the on-screen keyboard takes most of the rest, so there was nothing left to give. The list now takes the height the rows above leave over and never falls below a few results' worth, the hard-coded height budgets that tried to guess the rows' size are gone (they were a guess that wrapping and the keyboard both broke), and the panel itself scrolls rather than clipping whatever no longer fits. While a place is being picked on a phone the time controls stand aside — with the keyboard up the screen holds the field you are typing in and the answers to it, and nothing else.
+- **Changing the departure time no longer cancels the search you are in the middle of.** Cancelling a journey plan and cancelling a place lookup were the same routine, so anything that abandoned an in-flight plan — touching the date, the time or the arrive-by selector, swapping the endpoints, or the phone finally reporting your location while you typed — also aborted the destination lookup and emptied the list behind it. Nothing rescheduled it, so the suggestions stayed gone until the next keystroke. The two are now separate: a plan can be dropped without touching what the field is looking up, and the lookup is only cancelled where it should be — picking a place, clearing the field, swapping, or closing the planner.
+
+---
+
 ## [v0.68.1] - 2026-09-08
 
 ### Changed

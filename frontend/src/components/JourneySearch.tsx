@@ -121,24 +121,31 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
 
   useEffect(() => { selectionCallback.current = onSelectionChange; }, [onSelectionChange]);
 
+  // Drops the place lookup only. Kept apart from cancelPending: planning a
+  // journey and typing into a field run side by side, so cancelling a plan must
+  // never throw away the suggestions the user is waiting for.
+  const cancelGeocode = useCallback(() => {
+    geocodeAbortRef.current?.abort();
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    setSuggestLoading(false);
+    setSuggestions([]);
+  }, []);
+
   const cancelPending = useCallback(() => {
     generationRef.current++;
     monitorGenerationRef.current++;
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'plan');
-    geocodeAbortRef.current?.abort();
     planAbortRef.current?.abort();
     monitorAbortRef.current?.abort();
     if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
-    setSuggestLoading(false);
-    setSuggestions([]);
     setMonitorLoading(false);
   }, []);
 
   useEffect(() => () => {
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'unmount');
+    cancelGeocode();
     cancelPending();
-  }, [cancelPending]);
+  }, [cancelGeocode, cancelPending]);
 
   useEffect(() => {
     onOpenChange?.(open);
@@ -320,6 +327,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const handlePickSuggestion = (field: 'from' | 'to', s: GeocodeResult) => {
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, field);
     cancelPending();
+    cancelGeocode();
     const endpoint: JourneyEndpoint = { name: s.name || s.label, lat: s.lat, lon: s.lon };
     if (field === 'from') {
       setFrom(endpoint);
@@ -339,6 +347,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
       .then((c) => {
         if (generation !== originGenerationRef.current) return;
         cancelPending();
+        cancelGeocode();
         setFrom({ name: CURRENT_LOCATION_LABEL, lat: c.lat, lon: c.lon });
         setFromText(CURRENT_LOCATION_LABEL);
         setActiveField(null);
@@ -353,6 +362,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const handleSwap = () => {
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'swap');
     cancelPending();
+    cancelGeocode();
     setFrom(to);
     setTo(from);
     setFromText(toText);
@@ -389,6 +399,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const resetAll = () => {
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'close');
     cancelPending();
+    cancelGeocode();
     setFrom(null);
     setTo(null);
     setFromText('');
@@ -525,10 +536,10 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               cancelPending();
+              cancelGeocode();
               setValue('');
               clearEndpoint();
               setActiveField(field);
-              setSuggestions([]);
             }}
           >
             <X size={13} />
@@ -541,7 +552,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const showSuggestions = activeField !== null && (suggestions.length > 0 || suggestLoading || activeField === 'from');
 
   return (
-    <div className={`glass-panel journey-panel ${isMobile ? 'mobile' : ''}`}>
+    <div className={`glass-panel journey-panel ${isMobile ? 'mobile' : ''} ${showSuggestions ? 'picking' : ''}`}>
       <div className="journey-header">
         <h2 className="journey-title">
           <Search size={15} /> Plan a journey
