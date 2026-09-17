@@ -100,8 +100,6 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const [planLoading, setPlanLoading] = useState(false);
   const [monitorLoading, setMonitorLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchTime, setSearchTime] = useState(() => helsinkiDateTime(Date.now()));
-  const [arriveBy, setArriveBy] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [alternativesUpdatedAt, setAlternativesUpdatedAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now);
@@ -121,24 +119,31 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
 
   useEffect(() => { selectionCallback.current = onSelectionChange; }, [onSelectionChange]);
 
+  // Drops the place lookup only. Kept apart from cancelPending: planning a
+  // journey and typing into a field run side by side, so cancelling a plan must
+  // never throw away the suggestions the user is waiting for.
+  const cancelGeocode = useCallback(() => {
+    geocodeAbortRef.current?.abort();
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    setSuggestLoading(false);
+    setSuggestions([]);
+  }, []);
+
   const cancelPending = useCallback(() => {
     generationRef.current++;
     monitorGenerationRef.current++;
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'plan');
-    geocodeAbortRef.current?.abort();
     planAbortRef.current?.abort();
     monitorAbortRef.current?.abort();
     if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
-    setSuggestLoading(false);
-    setSuggestions([]);
     setMonitorLoading(false);
   }, []);
 
   useEffect(() => () => {
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'unmount');
+    cancelGeocode();
     cancelPending();
-  }, [cancelPending]);
+  }, [cancelGeocode, cancelPending]);
 
   useEffect(() => {
     onOpenChange?.(open);
@@ -209,7 +214,8 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     planAbortRef.current = controller;
     setPlanLoading(true);
     setAlternativesError(null);
-    fetchJourneyPlan(f, t, controller.signal, { ...searchTime, arriveBy })
+    // No date/time: the planner is a live board, so every plan leaves now.
+    fetchJourneyPlan(f, t, controller.signal)
       .then((res) => {
         if (controller.signal.aborted || generation !== generationRef.current) return;
         const list = res.itineraries || [];
@@ -242,7 +248,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         // request that superseded it.
         if (!controller.signal.aborted && generation === generationRef.current) setPlanLoading(false);
       });
-  }, [searchTime, arriveBy]);
+  }, []);
 
   const runMonitor = useCallback((f: JourneyEndpoint, t: JourneyEndpoint) => {
     const selected = selectedRef.current;
@@ -258,7 +264,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         ...mergeMonitoredLegs(selected, response.legs),
         fetchedAt: response.fetchedAt,
       }))
-      : fetchJourneyPlan(f, t, controller.signal, { ...searchTime, arriveBy }).then(response => {
+      : fetchJourneyPlan(f, t, controller.signal).then(response => {
         const match = findRefreshedItinerary(selected, response.itineraries);
         return {
           itinerary: match ?? selected,
@@ -287,7 +293,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     }).finally(() => {
       if (!controller.signal.aborted && generation === monitorGenerationRef.current) setMonitorLoading(false);
     });
-  }, [searchTime, arriveBy]);
+  }, []);
 
   useEffect(() => {
     selectedRef.current = null;
@@ -300,9 +306,9 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     setAlternativesError(null);
     setPlanLoading(false);
     selectionCallback.current(null);
-    if (open && from && to && searchTime.date && searchTime.time) runPlan(from, to);
+    if (open && from && to) runPlan(from, to);
     return cancelPending;
-  }, [from, to, open, runPlan, cancelPending, searchTime.date, searchTime.time]);
+  }, [from, to, open, runPlan, cancelPending]);
 
   useEffect(() => {
     if (!open || !selectedItinerary) return;
@@ -320,6 +326,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const handlePickSuggestion = (field: 'from' | 'to', s: GeocodeResult) => {
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, field);
     cancelPending();
+    cancelGeocode();
     const endpoint: JourneyEndpoint = { name: s.name || s.label, lat: s.lat, lon: s.lon };
     if (field === 'from') {
       setFrom(endpoint);
@@ -339,6 +346,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
       .then((c) => {
         if (generation !== originGenerationRef.current) return;
         cancelPending();
+        cancelGeocode();
         setFrom({ name: CURRENT_LOCATION_LABEL, lat: c.lat, lon: c.lon });
         setFromText(CURRENT_LOCATION_LABEL);
         setActiveField(null);
@@ -353,6 +361,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const handleSwap = () => {
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'swap');
     cancelPending();
+    cancelGeocode();
     setFrom(to);
     setTo(from);
     setFromText(toText);
@@ -389,6 +398,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const resetAll = () => {
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'close');
     cancelPending();
+    cancelGeocode();
     setFrom(null);
     setTo(null);
     setFromText('');
@@ -445,7 +455,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     return (
       <button
         className="journey-launcher"
-        onClick={() => { setSearchTime(helsinkiDateTime(Date.now())); setOpen(true); }}
+        onClick={() => setOpen(true)}
         aria-label="Plan a journey"
       >
         <Search size={16} />
@@ -525,10 +535,10 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               cancelPending();
+              cancelGeocode();
               setValue('');
               clearEndpoint();
               setActiveField(field);
-              setSuggestions([]);
             }}
           >
             <X size={13} />
@@ -541,7 +551,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const showSuggestions = activeField !== null && (suggestions.length > 0 || suggestLoading || activeField === 'from');
 
   return (
-    <div className={`glass-panel journey-panel ${isMobile ? 'mobile' : ''}`}>
+    <div className={`glass-panel journey-panel ${isMobile ? 'mobile' : ''} ${showSuggestions ? 'picking' : ''}`}>
       <div className="journey-header">
         <h2 className="journey-title">
           <Search size={15} /> Plan a journey
@@ -569,39 +579,6 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         <button className="journey-swap" onClick={handleSwap} aria-label="Swap origin and destination" title="Swap">
           <ArrowUpDown size={14} />
         </button>
-      </div>
-
-      <div className="journey-time-controls">
-        <label>
-          Journey time
-          <select value={arriveBy ? 'arrival' : 'departure'} onChange={e => {
-            cancelPending();
-            setArriveBy(e.target.value === 'arrival');
-          }}>
-            <option value="departure">Depart at</option>
-            <option value="arrival">Arrive by</option>
-          </select>
-        </label>
-        <label>
-          Date
-          <input type="date" value={searchTime.date} onChange={e => {
-            cancelPending();
-            setSearchTime(current => ({ ...current, date: e.target.value }));
-          }} />
-        </label>
-        <label>
-          Time
-          <input type="time" value={searchTime.time} onChange={e => {
-            cancelPending();
-            setSearchTime(current => ({ ...current, time: e.target.value }));
-          }} />
-        </label>
-        <span className="journey-time-zone">Europe/Helsinki · All journey times are Helsinki local time.</span>
-        <button type="button" onClick={() => {
-          cancelPending();
-          setSearchTime(helsinkiDateTime(Date.now()));
-          setArriveBy(false);
-        }}>Depart now</button>
       </div>
 
       {/* Autocomplete suggestions */}
@@ -648,7 +625,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
           )}
           {error && <div className="journey-status error" role="status">{error}</div>}
           {alternativesError && <div className="journey-status error" role="status">{alternativesError}</div>}
-          {from && to && searchTime.date && searchTime.time && (
+          {from && to && (
             <div className="journey-monitor-actions">
               {selectedItinerary && <button className="journey-refresh" disabled={monitorLoading} onClick={() => runMonitor(from, to)}>
                 Refresh predictions

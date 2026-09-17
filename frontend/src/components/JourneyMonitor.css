@@ -1,21 +1,3 @@
-.journey-time-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 14px 12px;
-}
-
-.journey-time-controls label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
-  min-width: 0;
-}
-
-.journey-time-controls input,
-.journey-time-controls select,
-.journey-time-controls button,
 .journey-monitor button,
 .journey-refresh {
   border: 1px solid var(--border-button-hover);
@@ -24,12 +6,6 @@
   background: var(--bg-panel);
   color: var(--text-primary);
   font: inherit;
-}
-
-.journey-time-zone {
-  flex-basis: 100%;
-  font-size: 10px;
-  color: var(--text-secondary);
 }
 
 .journey-monitor {

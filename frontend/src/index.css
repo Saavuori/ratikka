@@ -1276,7 +1276,9 @@ body {
   max-height: calc(100dvh - 32px);
   padding: 14px;
   gap: 12px;
-  overflow: hidden;
+  /* Vertically scrollable as a last resort: on a short viewport the rows below
+     the fields would otherwise be clipped away with no way to reach them. */
+  overflow: hidden auto;
   pointer-events: auto;
 }
 
@@ -1284,6 +1286,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex: 0 0 auto;
 }
 .journey-title {
   display: flex;
@@ -1315,6 +1318,7 @@ body {
   align-items: center;
   gap: 8px;
   margin-top: 4px;
+  flex: 0 0 auto;
 }
 .journey-fields-stack {
   display: flex;
@@ -1384,6 +1388,11 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* Take the height the fixed rows above leave over, but never collapse: an
+     `overflow-y: auto` flex item shrinks to zero happily, which used to hide
+     the results completely on short viewports. */
+  flex: 1 1 auto;
+  min-height: 96px;
   max-height: 320px;
   overflow-y: auto;
   margin: 0 -4px;
@@ -1428,6 +1437,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1 1 auto;
+  min-height: 96px;
   overflow-y: auto;
   max-height: calc(100vh - 210px);
   max-height: calc(100dvh - 210px);
@@ -1749,11 +1760,16 @@ body {
        stays visible while the planner is expanded. */
     max-height: 60dvh;
   }
-  .journey-panel.mobile .journey-results {
-    max-height: calc(60dvh - 190px);
-  }
+  .journey-panel.mobile .journey-results,
   .journey-panel.mobile .journey-suggestions {
-    max-height: calc(60dvh - 150px);
+    /* No fixed budget for the rows above: they vary with wrapping and with the
+       on-screen keyboard, and any guess left the list at zero height. */
+    max-height: none;
+  }
+  /* While a place is being picked the keyboard eats most of the screen, so give
+     the whole panel to the field and its suggestions. */
+  .journey-panel.mobile.picking {
+    max-height: calc(100dvh - 20px);
   }
 }
 
