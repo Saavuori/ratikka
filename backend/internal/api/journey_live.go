@@ -114,12 +114,9 @@ func (h *Handlers) MonitorJourney(w http.ResponseWriter, r *http.Request) {
 	}
 	idJSON, _ := json.Marshal(ids)
 	key := "journey-monitor:" + string(idJSON)
-	data, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
-		if cached, ok := h.apiCache.Get(key); ok {
-			return cached, nil
-		}
+	serveCached(h, w, key, 10*time.Second, func() (JourneyMonitorResponse, error) {
 		var declarations, selections []string
-		vars := make(map[string]interface{}, len(ids))
+		vars := make(map[string]any, len(ids))
 		for i, id := range ids {
 			name := fmt.Sprintf("leg%d", i)
 			declarations = append(declarations, "$"+name+": String!")
@@ -130,7 +127,7 @@ func (h *Handlers) MonitorJourney(w http.ResponseWriter, r *http.Request) {
 			strings.Join(selections, "\n") + " }"
 		var raw map[string]*rawPlanLeg
 		if err := h.gql.query(r.Context(), query, vars, &raw); err != nil {
-			return nil, err
+			return JourneyMonitorResponse{}, errUpstream
 		}
 		out := JourneyMonitorResponse{Legs: make([]*JourneyLeg, len(ids)), FetchedAt: time.Now().UnixMilli()}
 		for i := range ids {
@@ -139,16 +136,6 @@ func (h *Handlers) MonitorJourney(w http.ResponseWriter, r *http.Request) {
 				out.Legs[i] = &leg
 			}
 		}
-		body, err := json.Marshal(out)
-		if err == nil {
-			h.apiCache.Set(key, body, 10*time.Second)
-		}
-		return body, err
+		return out, nil
 	})
-	if err != nil {
-		http.Error(w, "upstream api error", http.StatusBadGateway)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data.([]byte))
 }

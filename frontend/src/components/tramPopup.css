@@ -1,0 +1,58 @@
+/*
+ * The vehicle panel's repeated pieces.
+ *
+ * These were inline style objects — the same one written out up to twenty-two
+ * times — which also meant they carried literal greys rather than the theme's
+ * own tokens, so the labels stayed at their dark-theme value on a light map.
+ * The colours below are `--text-secondary`, which does change with the theme.
+ *
+ * One-off and data-driven styling stays inline; there is no gain in naming a
+ * class for a width computed from a vehicle's speed.
+ */
+
+/* A label on the left, its value on the right. */
+.tp-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+/* A stack of rows. */
+.tp-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The label half of a row: muted, with room for a leading icon. */
+.tp-label {
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tp-muted {
+  color: var(--text-secondary);
+}
+
+/* Telemetry figures, which should not reflow as their digits change. */
+.tp-mono {
+  font-family: monospace;
+}
+
+/* The small heading over a group of rows. */
+.tp-caption {
+  display: block;
+  font-size: 0.55rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+/* The same heading where it flows inline above a wider block. */
+.tp-caption--wide {
+  display: inline;
+  margin-bottom: 8px;
+}

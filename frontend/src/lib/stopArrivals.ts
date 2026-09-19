@@ -2,6 +2,7 @@ import type { StopDepartureInfo, VehiclePosition } from '../types';
 import { departureEpoch, isCancelledDeparture } from './departures';
 import { findTripVehicle, type TripIdentity } from './journeyVehicles';
 import { isApproaching, isBoardingAt } from './nextStop';
+import { modesPresent, type ModeFlags } from './modes';
 
 /**
  * What is known about the vehicle behind the arrival. The countdown itself
@@ -144,17 +145,8 @@ export function focusedArrival(arrivals: StopArrival[], tripId?: string): StopAr
 }
 
 /** Which live vehicle modes a stop's departures need streamed to be trackable. */
-export function arrivalVehicleModes(departures: StopDepartureInfo[] | undefined): {
-  bus: boolean; metro: boolean; train: boolean; tram: boolean; ferry: boolean;
-} {
-  const modes = new Set(departures?.map((departure) => departure.mode));
-  return {
-    bus: modes.has('BUS'),
-    metro: modes.has('SUBWAY'),
-    train: modes.has('RAIL'),
-    tram: modes.has('TRAM'),
-    ferry: modes.has('FERRY'),
-  };
+export function arrivalVehicleModes(departures: StopDepartureInfo[] | undefined): ModeFlags {
+  return modesPresent(departures?.map((departure) => departure.mode) ?? []);
 }
 
 /**

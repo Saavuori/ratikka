@@ -12,6 +12,7 @@ import { arrivalVehicleModes, focusedArrival, nextArrivals, walkVerdict } from '
 import type { ArrivalFocus } from '../lib/stopArrivals';
 import { ArrivalHeadline } from './ArrivalHeadline';
 import './departures.css';
+import type { ModeFlags } from '../lib/modes';
 
 interface StopPopupProps {
   stopId: string;
@@ -28,7 +29,7 @@ interface StopPopupProps {
   /** Live positions, used to name the vehicle behind the next departure. */
   vehicles: VehiclePosition[];
   /** Which live feeds this stop's departures need streaming to be trackable. */
-  onArrivalModesLoaded?: (modes: { bus: boolean; metro: boolean; train: boolean; tram: boolean; ferry: boolean }) => void;
+  onArrivalModesLoaded?: (modes: ModeFlags) => void;
   /** The arrival the map should follow, or null when tracking is off. */
   onArrivalFocusChange?: (focus: ArrivalFocus | null) => void;
   /** Walking distance to this stop in metres, when it is known. */

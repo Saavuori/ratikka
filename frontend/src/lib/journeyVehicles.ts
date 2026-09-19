@@ -1,4 +1,5 @@
 import type { JourneyLeg, VehiclePosition } from '../types';
+import { modesPresent, type ModeFlags } from './modes';
 
 const MAX_POSITION_AGE_MS = 45_000;
 const MODE_NAMES: Record<string, string> = {
@@ -99,13 +100,7 @@ export function findJourneyVehicle(
   }, vehicles, now);
 }
 
-export function journeyVehicleModes(legs: JourneyLeg[] | undefined): { bus: boolean; metro: boolean; train: boolean; tram: boolean; ferry: boolean } {
-  const modes = new Set(legs?.filter((leg) => leg.transit).map((leg) => leg.mode));
-  return {
-    bus: modes.has('BUS'),
-    metro: modes.has('SUBWAY'),
-    train: modes.has('RAIL'),
-    tram: modes.has('TRAM'),
-    ferry: modes.has('FERRY'),
-  };
+/** Which live vehicle modes a planned journey's transit legs need streamed. */
+export function journeyVehicleModes(legs: JourneyLeg[] | undefined): ModeFlags {
+  return modesPresent(legs?.filter((leg) => leg.transit).map((leg) => leg.mode) ?? []);
 }

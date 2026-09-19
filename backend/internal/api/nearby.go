@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
@@ -60,10 +59,7 @@ func (h *Handlers) NearbyStops(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	key := fmt.Sprintf("nearby:%g:%g:%d", lat, lon, radius)
-	data, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
-		if cached, ok := h.apiCache.Get(key); ok {
-			return cached, nil
-		}
+	serveCached(h, w, key, 30*time.Second, func() (NearbyStopsResponse, error) {
 		var raw struct {
 			StopsByRadius *struct {
 				Edges []struct {
@@ -80,13 +76,13 @@ func (h *Handlers) NearbyStops(w http.ResponseWriter, r *http.Request) {
 				edges { node { stop { gtfsId name code lat lon platformCode } distance } }
 			}
 		}`
-		if err := h.gql.query(r.Context(), query, map[string]interface{}{
+		if err := h.gql.query(r.Context(), query, map[string]any{
 			"lat": lat, "lon": lon, "radius": radius,
 		}, &raw); err != nil {
-			return nil, err
+			return NearbyStopsResponse{}, errUpstream
 		}
 		if raw.StopsByRadius == nil {
-			return nil, fmt.Errorf("missing nearby stops")
+			return NearbyStopsResponse{}, errUpstream
 		}
 		out := NearbyStopsResponse{Stops: []NearbyStop{}, FetchedAt: time.Now().UnixMilli()}
 		for _, edge := range raw.StopsByRadius.Edges {
@@ -108,16 +104,6 @@ func (h *Handlers) NearbyStops(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		out.Stops = stops
-		body, err := json.Marshal(out)
-		if err == nil {
-			h.apiCache.Set(key, body, 30*time.Second)
-		}
-		return body, err
+		return out, nil
 	})
-	if err != nil {
-		http.Error(w, "upstream api error", http.StatusBadGateway)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data.([]byte))
 }

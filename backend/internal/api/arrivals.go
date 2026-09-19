@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -89,12 +88,8 @@ func (h *Handlers) StopsArrivals(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := "arrivals:" + strings.Join(ids, ",")
-	data, err, _ := h.sfGroup.Do(key, func() (interface{}, error) {
-		if cached, ok := h.apiCache.Get(key); ok {
-			return cached, nil
-		}
-
-		variables := make(map[string]interface{}, len(ids))
+	serveCached(h, w, key, 10*time.Second, func() (StopsArrivalsResponse, error) {
+		variables := make(map[string]any, len(ids))
 		for i, id := range ids {
 			variables[fmt.Sprintf("id%d", i)] = id
 		}
@@ -102,7 +97,7 @@ func (h *Handlers) StopsArrivals(w http.ResponseWriter, r *http.Request) {
 		// map. A stop the upstream API does not know decodes as a nil entry.
 		var raw map[string]*rawStop
 		if err := h.gql.query(r.Context(), arrivalsQuery(len(ids)), variables, &raw); err != nil {
-			return nil, fmt.Errorf("upstream api error")
+			return StopsArrivalsResponse{}, errUpstream
 		}
 
 		resp := StopsArrivalsResponse{
@@ -123,20 +118,6 @@ func (h *Handlers) StopsArrivals(w http.ResponseWriter, r *http.Request) {
 			}
 			resp.Stops[stop.GtfsId] = arrivals
 		}
-
-		body, err := json.Marshal(resp)
-		if err != nil {
-			return nil, err
-		}
-		h.apiCache.Set(key, body, 10*time.Second)
-		return body, nil
+		return resp, nil
 	})
-
-	if err != nil {
-		http.Error(w, "upstream api error", http.StatusBadGateway)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data.([]byte))
 }

@@ -84,6 +84,27 @@ export const BUS_BLUE = '#0984E3';
 export const FERRY_CYAN = '#00B9E4';
 
 /**
+ * The colours HSL paints its own route network in.
+ *
+ * Distinct from the mode accents above, which are the app's chrome and are free
+ * to differ (`BUS_BLUE` is a brighter blue than the network's). These have to
+ * match what the basemap draws, so the layers the dark theme recreates come out
+ * the same colour as the ones `style.json` ships in the light one.
+ *
+ * `inner` is the lighter core some bands draw over their main line; the modes
+ * without one are drawn as a single stroke.
+ */
+export const NETWORK_COLORS = {
+  tram: { line: TRAM_GREEN, inner: '#00bb75' },
+  lightRail: { line: '#0098A1', inner: '#19a2aa' },
+  bus: { line: '#007ac9', inner: '#3395d4' },
+  trunk: { line: '#CA4300', inner: METRO_ORANGE },
+  metro: { line: METRO_ORANGE },
+  rail: { line: TRAIN_PURPLE },
+  ferry: { line: FERRY_CYAN },
+} as const;
+
+/**
  * Accent colour for a whole mode, used where a UI element belongs to a vehicle
  * rather than to one line (panel tabs, schematics, the heading needle).
  */

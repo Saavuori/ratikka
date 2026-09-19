@@ -1,0 +1,34 @@
+/*
+ * The schematic's own motion: wheels that turn while the vehicle is moving,
+ * and door lights that blink while its doors are open.
+ *
+ * These live with the component that emits the class names rather than with
+ * the panel that happens to render it — they used to be injected from
+ * TramPopup, which meant the schematic was only styled while that particular
+ * panel was mounted.
+ */
+
+@keyframes spin-wheels {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes blink-light {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 5px #00b894); }
+  50% { opacity: 0.2; filter: none; }
+}
+
+.rotating-wheel {
+  transform-origin: center;
+  /* Set per vehicle from its reported speed. */
+  animation: spin-wheels var(--wheel-speed, 1s) linear infinite;
+}
+
+.blinking-door-light {
+  animation: blink-light 0.8s infinite;
+}
+
+.door-leaf-left,
+.door-leaf-right {
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}

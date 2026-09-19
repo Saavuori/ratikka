@@ -12,8 +12,8 @@ import (
 var DigitransitURLEndpoint = "https://api.digitransit.fi/routing/v2/hsl/gtfs/v1"
 
 type ContextKey string
-const AcceptLanguageKey ContextKey = "accept-language"
 
+const AcceptLanguageKey ContextKey = "accept-language"
 
 type GraphQLClient struct {
 	apiKey     string
@@ -58,17 +58,17 @@ type graphQLResponse struct {
 // Raw Digitransit GraphQL Response Structs
 type rawTripResponse struct {
 	Trip *struct {
-		GtfsId           string       `json:"gtfsId"`
-		Route            rawRouteInfo `json:"route"`
-		TripHeadsign     string       `json:"tripHeadsign"`
-		Stoptimes []struct {
-			ScheduledArrival   int `json:"scheduledArrival"`
-			RealtimeArrival    int `json:"realtimeArrival"`
-			ArrivalDelay       int `json:"arrivalDelay"`
-			ScheduledDeparture int `json:"scheduledDeparture"`
-			RealtimeDeparture  int `json:"realtimeDeparture"`
-			DepartureDelay     int `json:"departureDelay"`
-			Realtime           bool `json:"realtime"`
+		GtfsId       string       `json:"gtfsId"`
+		Route        rawRouteInfo `json:"route"`
+		TripHeadsign string       `json:"tripHeadsign"`
+		Stoptimes    []struct {
+			ScheduledArrival   int    `json:"scheduledArrival"`
+			RealtimeArrival    int    `json:"realtimeArrival"`
+			ArrivalDelay       int    `json:"arrivalDelay"`
+			ScheduledDeparture int    `json:"scheduledDeparture"`
+			RealtimeDeparture  int    `json:"realtimeDeparture"`
+			DepartureDelay     int    `json:"departureDelay"`
+			Realtime           bool   `json:"realtime"`
 			RealtimeState      string `json:"realtimeState"`
 			Stop               struct {
 				GtfsId string  `json:"gtfsId"`
@@ -187,7 +187,6 @@ type rawEntity struct {
 	Code      string `json:"code,omitempty"`
 }
 
-
 func (c *GraphQLClient) query(ctx context.Context, query string, variables map[string]interface{}, out interface{}) error {
 	reqBody := graphQLRequest{
 		Query:     query,
@@ -211,7 +210,6 @@ func (c *GraphQLClient) query(ctx context.Context, query string, variables map[s
 	if lang, ok := ctx.Value(AcceptLanguageKey).(string); ok && lang != "" {
 		req.Header.Set("Accept-Language", lang)
 	}
-
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
