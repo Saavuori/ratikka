@@ -37,6 +37,7 @@ import type {
   MapCallbacks,
   MapSelection,
   MapView,
+  RouteGeometries,
 } from '../map/props';
 import {
   forgetBaseFilters,
@@ -101,7 +102,7 @@ interface MapProps {
   /** The vehicles to draw, live or replayed. */
   trams: Record<string, VehiclePosition>;
   /** Fetched pattern geometry per line, drawn as the highlighted ribbons. */
-  routeGeometries: Record<string, { geometries: string[]; color?: string; stops?: string[] }>;
+  routeGeometries: RouteGeometries;
   selection: MapSelection;
   view: MapView;
   journey: JourneyOverlay;
@@ -202,7 +203,7 @@ export const Map: React.FC<MapProps> = ({
   // References to keep state fresh in map event handlers and tick loop without closure issues
   const latestTramsRef = useRef<Record<string, VehiclePosition>>(trams);
   const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation, onSelectJunction, onDisableFollowing, onMapBearingChange, onLocatingChange, onVisibleStopsChange });
-  const routeGeometriesRef = useRef<Record<string, { geometries: string[]; color?: string; stops?: string[] }>>(routeGeometries);
+  const routeGeometriesRef = useRef<RouteGeometries>(routeGeometries);
   const selectedTramIdRef = useRef<string | null>(selectedTramId);
   const journeyVehicleIdsRef = useRef<string[]>(journeyVehicleIds);
   const selectedLineRef = useRef<string | null>(selectedLine);

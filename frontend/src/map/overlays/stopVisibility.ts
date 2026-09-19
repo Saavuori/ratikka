@@ -2,6 +2,7 @@ import type * as maplibregl from 'maplibre-gl';
 import type { VehiclePosition } from '../../types';
 import type { ModeFlags, TransportMode } from '../../lib/modes';
 import { STOP_MODE } from '../layers';
+import type { RouteGeometries } from '../props';
 
 // The sign-board layer filters on GTFS mode names, in the order the style
 // stacks them.
@@ -23,7 +24,7 @@ export interface StopVisibility {
   selectedVehicleId: string | null;
   vehicles: Record<string, VehiclePosition>;
   /** Fetched pattern geometry, which names the stops each line serves. */
-  routeGeometries: Record<string, { geometries: string[]; color?: string; stops?: string[] }>;
+  routeGeometries: RouteGeometries;
   /** The open stop, drawn by its own selection layer rather than as a disc. */
   selectedStopId: string | null;
 }
