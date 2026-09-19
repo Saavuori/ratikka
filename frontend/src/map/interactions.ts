@@ -3,22 +3,13 @@ import { STOP_FURNITURE_LAYER } from '../lib/stopModels';
 import { TRAFFIC_LIGHT_ICON_LAYER } from '../lib/trafficLightModels';
 import type * as maplibregl from 'maplibre-gl';
 import type { BikeStationsFeatureCollection, VehiclePosition } from '../types';
+import type { MapCallbacks } from './props';
 
 /** What a click on the map turns into. */
-export interface InteractionHandlers {
-  onSelectTram: (tram: VehiclePosition | null) => void;
-  onSelectStop: (
-    stopId: string,
-    name: string,
-    code: string,
-    lat?: number,
-    lng?: number,
-    mode?: string,
-    isTrunkStop?: boolean
-  ) => void;
-  onSelectBikeStation: (station: { id: string; name: string } | null) => void;
-  onSelectJunction: (junctionId: number | null) => void;
-}
+export type InteractionHandlers = Pick<
+  MapCallbacks,
+  'onSelectTram' | 'onSelectStop' | 'onSelectBikeStation' | 'onSelectJunction'
+>;
 
 /**
  * What a handler needs to look up to answer a click. Functions rather than
@@ -91,7 +82,7 @@ export function bindMapInteractions(
         if (!stopId.startsWith('HSL:')) {
           stopId = 'HSL:' + stopId;
         }
-        handlers.onSelectStop(stopId, name, code, lat, lng, mode, isTrunkStop);
+        handlers.onSelectStop({ id: stopId, name, code, lat, lng, mode, isTrunkStop });
       }
     };
 
@@ -110,9 +101,15 @@ export function bindMapInteractions(
       if (!stopId) return;
       const info = lookups.stopFurnitureMeta()[String(stopId)];
       if (!info) return;
-      handlers.onSelectStop(
-        `HSL:${stopId}`, info.name, info.code, e.lngLat.lat, e.lngLat.lng, info.mode, false,
-      );
+      handlers.onSelectStop({
+        id: `HSL:${stopId}`,
+        name: info.name,
+        code: info.code,
+        lat: e.lngLat.lat,
+        lng: e.lngLat.lng,
+        mode: info.mode,
+        isTrunkStop: false,
+      });
     });
 
     const handleBikeClick = (e: maplibregl.MapLayerMouseEvent) => {

@@ -1,12 +1,20 @@
 import type {
   JourneyEndpoint,
   JourneyLeg,
+  RouteDetailsResponse,
   TripDetailsResponse,
   VehiclePosition,
 } from '../types';
 import type { ArrivalFocus } from '../lib/stopArrivals';
 import type { ModeFlags } from '../lib/modes';
+import type { PickedStop } from '../lib/selection';
 import type { MapTheme } from '../lib/stopPlatforms';
+
+/** A highlighted line's pattern geometry, and the stops along it. */
+export type RouteGeometry = Pick<RouteDetailsResponse, 'geometries' | 'color' | 'stops'>;
+
+/** The highlighted lines' geometry, keyed by line number (`desi`). */
+export type RouteGeometries = Record<string, RouteGeometry>;
 
 /**
  * What the map is told, grouped by what it is about.
@@ -83,15 +91,7 @@ export interface ArrivalOverlay {
 /** Everything the map hands back to the app. */
 export interface MapCallbacks {
   onSelectTram: (tram: VehiclePosition | null) => void;
-  onSelectStop: (
-    stopId: string,
-    name: string,
-    code: string,
-    lat?: number,
-    lng?: number,
-    mode?: string,
-    isTrunkStop?: boolean
-  ) => void;
+  onSelectStop: (stop: PickedStop) => void;
   onSelectBikeStation: (station: { id: string; name: string } | null) => void;
   /** A signalised junction was picked off the map; null closes the panel. */
   onSelectJunction: (junctionId: number | null) => void;

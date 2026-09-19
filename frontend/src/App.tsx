@@ -1,11 +1,11 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
-import { useTramData } from './hooks/useTramData';
 import { useReplay } from './hooks/useReplay';
 import { useIsMobile } from './hooks/useIsMobile';
 import { useEdgeSwipe } from './hooks/useEdgeSwipe';
 import { useTripDetails } from './hooks/useTripDetails';
+import { useRouteGeometries } from './hooks/useRouteGeometries';
 import { Map } from './components/Map';
 import { RIBBONED_MODES } from './map/routeNetwork';
 import type {
@@ -30,7 +30,7 @@ import { JourneySearch, type JourneySelection } from './components/JourneySearch
 import { DeparturesPanel } from './components/DeparturesPanel';
 import { RidePanel } from './components/RidePanel';
 import { AlightBanner } from './components/AlightBanner';
-import { fetchRouteDetails, fetchAlerts, fetchTripDetails, fetchStopsArrivals, fetchMapConfig } from './lib/api';
+import { fetchAlerts, fetchStopsArrivals, fetchMapConfig } from './lib/api';
 import type { MapTheme } from './lib/stopPlatforms';
 import { usePersistedFlag, usePersistedLines, usePersistedModes, usePersistedState } from './hooks/usePersisted';
 import {
@@ -39,10 +39,17 @@ import {
   asTransportMode,
   modeFlags,
   withMode,
-  type ModeFlags,
   type TransportMode,
 } from './lib/modes';
-import { areTripsEquivalent } from './lib/trip';
+import {
+  findTripVehicle,
+  selectionKey,
+  stopSelection,
+  tripSelection,
+  type PickedStop,
+  type Selection,
+  type StopSelection,
+} from './lib/selection';
 import { findJourneyVehicle, journeyVehicleModes } from './lib/journeyVehicles';
 import { alightAlert } from './lib/alightAlert';
 import { useTrafficLights } from './hooks/useTrafficLights';
@@ -50,14 +57,13 @@ import { useRideDetection } from './hooks/useRideDetection';
 import { useAlightNotifications } from './hooks/useAlightNotifications';
 import { signalPriorityIndex } from './lib/trafficLightModels';
 import { arrivalLabel, nextArrivals } from './lib/stopArrivals';
-import type { ArrivalFocus } from './lib/stopArrivals';
 import { pollDepartures } from './lib/departures';
 import { getRouteColor } from './lib/routeColors';
 import type { StopsArrivalsResponse } from './types';
-import type { VehiclePosition, Alert, TripDetailsResponse } from './types';
+import type { VehiclePosition, Alert } from './types';
 
 function App() {
-  const { trams: liveTrams, handleUpdate } = useTramData();
+  const [liveTrams, setLiveTrams] = useState<Record<string, VehiclePosition>>({});
   const replay = useReplay();
   // The map draws whichever source is playing. A replayed vehicle carries the
   // same fields as a live one, so nothing downstream of here knows the
@@ -77,6 +83,7 @@ function App() {
   const rideCandidates = useMemo(
     () => (replay.active ? [] : Object.values(liveTrams)), [replay.active, liveTrams]);
   const ride = useRideDetection(rideCandidates);
+  const rideVehicle = ride.rideVehicleId ? liveTrams[ride.rideVehicleId] ?? null : null;
   const rideSearching = ride.status === 'scanning' || ride.status === 'suggesting';
   const rideModes = useMemo(
     () => modeFlags((mode) => rideSearching || ride.rideMode === mode),
@@ -139,12 +146,29 @@ function App() {
 
   const journeyModes = journeyVehicleModes(journey?.itinerary.legs);
 
-  // Which optional feeds the selected stop's own departures need. Selecting a
+  // What the detail panel is about: a vehicle, a stop, a bike station or a
+  // junction, never two at once.
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const openStop = selection?.kind === 'stop' ? selection : null;
+  const stopRoutes = openStop?.routes ?? [];
+  const arrivalFocus = openStop?.arrivalFocus ?? null;
+  // Which optional feeds the open stop's own departures need. Selecting a
   // bus stop turns the bus feed on for as long as the stop is open: without it
   // there is no vehicle to match an arrival to in the first place.
-  const [stopModes, setStopModes] = useState<ModeFlags>(NO_MODES);
-  // The arrival the map is following, published by the stop panel.
-  const [arrivalFocus, setArrivalFocus] = useState<ArrivalFocus | null>(null);
+  const stopModes = openStop?.modes ?? NO_MODES;
+  const selectedBikeStation = selection?.kind === 'bikeStation' ? selection.station : null;
+  const selectedJunctionId = selection?.kind === 'junction' ? selection.junctionId : null;
+  // The selected vehicle as the panels show it: the live copy while it is in
+  // the feed, else the last one seen — or a scheduled trip's placeholder.
+  const selectedVehicle =
+    selection?.kind === 'vehicle'
+      ? trams[selection.vehicle.veh] ?? selection.vehicle
+      : selection?.kind === 'scheduledTrip'
+      ? selection.placeholder
+      : null;
+  // Only a vehicle in the feed has a position to draw, show or follow.
+  const trackedVehicle = selection?.kind === 'vehicle' ? selectedVehicle : null;
+  const trackedVehicleId = selection?.kind === 'vehicle' ? selection.vehicle.veh : null;
 
   useEffect(() => {
     const getAlerts = () => {
@@ -221,7 +245,7 @@ function App() {
   // actually asked for.
   const wantsModes = useMemo(() => anyMode(shownModes, rideModes), [shownModes, rideModes]);
   const { status: connectionStatus } = useWebSocket({
-    onMessage: (data) => handleUpdate(data.vehicles),
+    onMessage: (data) => setLiveTrams(data.vehicles),
     wantsModes,
   });
 
@@ -231,43 +255,15 @@ function App() {
     document.documentElement.setAttribute('data-theme', mapTheme === 'light' ? 'light' : 'dark');
   }, [mapTheme]);
 
-  // UI Selection States
-  const [selectedTram, setSelectedTram] = useState<VehiclePosition | null>(null);
-  const [selectedStop, setSelectedStop] = useState<{
-    id: string;
-    name: string;
-    code: string;
-    lat?: number;
-    lng?: number;
-    mode?: string;
-    isTrunkStop?: boolean;
-    /** Walking distance from the reader's location, metres — nearby stops only. */
-    distance?: number;
-    /** Start following the next arrival as soon as one can be located. */
-    autoTrack?: boolean;
-  } | null>(null);
-  const [selectedBikeStation, setSelectedBikeStation] = useState<{
-
-    id: string;
-    name: string;
-  } | null>(null);
-  // A signalised junction picked off the map, by its Helsinki junction number
-  // — the same `id` the traffic-lights dataset and HFP's `sid` both use.
-  const [selectedJunctionId, setSelectedJunctionId] = useState<number | null>(null);
-
   // Everything the map shows beside the vehicles — departures, alerts, journey
   // plans, bike capacity — is fetched for right now, so beside an hour-old tram
   // it would be quietly wrong. Leaving a replay puts them all back.
   useEffect(() => {
     if (!replay.active) return;
-    setSelectedTram(null);
-    setSelectedStop(null);
-    setSelectedBikeStation(null);
-    setSelectedJunctionId(null);
+    setSelection(null);
     setJourney(null);
     setJourneyOpen(false);
     setDeparturesOpen(false);
-    setArrivalFocus(null);
   }, [replay.active]);
 
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
@@ -276,30 +272,30 @@ function App() {
   // that question themselves.
   const [locating, setLocating] = useState<boolean>(false);
 
-  // Reset following mode when selected tram changes
+  // Reset following mode when the selected vehicle changes
   useEffect(() => {
     setIsFollowing(false);
-  }, [selectedTram?.veh]);
+  }, [trackedVehicleId]);
 
   // Detail panel collapse state: defaults to true (hidden/collapsed when item is selected)
   const [isDetailCollapsed, setIsDetailCollapsed] = useState<boolean>(true);
 
   // A detected ride takes the map over: the vehicle the reader is inside
   // becomes the selection, so its route, its stops and its telemetry are what
-  // the panels are about.
+  // the panels are about. For as long as the ride lasts it is also what the
+  // panels come back to — closing whatever the reader looked at in the
+  // meantime returns them to it. The first effect empties the selection when a
+  // ride begins; the second fills an empty one.
   useEffect(() => {
     if (!ride.rideVehicleId) return;
-    setSelectedStop(null);
-    setSelectedBikeStation(null);
-    setSelectedJunctionId(null);
+    setSelection(null);
     setIsDetailCollapsed(false);
   }, [ride.rideVehicleId]);
 
   useEffect(() => {
-    const vehicle = ride.rideVehicleId ? liveTrams[ride.rideVehicleId] : null;
-    if (!vehicle) return;
-    setSelectedTram((previous) => (previous?.veh === vehicle.veh ? previous : vehicle));
-  }, [ride.rideVehicleId, liveTrams]);
+    if (!rideVehicle) return;
+    setSelection((current) => current ?? { kind: 'vehicle', vehicle: rideVehicle });
+  }, [rideVehicle]);
 
   // Riding along means the camera rides too. This runs after the reset above,
   // so a ride's own selection keeps its follow instead of having it cleared —
@@ -308,23 +304,25 @@ function App() {
   // the reader has stepped off.
   const previousRideRef = useRef<string | null>(null);
   useEffect(() => {
-    if (ride.rideVehicleId && selectedTram?.veh === ride.rideVehicleId) setIsFollowing(true);
+    if (ride.rideVehicleId && trackedVehicleId === ride.rideVehicleId) setIsFollowing(true);
     else if (previousRideRef.current && !ride.rideVehicleId) setIsFollowing(false);
     previousRideRef.current = ride.rideVehicleId;
-  }, [ride.rideVehicleId, selectedTram?.veh]);
+  }, [ride.rideVehicleId, trackedVehicleId]);
 
   // Sidebar collapse state: defaults to collapsed on mobile, open on desktop
   const [isFilterCollapsed, setIsFilterCollapsed] = useState<boolean>(
     typeof window !== 'undefined' ? window.innerWidth <= 768 : false
   );
 
-  // Auto-collapse sidebar when a tram, stop, bike station or junction is
-  // selected on mobile
+  // Auto-collapse sidebar when something is selected on mobile. Keyed on what
+  // is selected rather than on the selection itself, so the open stop's panel
+  // reporting its departures does not shut the sidebar again on every poll.
+  const selectedKey = selectionKey(selection);
   useEffect(() => {
-    if ((selectedTram || selectedStop || selectedBikeStation || selectedJunctionId !== null) && isMobile) {
+    if (selectedKey !== null && isMobile) {
       setIsFilterCollapsed(true);
     }
-  }, [selectedTram, selectedStop, selectedBikeStation, selectedJunctionId, isMobile]);
+  }, [selectedKey, isMobile]);
 
   // On mobile the filter and detail panels render as bottom sheets that occupy the
   // same slot, so only one may be expanded at a time (opening one closes the other).
@@ -350,35 +348,24 @@ function App() {
   // The line filter (favourite lines), remembered across reloads.
   const [selectedLines, setSelectedLines] = usePersistedLines('selectedLines');
 
-  const [selectedStopRoutes, setSelectedStopRoutes] = useState<string[]>([]);
   const [mapBearing, setMapBearing] = useState<number>(0);
-  const [routeGeometries, setRouteGeometries] = useState<Record<string, { geometries: string[]; color?: string; stops?: string[] }>>({});
 
   // Every rail line currently running — trams plus, when their toggle is on,
-  // the metro and commuter-train lines. These are the lines the map draws as
-  // highlighted ribbons, so they are also the ones whose geometry is fetched.
-  // Joined into a string first so the effect below re-runs when a line enters or
-  // leaves service, not on every position update.
+  // the metro and commuter-train lines. Sorted so the list reads the same from
+  // one position update to the next while the same lines are in service.
   const ribbonModes = useMemo(
     () => new Set<string>(RIBBONED_MODES.filter((mode) => showModes[mode])),
     [showModes]
   );
-
-  const activeRibbonLinesKey = useMemo(
+  const activeRibbonLines = useMemo(
     () =>
-      Array.from(
-        new Set(
-          Object.values(trams)
-            .filter((t) => ribbonModes.has(t.mode) && t.desi)
-            .map((t) => t.desi)
-        )
-      )
-        .sort()
-        .join(','),
-    [trams, ribbonModes]
+      [...new Set(vehicles.filter((t) => ribbonModes.has(t.mode) && t.desi).map((t) => t.desi))].sort(),
+    [vehicles, ribbonModes]
   );
 
-  // Fetch route geometries when selectedLines filter, selectedTram, or selectedStopRoutes changes.
+  // The lines the map draws as highlighted ribbons, and so the ones whose
+  // geometry is fetched: the line filter, the selected vehicle's line and the
+  // open stop's lines.
   //
   // With no filter — the panel's "Show All" — that is every running tram, metro
   // and train line whose mode is switched on, so the map draws the same fanned,
@@ -386,127 +373,45 @@ function App() {
   // hand, rather than dropping to the flat mode-coloured tile network
   // underneath. Buses are left to that network: there are hundreds of bus lines,
   // far too many to fetch a pattern each.
-  useEffect(() => {
-    const linesToHighlight =
-      selectedLines.length > 0
-        ? [...selectedLines]
-        : activeRibbonLinesKey
-        ? activeRibbonLinesKey.split(',')
-        : [];
-    if (selectedTram && !linesToHighlight.includes(selectedTram.desi)) {
-      linesToHighlight.push(selectedTram.desi);
-    }
-    selectedStopRoutes.forEach((line) => {
-      if (!linesToHighlight.includes(line)) {
-        linesToHighlight.push(line);
-      }
-    });
-
-    if (linesToHighlight.length === 0) {
-      setRouteGeometries({});
-      return;
-    }
-
-    setRouteGeometries((prev) => {
-      const updated = { ...prev };
-      Object.keys(updated).forEach((line) => {
-        if (!linesToHighlight.includes(line)) {
-          delete updated[line];
-        }
-      });
-      return updated;
-    });
-
-    // Cancellation guard: without it, a geometry response arriving after the
-    // line was deselected would re-insert the line and leave its polyline
-    // drawn on the map with no filter selected.
-    let cancelled = false;
-    linesToHighlight.forEach((line) => {
-      if (!routeGeometries[line]) {
-        fetchRouteDetails(line)
-          .then((data) => {
-            if (cancelled) return;
-            setRouteGeometries((prev) => ({
-              ...prev,
-              [line]: {
-                geometries: data.geometries,
-                color: data.color,
-                stops: data.stops,
-              },
-            }));
-          })
-          .catch((err) => {
-            console.error(`Failed to fetch route details for ${line}:`, err);
-          });
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedLines, selectedTram, selectedStopRoutes, activeRibbonLinesKey]);
+  const routeGeometries = useRouteGeometries([
+    ...new Set([
+      ...(selectedLines.length > 0 ? selectedLines : activeRibbonLines),
+      ...(selectedVehicle ? [selectedVehicle.desi] : []),
+      ...stopRoutes,
+    ]),
+  ]);
 
   const handleSelectTram = (tram: VehiclePosition | null) => {
-    setSelectedStop(null);
-    setSelectedBikeStation(null);
-    setSelectedJunctionId(null);
-    setSelectedTram(tram);
+    setSelection(tram ? { kind: 'vehicle', vehicle: tram } : null);
   };
 
-  const handleSelectStop = (
-    stopId: string,
-    name: string,
-    code: string,
-    lat?: number,
-    lng?: number,
-    mode?: string,
-    isTrunkStop?: boolean,
-    extras?: { distance?: number; autoTrack?: boolean }
-  ) => {
-    if (selectedStop?.id === stopId) {
-      setIsDetailCollapsed(false); // Auto-expand if collapsed
-      return;
-    }
-    setSelectedTram(null);
-    setSelectedBikeStation(null);
-    setSelectedJunctionId(null);
-    setSelectedStopRoutes([]); // Reset selected stop routes!
-    setStopModes(NO_MODES);
-    setArrivalFocus(null);
-    setSelectedStop({ id: stopId, name, code, lat, lng, mode, isTrunkStop, ...extras });
+  const handleSelectStop = (stop: PickedStop) => {
+    if (openStop?.stop.id !== stop.id) setSelection(stopSelection(stop));
     setIsDetailCollapsed(false); // Auto-expand detail panel to show schedule
   };
 
   const handleSelectBikeStation = (station: { id: string; name: string } | null) => {
-    setSelectedTram(null);
-    setSelectedStop(null);
-    setSelectedJunctionId(null);
-    setSelectedBikeStation(station);
+    setSelection(station ? { kind: 'bikeStation', station } : null);
     if (station) {
       setIsDetailCollapsed(false); // Auto-expand detail panel to show bike capacity
     }
   };
 
-  const handleSelectJunction = useCallback((junctionId: number | null) => {
-    setSelectedTram(null);
-    setSelectedStop(null);
-    setSelectedBikeStation(null);
-    setSelectedJunctionId(junctionId);
+  const handleSelectJunction = (junctionId: number | null) => {
+    setSelection(junctionId !== null ? { kind: 'junction', junctionId } : null);
     if (junctionId !== null) {
       setIsDetailCollapsed(false); // Auto-expand to show who is asking
     }
-  }, []);
-
-  const handleCloseStop = () => {
-    setSelectedStop(null);
-    setSelectedStopRoutes([]);
-    setStopModes(NO_MODES);
-    setArrivalFocus(null);
   };
 
-  const handleCloseBikeStation = () => {
-    setSelectedBikeStation(null);
-  };
+  const clearSelection = () => setSelection(null);
+
+  // What the open stop's panel reports back about it, kept only while that
+  // stop is still the one open.
+  const updateStop = (id: string, update: (stop: StopSelection) => StopSelection) =>
+    setSelection((current) =>
+      current?.kind === 'stop' && current.stop.id === id ? update(current) : current
+    );
 
   const handleToggleLine = (line: string) => {
     setSelectedLines((prev) =>
@@ -518,41 +423,13 @@ function App() {
     setSelectedLines([]);
   };
 
-  const handleSelectTripFromStop = (tripId: string, lineDesi: string) => {
-    // Find if the tram for this trip is currently online
-    const matchedTram = Object.values(trams).find((t) => areTripsEquivalent(t.tripId, tripId));
-    if (matchedTram) {
-      setSelectedStop(null);
-      setSelectedTram(matchedTram);
-    } else {
-      // Tram not online yet — build a stub so we can still show the schedule
-      const dummyTram: VehiclePosition = {
-        veh: '0',
-        desi: lineDesi || '?',
-        lat: 0,
-        lng: 0,
-        hdg: 0,
-        spd: 0,
-        dl: 0,
-        drst: 0,
-        route: '',
-        stop: null,
-        ts: Date.now() / 1000,
-        tripId: tripId,
-        mode: 'tram',
-      };
-      setSelectedStop(null);
-      setSelectedTram(dummyTram);
-    }
-  };
-
   // A schedule can be selected just before its vehicle enters the live feed.
-  // Replace the temporary selection as soon as the matching vehicle appears.
+  // Replace the placeholder as soon as the matching vehicle appears.
   useEffect(() => {
-    if (!selectedTram || selectedTram.veh !== '0' || !selectedTram.tripId) return;
-    const matchedTram = Object.values(trams).find((t) => areTripsEquivalent(t.tripId, selectedTram.tripId));
-    if (matchedTram) setSelectedTram(matchedTram);
-  }, [selectedTram, trams]);
+    if (selection?.kind !== 'scheduledTrip') return;
+    const vehicle = findTripVehicle(selection.placeholder.tripId, vehicles);
+    if (vehicle) setSelection({ kind: 'vehicle', vehicle });
+  }, [selection, vehicles]);
 
   // Lines used by the currently selected journey's transit legs. When a route is
   // picked in the destination search, we filter the map down to just these lines —
@@ -570,7 +447,7 @@ function App() {
   }, [journey, vehicles, now]);
 
   // Stop route filter: only filter after routes are loaded.
-  // While loading (selectedStop set but selectedStopRoutes not yet arrived) keep all trams visible.
+  // While loading (a stop is open but its routes have not arrived) keep all trams visible.
   const displayedTrams = Object.fromEntries(
     Object.entries(trams).filter((entry) => {
       const tram = entry[1];
@@ -586,8 +463,8 @@ function App() {
       if (selectedLines.length > 0 && !selectedLines.includes(tram.desi)) {
         return false;
       }
-      // Filter by stop routes if a stop is selected
-      if (selectedStop && selectedStopRoutes.length > 0 && !selectedStopRoutes.includes(tram.desi)) {
+      // Filter by the open stop's routes
+      if (stopRoutes.length > 0 && !stopRoutes.includes(tram.desi)) {
         return false;
       }
       // Filter by the selected journey's lines so only vehicles running the
@@ -599,51 +476,23 @@ function App() {
     })
   );
 
-  // The live tram being tracked (prefer live data over stale selectedTram snapshot)
-  const liveTram = selectedTram
-    ? (selectedTram.veh && selectedTram.veh !== '0' ? trams[selectedTram.veh] || selectedTram : selectedTram)
-    : null;
-
   // The timetable behind the selected vehicle's journey.
   const {
     details: selectedTripDetails,
     loading: isLoadingTripDetails,
     error: tripDetailsError,
-  } = useTripDetails(liveTram?.tripId);
+  } = useTripDetails(selectedVehicle?.tripId);
 
   // Pattern geometry for the arrival being tracked, so the map can draw its
   // approach along the street rather than as a bearing across the blocks.
-  const [arrivalTripDetails, setArrivalTripDetails] = useState<TripDetailsResponse | null>(null);
-  const arrivalTripId = arrivalFocus?.tripId ?? null;
+  const { details: arrivalTripDetails } = useTripDetails(arrivalFocus?.tripId);
 
-  useEffect(() => {
-    if (!arrivalTripId) {
-      setArrivalTripDetails(null);
-      return;
-    }
-    let active = true;
-    fetchTripDetails(arrivalTripId)
-      .then((data) => { if (active) setArrivalTripDetails(data); })
-      .catch(() => { if (active) setArrivalTripDetails(null); });
-    return () => { active = false; };
-  }, [arrivalTripId]);
-
-  const handleCloseTram = () => {
-    setSelectedTram(null);
-  };
-
-  // Opening the journey planner clears any vehicle/stop/bike selection so the
-  // map is dedicated to the planned route; closing it clears the journey.
+  // Opening the journey planner clears any selection so the map is dedicated
+  // to the planned route; closing it clears the journey.
   const handleJourneyOpenChange = useCallback((open: boolean) => {
     setJourneyOpen(open);
-    if (open) {
-      setSelectedTram(null);
-      setSelectedStop(null);
-      setSelectedBikeStation(null);
-      setSelectedStopRoutes([]);
-    } else {
-      setJourney(null);
-    }
+    if (open) setSelection(null);
+    else setJourney(null);
   }, []);
 
   // The junction panel reads the same two things the map's markers do: the
@@ -664,7 +513,7 @@ function App() {
 
   // Bottom tab bar state (mobile only): drives which bottom sheet is expanded, and
   // null when none is — the map is then fully visible.
-  const hasDetailSelection = !!(selectedTram || selectedStop || selectedBikeStation || selectedJunction);
+  const hasDetailSelection = selection !== null;
   const activeMobileTab: MobileTab | null = !isFilterCollapsed
     ? 'lines'
     : hasDetailSelection && !isDetailCollapsed
@@ -695,7 +544,6 @@ function App() {
 
   // What the ride strip says while it is following: the line, and the stop the
   // vehicle is running to, in words rather than as a GTFS id.
-  const rideVehicle = ride.rideVehicleId ? liveTrams[ride.rideVehicleId] ?? null : null;
   const rideNextStop = useMemo(() => {
     const target = rideVehicle?.nextStop?.replace(/^HSL:/, '');
     if (!target || selectedTripDetails?.tripId !== rideVehicle?.tripId) return null;
@@ -715,20 +563,19 @@ function App() {
   // What the map is told, grouped by what it is about. Assembled here rather
   // than spread across thirty-seven attributes on the element below.
   const mapSelection: MapSelection = {
-    // A vehicle with no `veh` of its own is identified by the trip it is running.
+    // A scheduled trip has no vehicle of its own yet, so it is identified by
+    // the trip it is running.
     vehicleId:
-      selectedTram?.veh && selectedTram.veh !== '0'
-        ? selectedTram.veh
-        : selectedTram?.tripId || null,
-    line: selectedTram?.desi || null,
+      selection?.kind === 'scheduledTrip' ? selection.placeholder.tripId : trackedVehicleId,
+    line: selectedVehicle?.desi || null,
     tripDetails: selectedTripDetails,
-    stop: selectedStop
+    stop: openStop
       ? {
-          id: selectedStop.id,
+          id: openStop.stop.id,
           coords:
-            selectedStop.lat && selectedStop.lng ? [selectedStop.lng, selectedStop.lat] : null,
-          mode: selectedStop.mode || null,
-          isTrunk: selectedStop.isTrunkStop || false,
+            openStop.stop.lat && openStop.stop.lng ? [openStop.stop.lng, openStop.stop.lat] : null,
+          mode: openStop.stop.mode || null,
+          isTrunk: openStop.stop.isTrunkStop || false,
         }
       : null,
     bikeStationId: selectedBikeStation?.id || null,
@@ -794,18 +641,18 @@ function App() {
           onToggleCollapse={() => setIsFilterCollapsed(!isFilterCollapsed)}
           modes={showModes}
           alerts={alerts}
-          selectedTram={liveTram}
-          selectedStop={selectedStop}
-          selectedStopRoutes={selectedStopRoutes}
+          selectedTram={selectedVehicle}
+          selectedStop={openStop?.stop ?? null}
+          selectedStopRoutes={stopRoutes}
         />
       )}
 
       {/* Floating top-center tram telemetry card */}
-      {liveTram && liveTram.veh !== '0' && (
+      {trackedVehicle && (
         <TramCard
-          tram={liveTram}
+          tram={trackedVehicle}
           mapBearing={mapBearing}
-          onClose={handleCloseTram}
+          onClose={clearSelection}
           isFollowing={isFollowing}
           onToggleFollow={() => setIsFollowing(!isFollowing)}
           tripDetails={selectedTripDetails}
@@ -813,10 +660,9 @@ function App() {
       )}
 
       {/* Schedule detail panel (right side) */}
-      {selectedTram && (
+      {selectedVehicle && (
         <TramPopup
-          tram={liveTram!}
-          onClose={handleCloseTram}
+          tram={selectedVehicle}
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
           alerts={alerts}
@@ -827,24 +673,22 @@ function App() {
       )}
 
       {/* Selected Stop Timetable Panel */}
-      {selectedStop && (
+      {openStop && (
         <StopPopup
-          stopId={selectedStop.id}
-          stopName={selectedStop.name}
-          stopCode={selectedStop.code}
-          onClose={handleCloseStop}
-          onSelectTripId={(tripId, lineDesi) => handleSelectTripFromStop(tripId, lineDesi)}
-          onStopRoutesLoaded={setSelectedStopRoutes}
+          stopId={openStop.stop.id}
+          stopName={openStop.stop.name}
+          stopCode={openStop.stop.code}
+          onClose={clearSelection}
+          onSelectTripId={(tripId, lineDesi) => setSelection(tripSelection(tripId, lineDesi, vehicles))}
+          onStopRoutesLoaded={(routes) => updateStop(openStop.stop.id, (stop) => ({ ...stop, routes }))}
           vehicles={vehicles}
-          walkDistance={selectedStop.distance}
-          autoTrack={selectedStop.autoTrack}
-          onArrivalModesLoaded={setStopModes}
-          onArrivalFocusChange={setArrivalFocus}
-          onStopCoordsLoaded={(lat, lng) => {
-            setSelectedStop((prev) =>
-              prev && prev.id === selectedStop.id ? { ...prev, lat, lng } : prev
-            );
-          }}
+          walkDistance={openStop.stop.distance}
+          autoTrack={openStop.stop.autoTrack}
+          onArrivalModesLoaded={(modes) => updateStop(openStop.stop.id, (stop) => ({ ...stop, modes }))}
+          onArrivalFocusChange={(focus) =>
+            updateStop(openStop.stop.id, (stop) => ({ ...stop, arrivalFocus: focus }))}
+          onStopCoordsLoaded={(lat, lng) =>
+            updateStop(openStop.stop.id, (stop) => ({ ...stop, stop: { ...stop.stop, lat, lng } }))}
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
           alerts={alerts}
@@ -856,7 +700,7 @@ function App() {
         <BikePopup
           stationId={selectedBikeStation.id}
           stationName={selectedBikeStation.name}
-          onClose={handleCloseBikeStation}
+          onClose={clearSelection}
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
         />
@@ -871,7 +715,7 @@ function App() {
             const vehicle = vehicles.find((v) => v.veh === veh);
             if (vehicle) handleSelectTram(vehicle);
           }}
-          onClose={() => setSelectedJunctionId(null)}
+          onClose={clearSelection}
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
         />
@@ -881,7 +725,7 @@ function App() {
       <JourneySearch
         onSelectionChange={setJourney}
         onOpenChange={handleJourneyOpenChange}
-        hidden={replayActive || departuresOpen || !!(liveTram && liveTram.veh !== '0')}
+        hidden={replayActive || departuresOpen || trackedVehicle !== null}
         isMobile={isMobile}
         alerts={alerts}
         vehicles={vehicles}
@@ -892,10 +736,10 @@ function App() {
       />
       <DeparturesPanel
         isMobile={isMobile}
-        hidden={replayActive || journeyOpen || !!(liveTram && liveTram.veh !== '0')}
+        hidden={replayActive || journeyOpen || trackedVehicle !== null}
         onOpenChange={setDeparturesOpen}
         onSelectStop={(stop, extras) =>
-          handleSelectStop(stop.gtfsId, stop.name, stop.code, stop.lat, stop.lon, undefined, undefined, extras)}
+          handleSelectStop({ id: stop.gtfsId, name: stop.name, code: stop.code, lat: stop.lat, lng: stop.lon, ...extras })}
       />
 
       {/* The bottom dock: when to get off, and which vehicle you are in */}

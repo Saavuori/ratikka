@@ -20,8 +20,6 @@ import './tramPopup.css';
 
 interface TramPopupProps {
   tram: VehiclePosition;
-  onClose: () => void;
-  onRouteNameReady?: (name: string) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   alerts: Alert[];
@@ -32,8 +30,6 @@ interface TramPopupProps {
 
 export const TramPopup: React.FC<TramPopupProps> = ({
   tram,
-  onClose,
-  onRouteNameReady,
   isCollapsed,
   onToggleCollapse,
   alerts = [],
@@ -41,11 +37,6 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   loading,
   error,
 }) => {
-  // Suppress unused variable warning for onClose
-  if (false as boolean) {
-    onClose();
-  }
-
   const [showAllStops, setShowAllStops] = useState<boolean>(false);
   const [lastStopId, setLastStopId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'telemetry' | 'schedule' | 'diagnostics'>('telemetry');
@@ -104,12 +95,6 @@ export const TramPopup: React.FC<TramPopupProps> = ({
     setShowAllStops(false); // Reset to collapsed on trip change
     setLastStopId(tram.stop || null);
   }, [tram.tripId]);
-
-  useEffect(() => {
-    if (onRouteNameReady && tripDetails?.route?.longName) {
-      onRouteNameReady(tripDetails.route.longName);
-    }
-  }, [tripDetails?.route?.longName, onRouteNameReady]);
 
   const getDelayColor = (seconds: number) => {
     if (seconds > 60) return '#f87171';
