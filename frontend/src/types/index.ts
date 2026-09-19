@@ -41,6 +41,38 @@ export interface VehiclePosition {
    * ~25 seconds, which is most vehicles most of the time.
    */
   tlp?: SignalPriority;
+  /**
+   * How far the vehicle is running behind the one ahead of it on the same line
+   * and direction. Absent until there is a vehicle ahead to measure against,
+   * and on replayed history, which does not record it.
+   */
+  hw?: Headway;
+}
+
+/**
+ * The gap to the vehicle ahead, measured by the backend from when each of the
+ * two left the same stops. See backend/internal/mqtt/headway.go.
+ */
+export interface Headway {
+  /** Vehicle key of the vehicle in front. */
+  ahead: string;
+  /** How far behind it this vehicle is running, in seconds. */
+  secs: number;
+  /**
+   * `secs` is a lower bound: the vehicle in front left the stop this one is
+   * heading for that long ago, and this one has not got there yet.
+   */
+  atLeast?: boolean;
+  /** The line's timetabled headway around now, in seconds, where known. */
+  sched?: number;
+  /**
+   * `bunched` — arriving with the vehicle in front rather than after it;
+   * `gap` — well behind it, leaving the stops between waiting; `regular` —
+   * measured and neither. Absent when nothing can be said yet.
+   */
+  state?: 'bunched' | 'gap' | 'regular';
+  /** The stop `secs` was measured at, when it was measured. */
+  stop?: string;
 }
 
 /**

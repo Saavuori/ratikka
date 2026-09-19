@@ -11,6 +11,7 @@ import { VEHICLE_3D_MIN_ZOOM } from '../../lib/vehicleModels';
 import type { BodySpine, VehicleState } from '../../lib/vehicleModels';
 import type { DoorAnimation } from '../../lib/vehicleAnimation';
 import type { TrackPlacement } from '../../lib/railTracks';
+import { drawHeadwayLinks, headwayLinks } from '../overlays/headways';
 import { MAX_WINDOW_SEC } from './windows';
 import type { AnimationState, FrameEffects, FrameInputs, RenderPosition, VehicleFeature } from './types';
 
@@ -241,6 +242,14 @@ export function startAnimationLoop(
         features,
       });
     }
+
+    // Bunches and gaps, from the positions just drawn, so a link between two
+    // trams stays attached to both of them as they glide.
+    state.headwaysDrawn = drawHeadwayLinks(
+      map,
+      headwayLinks(live.headwayPairs, rendered, state.tracks, live.gapLines),
+      state.headwaysDrawn,
+    );
 
     // 3D bodies from the same interpolated positions the flat icons use.
     // Built only while models are enabled and the view is close enough

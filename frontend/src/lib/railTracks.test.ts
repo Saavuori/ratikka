@@ -14,6 +14,7 @@ import {
   isHelsinkiCentralStationZone,
   orientOnTracks,
   snappedLinesInFeed,
+  trackBetween,
 } from './railTracks';
 
 // A straight ~1 km east-west leg through central Helsinki, and a second track
@@ -577,5 +578,46 @@ describe('hfpDirectionId', () => {
     expect(hfpDirectionId('')).toBeNull();
     expect(hfpDirectionId('0')).toBeNull();
     expect(hfpDirectionId('nonsense')).toBeNull();
+  });
+});
+
+describe('trackBetween', () => {
+  // An L: ~500 m east, then ~550 m north. The corner is the vertex a stretch
+  // across it must keep, or the gap would cut the corner through the block.
+  const L: [number, number][] = [
+    [24.9300, 60.1700],
+    [24.9390, 60.1700],
+    [24.9390, 60.1750],
+  ];
+
+  it('follows the rails round a corner between two points', () => {
+    const track = buildTrack(L)!;
+    const corner = track.cum[1];
+    const coords = trackBetween(track, corner - 100, corner + 100);
+    expect(coords).toHaveLength(3);
+    expect(coords[1]).toEqual(L[1]);
+    expect(distanceBetween({ lng: coords[0][0], lat: coords[0][1] }, { lng: L[1][0], lat: L[1][1] })).toBeCloseTo(100, 0);
+    expect(distanceBetween({ lng: coords[2][0], lat: coords[2][1] }, { lng: L[1][0], lat: L[1][1] })).toBeCloseTo(100, 0);
+  });
+
+  it('runs from the first distance to the second, whichever way that is', () => {
+    const track = buildTrack(L)!;
+    const forwards = trackBetween(track, 100, track.length - 100);
+    const backwards = trackBetween(track, track.length - 100, 100);
+    expect(backwards).toEqual([...forwards].reverse());
+  });
+
+  it('is a straight piece when both points are on one segment', () => {
+    const track = buildTrack(L)!;
+    expect(trackBetween(track, 100, 200)).toHaveLength(2);
+  });
+
+  it('clamps to the ends of the track', () => {
+    const track = buildTrack(L)!;
+    const coords = trackBetween(track, -50, track.length + 50);
+    expect(coords[0][0]).toBeCloseTo(L[0][0], 9);
+    expect(coords[0][1]).toBeCloseTo(L[0][1], 9);
+    expect(coords[coords.length - 1][0]).toBeCloseTo(L[2][0], 9);
+    expect(coords[coords.length - 1][1]).toBeCloseTo(L[2][1], 9);
   });
 });

@@ -54,6 +54,8 @@ import {
   snappedLinesInFeed,
 } from '../lib/railTracks';
 import { useSyncRef } from '../hooks/useSyncRef';
+import { headwayPairs } from '../lib/headways';
+import type { HeadwayPair } from '../lib/headways';
 import type { MapTheme } from '../lib/stopPlatforms';
 import {
   SATELLITE_ATTRIBUTION,
@@ -225,6 +227,19 @@ export const Map: React.FC<MapProps> = ({
   useSyncRef(showRoutesRef, showRoutes);
   useSyncRef(is3DRef, is3D);
   useSyncRef(always3DVehiclesRef, always3DVehicles);
+  // Bunched and gapped pairs change only when the feed does, so they are worked
+  // out once per snapshot here rather than sixty times a second in the loop.
+  // Gaps are only drawn on lines the reader has picked out: a filtered line, or
+  // the selected vehicle's own.
+  const pairs = useMemo(() => headwayPairs(trams), [trams]);
+  const gapLines = useMemo(
+    () => (selectedLine ? [...lineFilters, selectedLine] : lineFilters),
+    [lineFilters, selectedLine],
+  );
+  const headwayPairsRef = useRef<HeadwayPair[]>(pairs);
+  const gapLinesRef = useRef<string[]>(gapLines);
+  useSyncRef(headwayPairsRef, pairs);
+  useSyncRef(gapLinesRef, gapLines);
   // Cheap signature of what the furniture was last built for, so the `idle`
   // event — which fires on every tile that lands — does no work in the common
   // case where nothing that matters has moved.
@@ -396,6 +411,8 @@ export const Map: React.FC<MapProps> = ({
     is3D: is3DRef.current,
     always3DVehicles: always3DVehiclesRef.current,
     isFollowing: isFollowingRef.current,
+    headwayPairs: headwayPairsRef.current,
+    gapLines: gapLinesRef.current,
   });
 
   // A new snapshot: work out where every vehicle is gliding to, then refresh
