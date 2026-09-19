@@ -21,14 +21,12 @@ describe('live transit API requests', () => {
     await fetchNearbyStops(60.1, 24.9);
     expect(fetcher).toHaveBeenCalledWith('/api/v1/stops/nearby?lat=60.1&lon=24.9', { signal: undefined });
   });
-  it('passes local journey date and time without browser timezone conversion', async () => {
+  it('plans a journey that leaves now, sending only the two endpoints', async () => {
     const fetcher = mockFetch();
     const from = { name: 'A', lat: 60.1, lon: 24.9 };
-    await fetchJourneyPlan(from, { ...from, name: 'B' }, undefined, { date: '2026-09-05', time: '23:55', arriveBy: true });
+    await fetchJourneyPlan(from, { name: 'B', lat: 60.2, lon: 25 });
     const url = new URL(fetcher.mock.calls[0][0], 'https://example.test');
-    expect(url.searchParams.get('date')).toBe('2026-09-05');
-    expect(url.searchParams.get('time')).toBe('23:55');
-    expect(url.searchParams.get('arriveBy')).toBe('true');
+    expect(Object.fromEntries(url.searchParams)).toEqual({ fromLat: '60.1', fromLon: '24.9', toLat: '60.2', toLon: '25' });
   });
   it('encodes opaque leg identities individually and keeps their order', async () => {
     const fetcher = mockFetch();

@@ -1,4 +1,4 @@
-import type { MapConfigResponse, TripDetailsResponse, StopDetailsResponse, NearbyStopsResponse, StopsArrivalsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyPlanOptions, JourneyMonitorResponse, JourneyEndpoint, ReplayIndexResponse, ReplayWindowResponse } from '../types';
+import type { MapConfigResponse, TripDetailsResponse, StopDetailsResponse, NearbyStopsResponse, StopsArrivalsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyMonitorResponse, JourneyEndpoint, ReplayIndexResponse, ReplayWindowResponse } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -155,7 +155,6 @@ export async function fetchJourneyPlan(
   from: JourneyEndpoint,
   to: JourneyEndpoint,
   signal?: AbortSignal,
-  options: JourneyPlanOptions = {}
 ): Promise<JourneyPlanResponse> {
   const params = new URLSearchParams({
     fromLat: String(from.lat),
@@ -163,9 +162,6 @@ export async function fetchJourneyPlan(
     toLat: String(to.lat),
     toLon: String(to.lon),
   });
-  if (options.date) params.set('date', options.date);
-  if (options.time) params.set('time', options.time);
-  if (options.arriveBy !== undefined) params.set('arriveBy', String(options.arriveBy));
   const res = await fetch(`${API_BASE}/plan?${params.toString()}`, { signal });
   if (!res.ok) {
     throw new Error(`Failed to plan journey: ${res.statusText}`);

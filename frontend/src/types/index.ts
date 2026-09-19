@@ -358,12 +358,6 @@ export interface JourneyPlanResponse {
   fetchedAt?: number;
 }
 
-export interface JourneyPlanOptions {
-  date?: string;
-  time?: string;
-  arriveBy?: boolean;
-}
-
 export interface JourneyMonitorResponse {
   legs: (JourneyLeg | null)[];
   fetchedAt?: number;
