@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.75.0] - 2026-09-19
+
+### Added
+- **The map shows trams running bunched, and the gaps they leave behind them.** A late tram is an inconvenience; two trams of the same line nose to tail are a different failure, and the commoner one. The one in front picks up everyone waiting at each stop, dwells longer and falls further behind, while the one behind finds the stops already emptied and catches up. The stop then sees two 4s arrive together and nothing for fifteen minutes on a line timetabled every six. Neither tram's own delay shows any of that; only the pair does.
+  So the spacing is measured rather than estimated. Every position names the stop its vehicle is heading for, and the moment that name changes is the moment the vehicle left the stop. The backend now times every vehicle out of every stop, and each position carries a new `hw` object: how far the vehicle is running behind the one ahead of it on the same line and direction, which is exactly how long a rider at that stop waited between the two. Between stops a hole is seen opening before the tram behind reaches the next one: the tram ahead left that stop so long ago, and this one has not got there yet, so the gap is at least that long and the payload says it is a lower bound.
+  What the gap *should* be comes from the same two passages. Each vehicle reports how late it is, so each passage also says when that vehicle was due, and the difference between two due times is the timetabled spacing of the pair, at that stop, whichever variant of the route either is running. A line's headway is the median of that across the pairs currently on it — one say per pair, so a cancelled trip shows as the twelve-minute hole it leaves rather than as a new twelve-minute timetable.
+  On the map, a bunched pair (within 30% of the headway) is tied together with a coral bar, everywhere. A gap (1.8× the headway, and three minutes over it) runs in amber dashes along the rails between the two trams, round the corners rather than across the blocks, on the lines you pick out: a hole in the service can be kilometres of the city, and drawing all of them at once would bury the map. The **Lines** panel lists the worst few, bunches grouped so three trams together are one entry, with a dot on each affected line's button; picking one opens the tram in question. A tram's own panel gains a **Spacing** card: the trams either side of it, the gap to each drawn to scale against the timetable, and a tap on either neighbour to open it.
+  It is honest about what it does not know. A measurement needs a tram to leave a stop the one ahead left too, so after a restart nothing is shown for about one headway. A tram laying over at its terminus while the one ahead pulls out is seconds behind it by the bound and will still leave on time, so a bound alone can show a gap but never a bunch. Measured against the live feed on a Saturday evening, the headways the backend derived from delays matched the trams' own timetabled start times, and the line medians settled on the 12-minute evening frequency.
+- **`scripts/verify-headways.mjs`**, which boots the built app against a stubbed line and checks the three places spacing is shown working together: that a bunch is tied together and a gap is drawn only on a line picked out, that the gap follows the rails round a corner, that the lines panel lists and orders both, and that its entries open the right tram with the right card. `HEADWAY_SCREENSHOTS=1` writes screenshots of each state.
+
+---
+
 ## [v0.74.0] - 2026-09-16
 
 ### Removed

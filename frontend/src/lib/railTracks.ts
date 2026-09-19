@@ -363,6 +363,34 @@ export function pointOnTrack(
 }
 
 /**
+ * The stretch of a track between two arc lengths, as [lng, lat] points running
+ * from `from` to `to` — backwards along the polyline where `to` is the smaller.
+ * Both ends clamp to the track, as in `pointOnTrack`. This is the rail between
+ * two vehicles on the same line, which is what the map draws the gap between
+ * them along instead of cutting across the blocks in between.
+ */
+export function trackBetween(track: RailTrack, from: number, to: number): [number, number][] {
+  const lo = Math.min(Math.max(Math.min(from, to), 0), track.length);
+  const hi = Math.min(Math.max(Math.max(from, to), 0), track.length);
+  const start = pointOnTrack(track, lo);
+  const end = pointOnTrack(track, hi);
+
+  // First vertex strictly past `lo`.
+  let i = 0;
+  let j = track.cum.length;
+  while (i < j) {
+    const mid = (i + j) >> 1;
+    if (track.cum[mid] <= lo) i = mid + 1;
+    else j = mid;
+  }
+
+  const coords: [number, number][] = [[start.lng, start.lat]];
+  for (; i < track.cum.length && track.cum[i] < hi; i++) coords.push(track.coords[i]);
+  coords.push([end.lng, end.lat]);
+  return from <= to ? coords : coords.reverse();
+}
+
+/**
  * Distance in metres between two lng/lat points, using the same flat local
  * projection as the tracks. Used to decide whether a correction is small enough
  * to glide into or big enough to warrant a jump.

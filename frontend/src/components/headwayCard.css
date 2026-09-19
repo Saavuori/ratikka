@@ -1,0 +1,108 @@
+/* The vehicle panel's spacing card: the vehicles either side, and the gaps. */
+
+.headway-card {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-button);
+  background: var(--bg-card);
+}
+
+.headway-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.headway-card-state {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--state-color) 40%, transparent);
+  background: color-mix(in srgb, var(--state-color) 14%, transparent);
+  color: var(--state-color);
+  font-size: 0.66rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.headway-card-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 14px;
+}
+
+.headway-card-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+/* The vehicle the panel is about, ringed in the selection gold. */
+.headway-card-dot--self {
+  width: 14px;
+  height: 14px;
+  box-shadow: 0 0 0 2px var(--accent-gold);
+}
+
+.headway-card-gap {
+  flex-basis: 0;
+  min-width: 6px;
+  border-top: 3px dashed var(--border-glow);
+  transition: flex-grow 0.6s ease;
+}
+
+.headway-card-rows {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.headway-card-row {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.headway-card-row--end {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.headway-card-row--link {
+  cursor: pointer;
+}
+
+.headway-card-row--link:hover {
+  background: var(--bg-button-hover);
+}
+
+.headway-card-label {
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.headway-card-value {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.headway-card-note {
+  margin: 8px 0 0;
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+}

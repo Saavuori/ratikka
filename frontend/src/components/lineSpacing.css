@@ -1,0 +1,126 @@
+/* Line spacing: bunched vehicles and gaps, listed above the line buttons. */
+
+.line-spacing {
+  margin-top: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-button);
+}
+
+.line-spacing-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.line-spacing-summary {
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Expanded, a busy evening's list scrolls on its own rather than squeezing the
+   line buttons below it out of the panel. */
+.line-spacing-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(40vh, 320px);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.line-spacing-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 1px solid var(--border-button);
+  border-left: 3px solid var(--issue-color);
+  border-radius: 6px;
+  background: var(--bg-button);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.line-spacing-item:hover {
+  background: var(--bg-button-hover);
+  border-color: var(--border-button-hover);
+  border-left-color: var(--issue-color);
+}
+
+.line-spacing-item:focus-visible {
+  outline: 2px solid var(--issue-color);
+  outline-offset: 1px;
+}
+
+.line-spacing-line {
+  flex: 0 0 auto;
+  min-width: 24px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.line-spacing-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.line-spacing-kind {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: var(--issue-color);
+}
+
+.line-spacing-detail {
+  font-size: 0.64rem;
+  color: var(--text-primary);
+}
+
+.line-spacing-more {
+  margin-top: 4px;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.6rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.line-spacing-more:hover {
+  color: var(--text-primary);
+}
+
+/* The dot on a line button whose line is bunched or has a gap. Ringed in the
+   panel colour so it reads against the button's own tint either way. */
+.line-btn-pip {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pip-color);
+  box-shadow: 0 0 0 1.5px var(--bg-panel);
+  pointer-events: none;
+}
