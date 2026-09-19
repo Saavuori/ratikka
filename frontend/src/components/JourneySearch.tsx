@@ -106,28 +106,16 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const [unavailable, setUnavailable] = useState(false);
   const [alternativesError, setAlternativesError] = useState<string | null>(null);
 
-  const geocodeAbortRef = useRef<AbortController | null>(null);
   const planAbortRef = useRef<AbortController | null>(null);
   const monitorAbortRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
   const monitorGenerationRef = useRef(0);
   const originGenerationRef = useRef(0);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const geocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectionCallback = useRef(onSelectionChange);
   const toInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { selectionCallback.current = onSelectionChange; }, [onSelectionChange]);
-
-  // Drops the place lookup only. Kept apart from cancelPending: planning a
-  // journey and typing into a field run side by side, so cancelling a plan must
-  // never throw away the suggestions the user is waiting for.
-  const cancelGeocode = useCallback(() => {
-    geocodeAbortRef.current?.abort();
-    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
-    setSuggestLoading(false);
-    setSuggestions([]);
-  }, []);
 
   const cancelPending = useCallback(() => {
     generationRef.current++;
@@ -141,9 +129,8 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
 
   useEffect(() => () => {
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'unmount');
-    cancelGeocode();
     cancelPending();
-  }, [cancelGeocode, cancelPending]);
+  }, [cancelPending]);
 
   useEffect(() => {
     onOpenChange?.(open);
@@ -175,20 +162,21 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     }
   }, [open]);
 
-  // Debounced autocomplete for the active field.
+  // Debounced autocomplete for the active field. This effect alone owns the
+  // suggestions: its cleanup cancels the lookup, and whenever there is nothing
+  // to look up it clears them — so leaving a field, picking a place or closing
+  // the panel needs no cancelling of its own, and planning a journey (which
+  // runs side by side with typing) cannot throw away a lookup in flight.
   const activeQuery = activeField === 'from' ? fromText : activeField === 'to' ? toText : '';
   useEffect(() => {
-    geocodeAbortRef.current?.abort();
-    if (!open || collapsed || !activeField) return;
-    const controller = new AbortController();
-    geocodeAbortRef.current = controller;
     const q = activeQuery.trim();
-    if (q.length < 2 || q === CURRENT_LOCATION_LABEL) {
+    if (!open || collapsed || !activeField || q.length < 2 || q === CURRENT_LOCATION_LABEL) {
       setSuggestions([]);
       setSuggestLoading(false);
-      return () => controller.abort();
+      return;
     }
 
+    const controller = new AbortController();
     setSuggestLoading(true);
     const handle = setTimeout(() => {
       fetchGeocode(q, coords ?? undefined, controller.signal)
@@ -201,8 +189,6 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         })
         .finally(() => { if (!controller.signal.aborted) setSuggestLoading(false); });
     }, 280);
-    geocodeTimerRef.current = handle;
-
     return () => { clearTimeout(handle); controller.abort(); };
   }, [activeQuery, activeField, coords, open, collapsed]);
 
@@ -224,7 +210,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         setAlternativesUpdatedAt(fetchedAt);
         const previous = selectedRef.current;
         if (previous) {
-          if (!list.length) setAlternativesError('No alternatives found for the chosen date and time.');
+          if (!list.length) setAlternativesError('No alternatives found right now.');
           return;
         }
         const next = list[0];
@@ -326,7 +312,6 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const handlePickSuggestion = (field: 'from' | 'to', s: GeocodeResult) => {
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, field);
     cancelPending();
-    cancelGeocode();
     const endpoint: JourneyEndpoint = { name: s.name || s.label, lat: s.lat, lon: s.lon };
     if (field === 'from') {
       setFrom(endpoint);
@@ -335,7 +320,6 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
       setTo(endpoint);
       setToText(endpoint.name);
     }
-    setSuggestions([]);
     setActiveField(null);
   };
 
@@ -346,11 +330,9 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
       .then((c) => {
         if (generation !== originGenerationRef.current) return;
         cancelPending();
-        cancelGeocode();
         setFrom({ name: CURRENT_LOCATION_LABEL, lat: c.lat, lon: c.lon });
         setFromText(CURRENT_LOCATION_LABEL);
         setActiveField(null);
-        setSuggestions([]);
       })
       .catch(() => {
         if (generation !== originGenerationRef.current) return;
@@ -361,11 +343,13 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const handleSwap = () => {
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'swap');
     cancelPending();
-    cancelGeocode();
     setFrom(to);
     setTo(from);
     setFromText(toText);
     setToText(fromText);
+    // The open field's text just changed under it; its old suggestions are for
+    // the other place.
+    setSuggestions([]);
   };
 
   const handleSelectItinerary = (idx: number) => {
@@ -398,7 +382,6 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const resetAll = () => {
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, 'close');
     cancelPending();
-    cancelGeocode();
     setFrom(null);
     setTo(null);
     setFromText('');
@@ -406,7 +389,6 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     setItineraries([]);
     selectedRef.current = null;
     setSelectedItinerary(null);
-    setSuggestions([]);
     setActiveField(null);
     setError(null);
     onSelectionChange(null);
@@ -535,7 +517,6 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               cancelPending();
-              cancelGeocode();
               setValue('');
               clearEndpoint();
               setActiveField(field);
