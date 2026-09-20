@@ -6,6 +6,7 @@ import { installRouteLayers } from './routes';
 import { installStopLayers } from './stops';
 import { installBikeLayers } from './bikes';
 import { installTrafficLightLayers } from './trafficLights';
+import { installHeadwayLayers } from './headways';
 
 export type { LayerSeed } from './seed';
 export { STOP_MODE, ARRIVAL_LABEL_SOURCE, ARRIVAL_LABEL_LAYER } from './stops';
@@ -13,7 +14,8 @@ export { update3DMode, updateVehicle3DMode, updateMetroSignVisibility } from './
 
 /**
  * Install everything the map draws that the base style does not provide: the
- * vehicles, the routes, the stops, the city bikes and the signalised junctions.
+ * vehicles, the routes, the spacing between vehicles, the stops, the city bikes
+ * and the signalised junctions.
  *
  * All of it is built from values passed in rather than read from the component,
  * so this is a plain function of a map and a starting state. That is what lets
@@ -31,6 +33,7 @@ export function installMapLayers(map: maplibregl.Map, seed: LayerSeed): void {
   installBasemapLayers(map, seed);
   installVehicleLayers(map, seed);
   installRouteLayers(map, seed);
+  installHeadwayLayers(map);
   installStopLayers(map, seed);
   installBikeLayers(map, seed);
   installTrafficLightLayers(map, seed);

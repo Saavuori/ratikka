@@ -385,6 +385,13 @@ form `{ "buses": true }` is still accepted and means `{"modes": {"bus": true}}`.
         "attempts": 1,
         "protocol": "KAR-MQTT",
         "ts": 1781461815
+      },
+      "hw": {
+        "ahead": "22-231",
+        "secs": 70,
+        "sched": 360,
+        "state": "bunched",
+        "stop": "HSL:1203418"
       }
     },
     "18-1245": {
@@ -472,6 +479,26 @@ and commuter trains never report it.
 | `attempts` | Attempt sequence number of the current request. |
 | `protocol` | Radio protocol used: `MQTT` or `KAR-MQTT`. |
 | `ts` | The vehicle's own Unix timestamp for the newest event in the exchange. |
+
+`hw` is how far the vehicle is running behind the **vehicle ahead of it** on the
+same route and direction — its headway — measured by the backend rather than
+read off the feed. Every position names the stop its vehicle is heading for, so
+the moment that changes is the moment the vehicle left the stop; the backend
+times every vehicle out of every stop, and the headway is the time between the
+vehicle ahead leaving a stop and this one leaving it after. It is **omitted**
+until there is a vehicle ahead to measure against: the first vehicle of the
+morning, one whose journey has just started with nothing through its first stop
+yet, and — for about one headway after the backend starts — every vehicle.
+Replayed history does not carry it.
+
+| Field | Description |
+|---|---|
+| `ahead` | Vehicle ID of the vehicle in front. |
+| `secs` | Seconds behind it. |
+| `atLeast` | `secs` is a lower bound: the vehicle in front left the stop this one is heading for that long ago, and this one has not got there yet. This is how a gap is seen opening between stops. Omitted when false. |
+| `sched` | The line's timetabled headway now, in seconds. Each passage also says when its vehicle was *due* (departure minus `dl`), so each pair's timetabled spacing is known at every stop; `sched` is the median across the pairs currently on the line — one say per pair, so a cancelled trip is an outlier rather than the answer. Falls back to the pair's own spacing while fewer than three pairs have been measured; omitted when neither is known. |
+| `state` | `bunched` — within 30% of `sched` of the vehicle ahead, arriving with it rather than after it. `gap` — at least 1.8 × `sched` and at least three minutes more than it. `regular` — measured, and neither. **Omitted** when nothing can be said: no `sched` yet, or only a lower bound that does not prove a gap (a lower bound can show a gap, never that two vehicles are close). |
+| `stop` | The stop `secs` was measured at, when it was measured rather than bounded. |
 
 The `vehicles` map is keyed by vehicle ID. The frontend replaces its entire state each tick and uses the previous + current positions to lerp.
 

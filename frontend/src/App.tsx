@@ -385,6 +385,16 @@ function App() {
     setSelection(tram ? { kind: 'vehicle', vehicle: tram } : null);
   };
 
+  // Picking a vehicle out of a list rather than off the map — a bunch or a gap
+  // in the lines panel, or the vehicle ahead or behind in the telemetry — opens
+  // its panel as well, since that is where what the list was saying is shown.
+  const handleSelectVehicleById = (veh: string) => {
+    const vehicle = trams[veh];
+    if (!vehicle) return;
+    handleSelectTram(vehicle);
+    setIsDetailCollapsed(false);
+  };
+
   const handleSelectStop = (stop: PickedStop) => {
     if (openStop?.stop.id !== stop.id) setSelection(stopSelection(stop));
     setIsDetailCollapsed(false); // Auto-expand detail panel to show schedule
@@ -644,6 +654,7 @@ function App() {
           selectedTram={selectedVehicle}
           selectedStop={openStop?.stop ?? null}
           selectedStopRoutes={stopRoutes}
+          onSelectVehicle={handleSelectVehicleById}
         />
       )}
 
@@ -669,6 +680,8 @@ function App() {
           tripDetails={selectedTripDetails}
           loading={isLoadingTripDetails}
           error={tripDetailsError}
+          vehicles={trams}
+          onSelectVehicle={handleSelectVehicleById}
         />
       )}
 

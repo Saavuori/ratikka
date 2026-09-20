@@ -4,6 +4,7 @@ import type { MapTheme } from '../../lib/stopPlatforms';
 import type { RailTrack, TrackPlacement } from '../../lib/railTracks';
 import type { ReckonLimits } from '../../lib/deadReckon';
 import type { DoorAnimation } from '../../lib/vehicleAnimation';
+import type { HeadwayPair } from '../../lib/headways';
 
 export interface VehicleFeature {
   type: 'Feature';
@@ -177,6 +178,8 @@ export interface AnimationState {
   frame: number | null;
   /** Whether the 3D source currently holds bodies, so it is emptied once. */
   vehicles3dDrawn: boolean;
+  /** Whether any bunch links or gaps are drawn, so the source is emptied once. */
+  headwaysDrawn: boolean;
   /** The stop a selected vehicle is heading for, and whether it is boarding. */
   stopHighlight: {
     key: string;
@@ -209,6 +212,7 @@ export function createAnimationState(timeScale = 1): AnimationState {
     visibleCount: 0,
     frame: null,
     vehicles3dDrawn: false,
+    headwaysDrawn: false,
     stopHighlight: { key: '', stopId: null, boarding: false, coords: null },
     lastSeenStopId: null,
     interacting: false,
@@ -230,6 +234,10 @@ export interface FrameInputs {
   is3D: boolean;
   always3DVehicles: boolean;
   isFollowing: boolean;
+  /** Vehicles running bunched or with a gap ahead, as of the last snapshot. */
+  headwayPairs: HeadwayPair[];
+  /** Lines the reader has picked out, which are the only ones gaps are drawn on. */
+  gapLines: string[];
 }
 
 /** Work the loop asks the app to do when something it draws has moved on. */

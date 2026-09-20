@@ -202,6 +202,10 @@ type VehiclePosition struct {
 	// vehicle has not asked a junction for anything recently, which is most
 	// of the time.
 	Tlp *SignalPriority `json:"tlp,omitempty"`
+	// Hw is how far the vehicle is running behind the one ahead of it on the
+	// same line and direction, measured from when each left the same stops;
+	// see headway.go. Null until there is a vehicle ahead to measure against.
+	Hw *Headway `json:"hw,omitempty"`
 }
 
 type IngestionWorker struct {
@@ -238,6 +242,10 @@ type IngestionWorker struct {
 	// tlp holds the newest traffic light priority exchange per vehicle, folded
 	// into that vehicle's next position update; see signal_priority.go.
 	tlp *tlpStore
+
+	// headways times every vehicle out of every stop, which is what each
+	// position's gap to the vehicle ahead is measured from; see headway.go.
+	headways *headwayTracker
 }
 
 type coupledUnit struct {
@@ -257,6 +265,7 @@ func NewIngestionWorker(broker string, cache cache.Cache) *IngestionWorker {
 		coupledUnits: make(map[string]coupledUnit),
 		lastReadings: make(map[string]lastReading),
 		tlp:          newTLPStore(),
+		headways:     newHeadwayTracker(),
 	}
 }
 
@@ -456,6 +465,8 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 
+	now := time.Now()
+	delay := normalizeDelay(vp.Dl)
 	thinned := VehiclePosition{
 		Veh:      vehicleID,
 		Desi:     vp.Desi,
@@ -464,7 +475,7 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 		Hdg:      vp.Hdg,
 		Spd:      vp.Spd,
 		Acc:      vp.Acc,
-		Dl:       normalizeDelay(vp.Dl),
+		Dl:       delay,
 		Drst:     vp.Drst,
 		Route:    vp.Route,
 		Stop:     stopStr,
@@ -481,7 +492,11 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 		Dir:      vp.Dir,
 		Oday:     vp.Oday,
 		Start:    vp.Start,
-		Tlp:      w.tlp.get(vehicleID, time.Now()),
+		Tlp:      w.tlp.get(vehicleID, now),
+		Hw: w.headways.observe(headwayReading{
+			veh: vehicleID, route: vp.Route, dir: vp.Dir, oday: vp.Oday, start: vp.Start,
+			nextStop: nextStopKey(nextStop, false), eol: eol, ts: vp.Tsi, dl: delay,
+		}, now),
 	}
 
 	thinnedJSON, err := json.Marshal(thinned)

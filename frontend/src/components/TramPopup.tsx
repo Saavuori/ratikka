@@ -15,6 +15,7 @@ import {
 } from '../lib/trafficLightModels';
 import { tripProgress } from '../lib/nextStop';
 import { VehicleSchematic } from './VehicleSchematic';
+import { HeadwayCard } from './HeadwayCard';
 import { operatorName } from '../lib/operators';
 import './tramPopup.css';
 
@@ -26,6 +27,9 @@ interface TramPopupProps {
   tripDetails: TripDetailsResponse | null;
   loading: boolean;
   error: string | null;
+  /** Every vehicle on the map, for the ones running either side of this one. */
+  vehicles: Record<string, VehiclePosition>;
+  onSelectVehicle: (veh: string) => void;
 }
 
 export const TramPopup: React.FC<TramPopupProps> = ({
@@ -36,6 +40,8 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   tripDetails,
   loading,
   error,
+  vehicles,
+  onSelectVehicle,
 }) => {
   const [showAllStops, setShowAllStops] = useState<boolean>(false);
   const [lastStopId, setLastStopId] = useState<string | null>(null);
@@ -498,6 +504,14 @@ export const TramPopup: React.FC<TramPopupProps> = ({
               </div>
 
             </div>
+
+            {/* Where it sits on its line: bunched, in a gap, or evenly spaced */}
+            <HeadwayCard
+              vehicle={tram}
+              vehicles={vehicles}
+              tripDetails={tripDetails}
+              onSelectVehicle={onSelectVehicle}
+            />
 
             {/* Bidirectional G-Force/Accelerometer indicator */}
             <div style={{

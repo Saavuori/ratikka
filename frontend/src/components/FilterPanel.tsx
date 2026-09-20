@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { VehiclePosition, Alert } from '../types';
 import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, AlertTriangle, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { getRouteColor, BUS_BLUE } from '../lib/routeColors';
 import { asTransportMode, type ModeFlags } from '../lib/modes';
+import { BUNCHED_CORAL, GAP_AMBER, lineRegularity, regularityIssues } from '../lib/headways';
+import { LineSpacing } from './LineSpacing';
 
 interface FilterPanelProps {
   trams: Record<string, VehiclePosition>;
@@ -20,6 +22,8 @@ interface FilterPanelProps {
   selectedTram: VehiclePosition | null;
   selectedStop: { id: string; name: string; code: string; } | null;
   selectedStopRoutes: string[];
+  /** Select a vehicle by its key: what picking a bunch or a gap does. */
+  onSelectVehicle: (veh: string) => void;
 }
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
@@ -35,6 +39,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   selectedTram = null,
   selectedStop = null,
   selectedStopRoutes = [],
+  onSelectVehicle,
 }) => {
   const [isAlertsExpanded, setIsAlertsExpanded] = useState(false);
   const [touchStart, setTouchStart] = useState<number | null>(null);
@@ -133,6 +138,20 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     if (warningAlerts.length > 0) return '#fbbf24';
     return '#60a5fa';
   };
+  // Bunches and gaps on the lines the map is showing — narrowed, like the alerts
+  // above, to the reader's own lines once they have picked some.
+  const spacingIssues = useMemo(() => {
+    const shown = Object.fromEntries(
+      Object.entries(trams).filter(([, t]) => {
+        const mode = asTransportMode(t.mode);
+        return mode === null || modes[mode];
+      }),
+    );
+    const issues = regularityIssues(shown);
+    return selectedLines.length > 0 ? issues.filter((i) => selectedLines.includes(i.line)) : issues;
+  }, [trams, modes, selectedLines]);
+  const lineSpacing = lineRegularity(spacingIssues);
+
   const activeLines = Array.from(
     new Set(
       Object.values(trams)
@@ -400,6 +419,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         </div>
       )}
 
+      <LineSpacing issues={spacingIssues} onSelectVehicle={onSelectVehicle} />
+
       {/* Filter Section */}
       <div className="filter-scroll-area" style={{ marginTop: '8px' }}>
         {selectedLines.length > 0 && (
@@ -420,11 +441,15 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             {activeLines.map((line) => {
               const isSelected = selectedLines.includes(line);
               const routeColor = getRouteColor(line);
+              const spacing = lineSpacing[line];
+              const spacingLabel = spacing === 'bunched' ? 'Bunched' : spacing === 'gap' ? 'Gap in service' : null;
               return (
                 <button
                   key={line}
                   onClick={() => onToggleLine(line)}
                   className={`line-btn ${isSelected ? 'active' : ''}`}
+                  aria-label={spacingLabel ? `Line ${line}, ${spacingLabel.toLowerCase()}` : undefined}
+                  title={spacingLabel ?? undefined}
                   style={{
                     // Tint each chip by its route colour: filled when active,
                     // a colour accent (left bar + border) when idle.
@@ -439,6 +464,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                   >
                     {line}
                   </span>
+                  {spacing && (
+                    <span
+                      className="line-btn-pip"
+                      style={{ '--pip-color': spacing === 'bunched' ? BUNCHED_CORAL : GAP_AMBER } as React.CSSProperties}
+                      aria-hidden="true"
+                    />
+                  )}
                 </button>
               );
             })}
