@@ -256,7 +256,8 @@ func (a *Archive) Coverage() ([]DayCoverage, error) {
 			continue
 		}
 
-		files, err := os.ReadDir(filepath.Join(a.root, entry.Name()))
+		dayDir := filepath.Join(a.root, entry.Name())
+		files, err := os.ReadDir(dayDir)
 		if err != nil {
 			continue
 		}
@@ -266,7 +267,11 @@ func (a *Archive) Coverage() ([]DayCoverage, error) {
 			if !ok {
 				continue
 			}
-			if info, err := f.Info(); err != nil || info.Size() < RecordSize {
+			// Stat the file rather than asking the directory entry: on Windows
+			// the entry's size is the directory's cached copy, which lags behind
+			// a chunk still open for writing — the current minute would read as
+			// empty until its writer closed.
+			if info, err := os.Stat(filepath.Join(dayDir, f.Name())); err != nil || info.Size() < RecordSize {
 				continue // an empty chunk is a minute with nothing in it
 			}
 			counts := hours[mode]

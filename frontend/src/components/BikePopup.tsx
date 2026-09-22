@@ -3,6 +3,7 @@ import type { BikeStationDetailsResponse } from '../types';
 import { fetchBikeStationDetails } from '../lib/api';
 import { X, Bike, Navigation, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, CheckCircle, AlertCircle } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { usePanelSwipe } from '../hooks/usePanelSwipe';
 
 interface BikePopupProps {
   stationId: string;
@@ -25,8 +26,8 @@ export const BikePopup: React.FC<BikePopupProps> = ({
     error: string | null;
   }
   const [fetchState, setFetchState] = useState<StationFetchState | null>(null);
-  const [touchStart, setTouchStart] = useState<number | null>(null);
   const isMobile = useIsMobile();
+  const swipe = usePanelSwipe('right', isCollapsed, onToggleCollapse);
 
   // Only trust a result fetched for the station currently shown; anything else
   // means we are (re)loading.
@@ -34,31 +35,6 @@ export const BikePopup: React.FC<BikePopupProps> = ({
   const loading = current === null;
   const error = current?.error ?? null;
   const details = current?.data ?? null;
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStart(e.touches[0].clientX);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStart === null) return;
-    const currentX = e.touches[0].clientX;
-    const diff = currentX - touchStart;
-
-    // Swipe left (at least 45px) to expand (on the right panel)
-    if (diff < -45 && isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-    // Swipe right (at least 45px) to collapse (on the right panel)
-    else if (diff > 45 && !isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setTouchStart(null);
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -79,9 +55,7 @@ export const BikePopup: React.FC<BikePopupProps> = ({
     <div
       className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}
       style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}
-      onTouchStart={isMobile ? undefined : handleTouchStart}
-      onTouchMove={isMobile ? undefined : handleTouchMove}
-      onTouchEnd={isMobile ? undefined : handleTouchEnd}
+      {...swipe}
       onClick={() => {
         if (isCollapsed) {
           onToggleCollapse();

@@ -22,6 +22,13 @@ export type HeadwayIssue = 'bunched' | 'gap';
 export const BUNCHED_CORAL = '#e17055';
 export const GAP_AMBER = '#f59e0b';
 
+/** The colour a spacing is drawn in, or null for one that is not a problem. */
+export function headwayColor(state: Headway['state'] | undefined): string | null {
+  if (state === 'bunched') return BUNCHED_CORAL;
+  if (state === 'gap') return GAP_AMBER;
+  return null;
+}
+
 /**
  * The vehicle a vehicle is running behind, if it is still on the map and still
  * on the same run. A vehicle ahead that has reached the end of the line, or

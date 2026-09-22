@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { Headway, VehiclePosition } from '../types';
 import {
+  BUNCHED_CORAL,
+  GAP_AMBER,
   describeHeadway,
   describeIssue,
   formatHeadway,
+  headwayColor,
   headwayPairs,
   lineRegularity,
   regularityIssues,
@@ -137,5 +140,14 @@ describe('formatHeadway', () => {
     expect(plain(formatHeadway(134))).toBe('2 min 10 s');
     expect(plain(formatHeadway(359))).toBe('6 min');
     expect(plain(formatHeadway(754))).toBe('13 min');
+  });
+});
+
+describe('headwayColor', () => {
+  it('colours the two problems and nothing else', () => {
+    expect(headwayColor('bunched')).toBe(BUNCHED_CORAL);
+    expect(headwayColor('gap')).toBe(GAP_AMBER);
+    expect(headwayColor('regular')).toBeNull();
+    expect(headwayColor(undefined)).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BUNCHED_CORAL, GAP_AMBER, describeIssue } from '../lib/headways';
+import { describeIssue, headwayColor } from '../lib/headways';
 import type { RegularityIssue } from '../lib/headways';
 import { BUS_BLUE, getRouteColor } from '../lib/routeColors';
 import './lineSpacing.css';
@@ -44,7 +44,7 @@ export const LineSpacing: React.FC<LineSpacingProps> = ({ issues, onSelectVehicl
       </div>
       <ul className="line-spacing-list">
         {shown.map((issue) => {
-          const color = issue.kind === 'bunched' ? BUNCHED_CORAL : GAP_AMBER;
+          const color = headwayColor(issue.kind);
           const detail = describeIssue(issue);
           return (
             <li key={`${issue.kind}-${issue.focus}`}>

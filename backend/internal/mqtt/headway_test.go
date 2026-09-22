@@ -199,6 +199,23 @@ func TestHeadway_NewJourneyStartsOver(t *testing.T) {
 	}
 }
 
+func TestHeadwayTracker_SweepDropsLinesThatNeverPassedAStop(t *testing.T) {
+	tr := newHeadwayTracker()
+	// A vehicle whose feed never names a next stop: its line is created, but
+	// nothing on it is ever passed.
+	report(tr, "0040-401", "08:00", "", 1_000, 0)
+	if len(tr.lines) != 1 {
+		t.Fatalf("lines = %d, want 1", len(tr.lines))
+	}
+
+	tr.mu.Lock()
+	tr.sweep(time.Unix(1_000+headwayMaxGap+1, 0))
+	tr.mu.Unlock()
+	if len(tr.lines) != 0 {
+		t.Errorf("lines = %d after the sweep, want 0: an empty line lingered", len(tr.lines))
+	}
+}
+
 func TestHeadway_DirectionsDoNotMix(t *testing.T) {
 	tr := newHeadwayTracker()
 	tr.observe(headwayReading{veh: "0040-401", route: "1004", dir: "2", oday: "2026-09-19", start: "08:00",

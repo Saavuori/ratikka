@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.75.1] - 2026-09-22
+
+### Fixed
+- **Switching the map's theme no longer puts the wrong stops on it.** Changing between the light, dark and satellite maps reloads the basemap, and the code that set it up again did its own version of deciding which stops to show. That version hid every bus stop whatever the Buses toggle said, and narrowed the tram stops to the lines picked when the page was loaded rather than the ones picked now. It also drew a second disc under the open stop's marker. In the live view the next position update put this right about a second later. With a replay paused, nothing arrives to correct it, so the wrong stops stayed. The reload now uses the same stop rules as every other update.
+- **The replay's day index counts the current minute on Windows.** Coverage checked each minute's file size through the directory listing, and on Windows that listing's size lags behind a file still open for writing. The minute being recorded counted as empty until the recorder moved on, and the backend's own tests failed on a Windows machine. Each minute's file is now checked directly. Linux, where the app is deployed, was never affected.
+
+### Changed
+- The five side panels that fold away when swiped share one swipe handler instead of five copies, and a touch no longer re-renders the panel. The vehicle card and the vehicle panel share one record of the last stop a vehicle reported and one delay colour. The card now forgets that stop when the vehicle starts a new trip, as the panel already did. The live WebSocket's handlers read the latest callback rather than the one from the first render. The frontend lint now reports no warnings.
+
+---
+
 ## [v0.75.0] - 2026-09-19
 
 ### Added

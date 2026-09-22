@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PositionsMessage } from '../types';
 import { OPTIONAL_MODES, type ModeFlags, type OptionalMode } from '../lib/modes';
+import { useSyncRef } from './useSyncRef';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -15,72 +16,11 @@ interface UseWebSocketOptions {
 export function useWebSocket({ onMessage, wantsModes }: UseWebSocketOptions) {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const socketRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<number | null>(null);
-  const reconnectDelayRef = useRef<number>(1000); // Start reconnect delay at 1s
+  // The socket's handlers outlive the render that opened it, so they read the
+  // caller's current callback and mode preferences through refs.
+  const onMessageRef = useRef(onMessage);
+  useSyncRef(onMessageRef, onMessage);
   const wantsModesRef = useRef<ModeFlags>(wantsModes);
-
-  const sendModePrefs = (wanted: ModeFlags) => {
-    const socket = socketRef.current;
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      const modes = Object.fromEntries(
-        OPTIONAL_MODES.map((mode) => [mode, wanted[mode]])
-      ) as Record<OptionalMode, boolean>;
-      socket.send(JSON.stringify({ modes }));
-    }
-  };
-
-  const connect = () => {
-    if (socketRef.current) return;
-
-    setStatus('connecting');
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/api/v1/stream`;
-
-    const socket = new WebSocket(wsUrl);
-    socketRef.current = socket;
-
-    socket.onopen = () => {
-      setStatus('connected');
-      reconnectDelayRef.current = 1000; // Reset backoff delay
-      sendModePrefs(wantsModesRef.current); // Announce current mode preferences
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data) as PositionsMessage;
-        if (data && data.type === 'positions') {
-          onMessage(data);
-        }
-      } catch (err) {
-        console.error('Error parsing WebSocket message:', err);
-      }
-    };
-
-    socket.onclose = () => {
-      socketRef.current = null;
-      setStatus('disconnected');
-      triggerReconnect();
-    };
-
-    socket.onerror = (err) => {
-      console.error('WebSocket error:', err);
-      socket.close();
-    };
-  };
-
-  const triggerReconnect = () => {
-    if (reconnectTimeoutRef.current) return;
-
-    // Exponential backoff capped at 30 seconds
-    const delay = reconnectDelayRef.current;
-    reconnectDelayRef.current = Math.min(delay * 1.5, 30000);
-
-    reconnectTimeoutRef.current = window.setTimeout(() => {
-      reconnectTimeoutRef.current = null;
-      connect();
-    }, delay);
-  };
 
   // Push preference changes to the backend live (e.g. user toggles buses or the
   // metro on/off while connected). onopen handles the initial announcement
@@ -88,24 +28,87 @@ export function useWebSocket({ onMessage, wantsModes }: UseWebSocketOptions) {
   // a toggle actually changes.
   useEffect(() => {
     wantsModesRef.current = wantsModes;
-    sendModePrefs(wantsModes);
+    sendModePrefs(socketRef.current, wantsModes);
   }, [wantsModes]);
 
   useEffect(() => {
+    let reconnectTimeout: number | null = null;
+    let reconnectDelay = 1000; // Start reconnect delay at 1s
+
+    const connect = () => {
+      if (socketRef.current) return;
+
+      setStatus('connecting');
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const socket = new WebSocket(`${protocol}//${window.location.host}/api/v1/stream`);
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        setStatus('connected');
+        reconnectDelay = 1000; // Reset backoff delay
+        sendModePrefs(socket, wantsModesRef.current); // Announce current mode preferences
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as PositionsMessage;
+          if (data && data.type === 'positions') {
+            onMessageRef.current(data);
+          }
+        } catch (err) {
+          console.error('Error parsing WebSocket message:', err);
+        }
+      };
+
+      socket.onclose = () => {
+        socketRef.current = null;
+        setStatus('disconnected');
+        scheduleReconnect();
+      };
+
+      socket.onerror = (err) => {
+        console.error('WebSocket error:', err);
+        socket.close();
+      };
+    };
+
+    const scheduleReconnect = () => {
+      if (reconnectTimeout !== null) return;
+
+      // Exponential backoff capped at 30 seconds
+      const delay = reconnectDelay;
+      reconnectDelay = Math.min(delay * 1.5, 30000);
+
+      reconnectTimeout = window.setTimeout(() => {
+        reconnectTimeout = null;
+        connect();
+      }, delay);
+    };
+
     connect();
 
     return () => {
-      if (socketRef.current) {
+      const socket = socketRef.current;
+      if (socket) {
         // Remove close listener to prevent auto-reconnect on deliberate unmount
-        socketRef.current.onclose = null;
-        socketRef.current.close();
+        socket.onclose = null;
+        socket.close();
         socketRef.current = null;
       }
-      if (reconnectTimeoutRef.current) {
-        window.clearTimeout(reconnectTimeoutRef.current);
+      if (reconnectTimeout !== null) {
+        window.clearTimeout(reconnectTimeout);
       }
     };
   }, []);
 
   return { status };
+}
+
+function sendModePrefs(socket: WebSocket | null, wanted: ModeFlags) {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    const modes = Object.fromEntries(
+      OPTIONAL_MODES.map((mode) => [mode, wanted[mode]])
+    ) as Record<OptionalMode, boolean>;
+    socket.send(JSON.stringify({ modes }));
+  }
 }

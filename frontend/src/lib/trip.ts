@@ -32,3 +32,13 @@ export function areTripsEquivalent(id1: string | null | undefined, id2: string |
     p1.startTime === p2.startTime
   );
 }
+
+/**
+ * The colour a delay is shown in: red over a minute late, blue over a minute
+ * early, green in between. `seconds` is positive late.
+ */
+export function delayColor(seconds: number): string {
+  if (seconds > 60) return '#f87171';
+  if (seconds < -60) return '#38bdf8';
+  return '#34d399';
+}

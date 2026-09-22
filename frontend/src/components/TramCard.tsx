@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import type { VehiclePosition, TripDetailsResponse } from '../types';
 import { Navigation, Clock, X, Target, ChevronsUp, ChevronUp, ChevronDown, ChevronsDown } from 'lucide-react';
 import { getRouteColor, getModeAccent } from '../lib/routeColors';
 import { tripProgress } from '../lib/nextStop';
+import { delayColor } from '../lib/trip';
+import { useLastSeenStop } from '../hooks/useLastSeenStop';
 
 interface TramCardProps {
   tram: VehiclePosition;
@@ -15,20 +17,7 @@ interface TramCardProps {
 
 export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, isFollowing, onToggleFollow, tripDetails }) => {
   const speedKmh = Math.round(tram.spd * 3.6);
-  const [lastStopId, setLastStopId] = useState<string | null>(null);
-
-  // Remember the most recent stop the vehicle reported, so the card can keep
-  // showing progress while `tram.stop` is empty between stops (state adjusted
-  // during render per React's derived-state guidance).
-  if (tram.stop && tram.stop !== lastStopId) {
-    setLastStopId(tram.stop);
-  }
-
-  const getDelayColor = (seconds: number): string => {
-    if (seconds > 60) return '#f87171';
-    if (seconds < -60) return '#38bdf8';
-    return '#34d399';
-  };
+  const lastStopId = useLastSeenStop(tram);
 
   const formatDelay = (seconds: number): string => {
     if (Math.abs(seconds) < 15) return 'On time';
@@ -118,7 +107,7 @@ export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, i
           <div className="tram-card-divider" style={{ height: '10px' }} />
           <div className="tram-card-metric">
             <Clock size={12} style={{ color: '#94a3b8' }} />
-            <span className="tram-card-metric-val" style={{ color: getDelayColor(tram.dl), fontSize: '0.75rem' }}>
+            <span className="tram-card-metric-val" style={{ color: delayColor(tram.dl), fontSize: '0.75rem' }}>
               {formatDelay(tram.dl)}
             </span>
           </div>

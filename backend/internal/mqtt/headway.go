@@ -480,9 +480,11 @@ func (t *headwayTracker) sweep(now time.Time) {
 			delete(t.runs, veh)
 		}
 	}
+	// A line nothing has left a stop on yet (newest is zero) holds no passages
+	// and no pairs, so it goes too: it is recreated, empty, by its next reading.
 	cutoff := now.Unix() - headwayMaxGap
 	for key, line := range t.lines {
-		if line.newest != 0 && line.newest < cutoff {
+		if line.newest < cutoff {
 			delete(t.lines, key)
 		}
 	}
