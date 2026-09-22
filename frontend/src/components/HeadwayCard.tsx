@@ -1,14 +1,8 @@
 import React from 'react';
 import type { TripDetailsResponse, VehiclePosition } from '../types';
-import {
-  BUNCHED_CORAL,
-  GAP_AMBER,
-  describeHeadway,
-  formatHeadway,
-  vehicleAhead,
-  vehicleBehind,
-} from '../lib/headways';
-import { getModeAccent, getRouteColor, BUS_BLUE } from '../lib/routeColors';
+import { describeHeadway, formatHeadway, headwayColor, vehicleAhead, vehicleBehind } from '../lib/headways';
+import { getModeAccent } from '../lib/routeColors';
+import { vehicleBodyColor } from '../lib/vehicleModels';
 import './headwayCard.css';
 
 interface HeadwayCardProps {
@@ -18,9 +12,6 @@ interface HeadwayCardProps {
   tripDetails: TripDetailsResponse | null;
   onSelectVehicle: (veh: string) => void;
 }
-
-const stateColor = (state: string | undefined): string | null =>
-  state === 'bunched' ? BUNCHED_CORAL : state === 'gap' ? GAP_AMBER : null;
 
 /**
  * How long to draw a gap, as a share of the strip: one timetabled headway is
@@ -46,9 +37,9 @@ export const HeadwayCard: React.FC<HeadwayCardProps> = ({ vehicle, vehicles, tri
   const behind = vehicleBehind(vehicle, vehicles);
   if (!hw && !behind) return null;
 
-  const color = stateColor(hw?.state);
+  const color = headwayColor(hw?.state);
   const sched = hw?.sched ?? behind?.hw?.sched;
-  const lineColor = vehicle.mode === 'bus' ? BUS_BLUE : getRouteColor(vehicle.desi);
+  const lineColor = vehicleBodyColor(vehicle.mode, vehicle.desi);
   const timedAt = hw?.stop
     ? tripDetails?.stops.find((s) => s.gtfsId === hw.stop)?.name ?? null
     : null;
@@ -74,7 +65,7 @@ export const HeadwayCard: React.FC<HeadwayCardProps> = ({ vehicle, vehicles, tri
           className="headway-card-gap"
           style={{
             flexGrow: gapLength(behind?.hw?.secs, sched),
-            borderColor: stateColor(behind?.hw?.state) ?? 'var(--border-glow)',
+            borderColor: headwayColor(behind?.hw?.state) ?? 'var(--border-glow)',
           }}
         />
         <span className="headway-card-dot headway-card-dot--self" style={{ background: lineColor }} />
@@ -92,7 +83,7 @@ export const HeadwayCard: React.FC<HeadwayCardProps> = ({ vehicle, vehicles, tri
         <HeadwayRow
           label="Behind"
           text={behind?.hw ? `${behind.hw.atLeast ? '≥ ' : ''}${formatHeadway(behind.hw.secs)}` : '—'}
-          color={stateColor(behind?.hw?.state)}
+          color={headwayColor(behind?.hw?.state)}
           onClick={behind ? () => onSelectVehicle(behind.veh) : undefined}
         />
         <HeadwayRow

@@ -5,7 +5,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { usePanelSwipe } from '../hooks/usePanelSwipe';
 import { getRouteColor, BUS_BLUE } from '../lib/routeColors';
 import { asTransportMode, type ModeFlags } from '../lib/modes';
-import { BUNCHED_CORAL, GAP_AMBER, lineRegularity, regularityIssues } from '../lib/headways';
+import { headwayColor, lineRegularity, regularityIssues } from '../lib/headways';
 import { LineSpacing } from './LineSpacing';
 
 interface FilterPanelProps {
@@ -441,7 +441,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                   {spacing && (
                     <span
                       className="line-btn-pip"
-                      style={{ '--pip-color': spacing === 'bunched' ? BUNCHED_CORAL : GAP_AMBER } as React.CSSProperties}
+                      style={{ '--pip-color': headwayColor(spacing) } as React.CSSProperties}
                       aria-hidden="true"
                     />
                   )}
