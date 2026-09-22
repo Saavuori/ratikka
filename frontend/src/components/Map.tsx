@@ -211,6 +211,7 @@ export const Map: React.FC<MapProps> = ({
   const selectedLineRef = useRef<string | null>(selectedLine);
   const selectedBikeStationIdRef = useRef<string | null>(selectedBikeStationId);
   const lineFiltersRef = useRef<string[]>(lineFilters);
+  const selectedStopIdRef = useRef<string | null>(selectedStopId);
   const modesRef = useRef<ModeFlags>(modes);
   const showRoutesRef = useRef<boolean>(showRoutes);
   const is3DRef = useRef<boolean>(is3D);
@@ -223,6 +224,7 @@ export const Map: React.FC<MapProps> = ({
   useSyncRef(selectedLineRef, selectedLine);
   useSyncRef(selectedBikeStationIdRef, selectedBikeStationId);
   useSyncRef(lineFiltersRef, lineFilters);
+  useSyncRef(selectedStopIdRef, selectedStopId);
   useSyncRef(modesRef, modes);
   useSyncRef(showRoutesRef, showRoutes);
   useSyncRef(is3DRef, is3D);
@@ -448,52 +450,24 @@ export const Map: React.FC<MapProps> = ({
     // Restore any active journey after a style/theme change
     updateJourney(map, journeyLegsRef.current, journeyEndpointsRef.current, false);
 
-    // Hide default bus stops from the vector style, and the style's own metro /
-    // commuter-rail station layers — those are drawn by our stops_metro and
-    // stops_train layers instead, which follow the Metro and Trains toggles.
-    const busStopLayers = ['stops_bus', 'stops_trunk'];
-    busStopLayers.forEach((layerId) => {
-      if (map.getLayer(layerId)) {
-        map.setLayoutProperty(layerId, 'visibility', 'none');
-      }
-    });
+    // The style's own metro / commuter-rail station layers are drawn by our
+    // stops_metro and stops_train layers instead, which follow the Metro and
+    // Trains toggles.
     ['stops_subway', 'stops_rail'].forEach((layerId) => {
       if (map.getLayer(layerId)) {
         map.setLayoutProperty(layerId, 'visibility', 'none');
       }
     });
-
-    // Apply stops route filters to built-in vector stops
-    if (map.getLayer('stops_tram') || map.getLayer('stops_case')) {
-      const activeRoutes = [...lineFilters];
-      const selectedTram = selectedTramIdRef.current ? latestTramsRef.current[selectedTramIdRef.current] : null;
-      if (selectedTram && !activeRoutes.includes(selectedTram.desi)) {
-        activeRoutes.push(selectedTram.desi);
-      }
-      const allowedStopIdsSet = new Set<string>();
-      activeRoutes.forEach((line) => {
-        const routeData = routeGeometriesRef.current[line];
-        if (routeData && routeData.stops) {
-          routeData.stops.forEach((id) => {
-            allowedStopIdsSet.add(id);
-            allowedStopIdsSet.add(id.replace(/^HSL:/, ''));
-          });
-        }
-      });
-      const allowedStopIds = Array.from(allowedStopIdsSet);
-
-      if (map.getLayer('stops_tram')) {
-        if (activeRoutes.length === 0) {
-          map.setFilter('stops_tram', ['==', ['get', 'mode'], 'TRAM']);
-        } else {
-          map.setFilter('stops_tram', [
-            'all',
-            ['==', ['get', 'mode'], 'TRAM'],
-            ['in', ['to-string', ['coalesce', ['get', 'gtfsId'], ['get', 'stopId'], ['get', 'id'], ['id'], '']], ['literal', allowedStopIds]]
-          ] as maplibregl.FilterSpecification);
-        }
-      }
-    }
+    // The rest of the stops follow the same rules as on any other render: their
+    // mode's toggle, narrowed to the highlighted lines.
+    updateStopVisibility(map, {
+      modes: modesRef.current,
+      lineFilters: lineFiltersRef.current,
+      selectedVehicleId: selectedTramIdRef.current,
+      vehicles: latestTramsRef.current,
+      routeGeometries: routeGeometriesRef.current,
+      selectedStopId: selectedStopIdRef.current,
+    });
 
     // Apply active route visibility and 3D mode setting. With no line filter the
     // whole network shows; selecting lines narrows it to just those routes.
@@ -567,10 +541,11 @@ export const Map: React.FC<MapProps> = ({
     STATION_CIRCLE_LAYERS.forEach((layerId) => {
       applyStopCircleStyle(layerId, STATION_CIRCLE_RADIUS, STATION_CIRCLE_MIN_ZOOM);
     });
-
-
-    // Register all layer-specific interactions once per map instance. MapLibre
   };
+  // `style.load` fires on every theme or basemap switch, long after the render
+  // that bound it, so it calls whichever setup the latest render made.
+  const setupCustomMapElementsRef = useRef(setupCustomMapElements);
+  useSyncRef(setupCustomMapElementsRef, setupCustomMapElements);
 
   // Initial Map Setup
   useEffect(() => {
@@ -648,7 +623,7 @@ export const Map: React.FC<MapProps> = ({
     geolocate.on('error', reportLocating);
 
     map.on('style.load', () => {
-      setupCustomMapElements(map);
+      setupCustomMapElementsRef.current(map);
     });
 
     // Disable follow mode on drag
@@ -686,13 +661,9 @@ export const Map: React.FC<MapProps> = ({
     window.addEventListener('touchend', handleInteractionEnd);
 
     // Report initial bearing and listen to map rotate events
-    if (onMapBearingChange) {
-      onMapBearingChange(map.getBearing());
-    }
+    callbacksRef.current.onMapBearingChange?.(map.getBearing());
     map.on('rotate', () => {
-      if (callbacksRef.current.onMapBearingChange) {
-        callbacksRef.current.onMapBearingChange(map.getBearing());
-      }
+      callbacksRef.current.onMapBearingChange?.(map.getBearing());
     });
 
     // Start interpolation tick loop
