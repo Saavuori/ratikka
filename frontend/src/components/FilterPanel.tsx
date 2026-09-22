@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import type { VehiclePosition, Alert } from '../types';
 import { ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal, AlertTriangle, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { usePanelSwipe } from '../hooks/usePanelSwipe';
 import { getRouteColor, BUS_BLUE } from '../lib/routeColors';
 import { asTransportMode, type ModeFlags } from '../lib/modes';
 import { BUNCHED_CORAL, GAP_AMBER, lineRegularity, regularityIssues } from '../lib/headways';
@@ -42,33 +43,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   onSelectVehicle,
 }) => {
   const [isAlertsExpanded, setIsAlertsExpanded] = useState(false);
-  const [touchStart, setTouchStart] = useState<number | null>(null);
   const isMobile = useIsMobile();
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStart(e.touches[0].clientX);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStart === null) return;
-    const currentX = e.touches[0].clientX;
-    const diff = currentX - touchStart;
-
-    // Swipe left (at least 45px) to collapse
-    if (diff < -45 && !isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-    // Swipe right (at least 45px) to expand
-    else if (diff > 45 && isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setTouchStart(null);
-  };
+  const swipe = usePanelSwipe('left', isCollapsed, onToggleCollapse);
 
   // Filter alerts contextually
   const filteredAlerts = alerts.filter(alert => {
@@ -176,9 +152,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       style={{
         pointerEvents: 'auto',
       }}
-      onTouchStart={isMobile ? undefined : handleTouchStart}
-      onTouchMove={isMobile ? undefined : handleTouchMove}
-      onTouchEnd={isMobile ? undefined : handleTouchEnd}
+      {...swipe}
       onClick={() => {
         if (isCollapsed) {
           onToggleCollapse();

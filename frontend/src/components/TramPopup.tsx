@@ -1,8 +1,8 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 import React, { useEffect, useState } from 'react';
 import type { VehiclePosition, TripDetailsResponse, Alert } from '../types';
 import { AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Activity, Gauge, Compass, Cpu, Database, Users, ShieldCheck, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { usePanelSwipe } from '../hooks/usePanelSwipe';
 import { useTrafficLights } from '../hooks/useTrafficLights';
 import { getRouteColor, getModeAccent } from '../lib/routeColors';
 import { occupancyColor, occupancyFraction, occupancyLabel } from '../lib/occupancy';
@@ -14,6 +14,8 @@ import {
   SIGNAL_AMBER,
 } from '../lib/trafficLightModels';
 import { tripProgress } from '../lib/nextStop';
+import { delayColor } from '../lib/trip';
+import { useLastSeenStop } from '../hooks/useLastSeenStop';
 import { VehicleSchematic } from './VehicleSchematic';
 import { HeadwayCard } from './HeadwayCard';
 import { operatorName } from '../lib/operators';
@@ -43,8 +45,11 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   vehicles,
   onSelectVehicle,
 }) => {
-  const [showAllStops, setShowAllStops] = useState<boolean>(false);
-  const [lastStopId, setLastStopId] = useState<string | null>(null);
+  // Which trip the intermediate stops are expanded for, so a new trip opens
+  // with them folded again.
+  const [expandedStopsTrip, setExpandedStopsTrip] = useState<string | null>(null);
+  const showAllStops = expandedStopsTrip === tram.tripId;
+  const lastStopId = useLastSeenStop(tram);
   const [activeTab, setActiveTab] = useState<'telemetry' | 'schedule' | 'diagnostics'>('telemetry');
 
   const relevantAlerts = alerts.filter(alert =>
@@ -55,39 +60,8 @@ export const TramPopup: React.FC<TramPopupProps> = ({
 
   // Diagnostic states
   const [latency, setLatency] = useState<number>(0);
-  const [touchStart, setTouchStart] = useState<number | null>(null);
   const isMobile = useIsMobile();
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStart(e.touches[0].clientX);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStart === null) return;
-    const currentX = e.touches[0].clientX;
-    const diff = currentX - touchStart;
-
-    // Swipe left (at least 45px) to expand (on the right panel)
-    if (diff < -45 && isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-    // Swipe right (at least 45px) to collapse (on the right panel)
-    else if (diff > 45 && !isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setTouchStart(null);
-  };
-
-  useEffect(() => {
-    if (tram.stop) {
-      setLastStopId(tram.stop);
-    }
-  }, [tram.stop]);
+  const swipe = usePanelSwipe('right', isCollapsed, onToggleCollapse);
 
   useEffect(() => {
     // Live latency tick
@@ -96,17 +70,6 @@ export const TramPopup: React.FC<TramPopupProps> = ({
     }, 1000);
     return () => clearInterval(interval);
   }, [tram.ts]);
-
-  useEffect(() => {
-    setShowAllStops(false); // Reset to collapsed on trip change
-    setLastStopId(tram.stop || null);
-  }, [tram.tripId]);
-
-  const getDelayColor = (seconds: number) => {
-    if (seconds > 60) return '#f87171';
-    if (seconds < -60) return '#38bdf8';
-    return '#34d399';
-  };
 
   // Where the tram has got to along the trip. The feed reports the stop it is
   // running to on every message, so this is read rather than inferred; see
@@ -139,7 +102,6 @@ export const TramPopup: React.FC<TramPopupProps> = ({
   // else. Null everywhere else, and the load card below is simply not drawn.
   const load = occupancyFraction(tram.mode, tram.occu);
 
-
   // Speedometer details
   const speedometerCircumference = 2 * Math.PI * 26; // Radius 26
   const speedometerOffset = speedometerCircumference - (Math.min(60, speedKmh) / 60) * speedometerCircumference;
@@ -152,9 +114,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
     <div
       className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}
       style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}
-      onTouchStart={isMobile ? undefined : handleTouchStart}
-      onTouchMove={isMobile ? undefined : handleTouchMove}
-      onTouchEnd={isMobile ? undefined : handleTouchEnd}
+      {...swipe}
       onClick={() => {
         if (isCollapsed) {
           onToggleCollapse();
@@ -163,7 +123,6 @@ export const TramPopup: React.FC<TramPopupProps> = ({
     >
       {/* Drag handle affordance (mobile bottom-sheet only) */}
       <div className="sheet-handle" onClick={() => !isCollapsed && onToggleCollapse()} />
-
 
       {/* Collapse/Expand Toggle Tab */}
       <button
@@ -483,7 +442,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                 <div style={{ position: 'relative', width: '64px', height: '64px' }}>
                   <svg width="64" height="64" viewBox="0 0 64 64" style={{ transform: 'rotate(-90deg)' }}>
                     <circle cx="32" cy="32" r="26" stroke="rgba(255,255,255,0.04)" strokeWidth="4.5" fill="none"/>
-                    <circle cx="32" cy="32" r="26" stroke={getDelayColor(tram.dl)} strokeWidth="4.5" fill="none"
+                    <circle cx="32" cy="32" r="26" stroke={delayColor(tram.dl)} strokeWidth="4.5" fill="none"
                             strokeDasharray={speedometerCircumference}
                             strokeDashoffset={speedometerCircumference - (Math.min(300, Math.abs(tram.dl)) / 300) * speedometerCircumference}
                             strokeLinecap="round"
@@ -493,7 +452,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                     position: 'absolute', top: 0, left: 0, width: '64px', height: '64px',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 4px', boxSizing: 'border-box'
                   }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: getDelayColor(tram.dl) }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: delayColor(tram.dl) }}>
                       {tram.dl === 0 ? '±0' : (tram.dl < 0 ? '-' : '+') + Math.round(Math.abs(tram.dl) / 60)}m
                     </span>
                     <span style={{ fontSize: '0.45rem', color: '#94a3b8', marginTop: '-1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
@@ -644,7 +603,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                 <div className="timeline-container" style={{ marginTop: '4px' }}>
                   {upcomingStops.length > 1 && (
                     <button
-                      onClick={() => setShowAllStops(!showAllStops)}
+                      onClick={() => setExpandedStopsTrip(showAllStops ? null : tram.tripId)}
                       style={{
                         width: '100%',
                         padding: '6px 10px',
@@ -691,7 +650,7 @@ export const TramPopup: React.FC<TramPopupProps> = ({
                           <div className="timeline-time-info">
                             <span className="timeline-time">{stop.realtimeArrival}</span>
                             {stop.delay !== 0 && (
-                              <span className="timeline-delay" style={{ color: getDelayColor(stop.delay) }}>
+                              <span className="timeline-delay" style={{ color: delayColor(stop.delay) }}>
                                 {stop.delay < 0 ? '-' : '+'}{Math.round(Math.abs(stop.delay) / 60)}m
                               </span>
                             )}

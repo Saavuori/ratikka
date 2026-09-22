@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { X, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Radio } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { usePanelSwipe } from '../hooks/usePanelSwipe';
 import { getRouteColor, getModeAccent } from '../lib/routeColors';
 import { haversineMeters } from '../lib/geo';
 import {
@@ -143,8 +144,8 @@ export const TrafficLightPopup: React.FC<TrafficLightPopupProps> = ({
   isCollapsed,
   onToggleCollapse,
 }) => {
-  const [touchStart, setTouchStart] = useState<number | null>(null);
   const isMobile = useIsMobile();
+  const swipe = usePanelSwipe('right', isCollapsed, onToggleCollapse);
   const { granted, requesting, denied, silent } = splitByOutcome(activity);
   const isWarningLight = junction.properties.type === 'warning_light';
   const total = granted.length + requesting.length + denied.length + silent.length;
@@ -159,26 +160,11 @@ export const TrafficLightPopup: React.FC<TrafficLightPopupProps> = ({
       activity && activity.status !== 'norequest' ? activity.status : 'idle',
     );
 
-  const handleTouchStart = (e: React.TouchEvent) => setTouchStart(e.touches[0].clientX);
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStart === null) return;
-    const diff = e.touches[0].clientX - touchStart;
-    if (diff < -45 && isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    } else if (diff > 45 && !isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-  };
-
   return (
     <div
       className={`glass-panel detail-popup ${isCollapsed ? 'collapsed' : ''}`}
       style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}
-      onTouchStart={isMobile ? undefined : handleTouchStart}
-      onTouchMove={isMobile ? undefined : handleTouchMove}
-      onTouchEnd={() => setTouchStart(null)}
+      {...swipe}
       onClick={() => { if (isCollapsed) onToggleCollapse(); }}
     >
       <div className="sheet-handle" onClick={() => !isCollapsed && onToggleCollapse()} />

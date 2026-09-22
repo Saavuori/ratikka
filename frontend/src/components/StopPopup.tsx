@@ -6,6 +6,7 @@ import { getRouteColor } from '../lib/routeColors';
 import { relevantStopAlerts } from '../lib/stopAlerts';
 import { X, Clock, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { usePanelSwipe } from '../hooks/usePanelSwipe';
 import { useSavedStops } from '../hooks/useSavedStops';
 import { departureView, isCancelledDeparture, isDepartureSourceStale, MAX_SAVED_STOPS, pollDepartures } from '../lib/departures';
 import { arrivalVehicleModes, focusedArrival, nextArrivals, walkVerdict } from '../lib/stopArrivals';
@@ -60,7 +61,6 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   const details = response?.stopId === stopId ? response.data : null;
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [touchStart, setTouchStart] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const { savedStops, toggleStop } = useSavedStops();
   const savedStop = savedStops.find((stop) => stop.gtfsId === stopId);
@@ -70,6 +70,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   // them to fill the panel on its own.
   const [alertsExpanded, setAlertsExpanded] = useState<boolean>(false);
   const isMobile = useIsMobile();
+  const swipe = usePanelSwipe('right', isCollapsed, onToggleCollapse);
 
   // The next arrivals, recomputed as positions stream in. `now` also ticks
   // every second, so a countdown never goes stale between feed updates.
@@ -114,31 +115,6 @@ export const StopPopup: React.FC<StopPopupProps> = ({
       : null);
   }, [tracking, stopId, focusVehicleId, focusTripId, focusLine]);
   useEffect(() => () => publishFocus(null), []);
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStart(e.touches[0].clientX);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStart === null) return;
-    const currentX = e.touches[0].clientX;
-    const diff = currentX - touchStart;
-
-    // Swipe left (at least 45px) to expand (on the right panel)
-    if (diff < -45 && isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-    // Swipe right (at least 45px) to collapse (on the right panel)
-    else if (diff > 45 && !isCollapsed) {
-      onToggleCollapse();
-      setTouchStart(null);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setTouchStart(null);
-  };
 
   // Sorted worst-first, so the head of the list sets the summary's colour.
   const relevantAlerts = relevantStopAlerts(alerts, stopId, details?.routes);
@@ -198,9 +174,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
     <div
       className={`glass-panel detail-popup stop-popup ${isCollapsed ? 'collapsed' : ''}`}
       style={{ pointerEvents: 'auto' }}
-      onTouchStart={isMobile ? undefined : handleTouchStart}
-      onTouchMove={isMobile ? undefined : handleTouchMove}
-      onTouchEnd={isMobile ? undefined : handleTouchEnd}
+      {...swipe}
       onClick={() => {
         if (isCollapsed) {
           onToggleCollapse();
