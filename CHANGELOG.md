@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.75.4] - 2026-09-25
+
+### Fixed
+- **A tram's Spacing card no longer names a stop that did not time the gap it shows.** Between stops, the gap to the tram ahead can outgrow the one last measured: the tram in front left the next stop longer ago than the two were apart at the stop before. The card then shows that longer figure as "≥", which is right, but it kept the old stop's name beside it, so it read "timed leaving" a stop where the gap had been much shorter. The figure is a lower bound taken at the next stop, so it now names no stop, as the API reference already said it should.
+
+---
+
 ## [v0.75.1] - 2026-09-22
 
 ### Fixed

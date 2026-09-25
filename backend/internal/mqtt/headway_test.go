@@ -115,6 +115,39 @@ func TestHeadway_BoundShowsAGapOpeningBetweenStops(t *testing.T) {
 	}
 }
 
+// Once the bound outgrows the gap measured at the last stop, the number is the
+// bound, taken at the next stop, and it must not claim the last stop's name:
+// the card would read "timed leaving S1" beside a figure S1 never timed.
+func TestHeadway_BoundOverAMeasurementNamesNoStop(t *testing.T) {
+	tr := newHeadwayTracker()
+	fiveMinuteLine(tr, "S1", "S2", 1_000)
+	leaves(tr, "0040-401", "08:00", "S1", "S2", 3_000, 0)
+	leaves(tr, "0040-402", "08:05", "S1", "S2", 3_300, 0)
+	leaves(tr, "0040-401", "08:00", "S2", "S3", 3_100, 0)
+
+	// Still measured at S1 while the bound is shorter than the measurement.
+	hw := report(tr, "0040-402", "08:05", "S2", 3_350, 0)
+	if hw == nil || hw.Secs != 300 || hw.AtLeast || hw.Stop != "S1" {
+		t.Fatalf("headway = %+v, want 300 s measured at S1", hw)
+	}
+
+	// Tram 402 keeps reporting, held short of S2 eleven minutes after 401
+	// left it.
+	for ts := int64(3_400); ts < 3_760; ts += 60 {
+		report(tr, "0040-402", "08:05", "S2", ts, 0)
+	}
+	hw = report(tr, "0040-402", "08:05", "S2", 3_760, 0)
+	if hw == nil || hw.Ahead != "0040-401" || hw.Secs != 660 || !hw.AtLeast {
+		t.Fatalf("headway = %+v, want at least 660 s behind 0040-401", hw)
+	}
+	if hw.Stop != "" {
+		t.Errorf("stop = %q, want none: 660 s is bounded at S2, not measured at S1", hw.Stop)
+	}
+	if hw.State != HeadwayGap {
+		t.Errorf("state = %q, want gap", hw.State)
+	}
+}
+
 // A tram laying over at its terminus while the one in front pulls out is
 // seconds behind it by the bound, and will still leave on time. A bound says
 // nothing about closeness.
