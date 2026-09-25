@@ -336,8 +336,11 @@ func (t *headwayTracker) headway(line *lineHeadways, run *vehicleRun, veh string
 		case passed && m != nil && p.veh == m.ahead:
 			hw = &Headway{Ahead: m.ahead, Secs: m.secs, Stop: m.stop}
 			if bound > hw.Secs {
+				// The number is now the bound at the next stop, not the
+				// measurement at the last one, so it names no stop.
 				hw.Secs = bound
 				hw.AtLeast = true
+				hw.Stop = ""
 			}
 		case passed:
 			// Unmeasured on this journey, or the vehicle it was measured
