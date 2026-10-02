@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.75.5] - 2026-10-02
+
+### Changed
+- **The journey planner goes straight to the first route.** The expanded planner covered most of the map, and once a destination was picked it filled with buttons and a long leg-by-leg monitor before the routes themselves, so the route could be seen neither in the list nor on the map. Now, on every screen size, the planner folds to a slim bar as soon as the first route is found, leaving that route drawn on the map. The bar carries only what the route needs: its line chips, its duration, when it leaves and arrives, and which of the found routes it is (1/3). Arrows either side step to the next or previous route in place. "Stale", "Warnings" or "Cancelled" appear only when they apply, and the arrival status that used to sit there every time is gone. A tap on the bar opens the planner, where the routes come first under a small **Find alternatives** button, and the selected journey's leg-by-leg monitoring sits folded under **Journey details**, whose summary still names its update status and any warnings. A reported cancellation stays shown outside it.
+- **A selected journey narrows the map to itself.** While a journey with any transit in it is selected, the map shows only the vehicles, route lines and stops of the lines it rides, in the modes it rides them in, as if those lines had been picked in the Lines panel and the other modes switched off. The reader's own line filter and mode switches are left as they were and come back when the journey is cleared. Before, the journey's modes were added to whatever was already shown, and a line filter set beforehand could hide the very bus the journey boards.
+
+---
+
 ## [v0.75.4] - 2026-09-25
 
 ### Fixed

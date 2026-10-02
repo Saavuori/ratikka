@@ -2,10 +2,23 @@
 .journey-refresh {
   border: 1px solid var(--border-button-hover);
   border-radius: 6px;
-  padding: 6px;
+  padding: 4px 8px;
   background: var(--bg-panel);
   color: var(--text-primary);
   font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.journey-monitor summary {
+  cursor: pointer;
+}
+
+.journey-alternatives-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .journey-monitor {
@@ -51,10 +64,4 @@
 
 .journey-alert {
   overflow-wrap: anywhere;
-}
-
-.journey-monitor-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
