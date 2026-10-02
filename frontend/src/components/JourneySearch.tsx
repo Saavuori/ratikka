@@ -113,9 +113,11 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const originGenerationRef = useRef(0);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const selectionCallback = useRef(onSelectionChange);
+  const isMobileRef = useRef(isMobile);
   const toInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { selectionCallback.current = onSelectionChange; }, [onSelectionChange]);
+  useEffect(() => { isMobileRef.current = isMobile; }, [isMobile]);
 
   const cancelPending = useCallback(() => {
     generationRef.current++;
@@ -221,6 +223,10 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
           setUnavailable(false);
           setError(null);
           selectionCallback.current({ from: f, to: t, itinerary: next });
+          // On a phone the expanded planner covers the map the route is drawn
+          // on, so show the recommended route at once; the alternatives and the
+          // details are a tap away on the summary bar.
+          if (isMobileRef.current) setCollapsed(true);
         } else {
           setError('No routes found for this trip.');
         }
@@ -458,12 +464,16 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         >
           {selectedItinerary ? (
             <>
-              {renderLegChips(selectedItinerary)}
-              <span className="journey-collapsed-dur">{formatDuration(selectedItinerary.duration)}</span>
-              <span className={`journey-monitor-summary ${stale ? 'warning' : ''}`}>
-                {formatClock(selectedItinerary.endTime)} Helsinki · {monitorSummary}
-                {error && ' · Update unavailable'}
-                {(cancelled || transfers.some(t => t.risk !== 'normal') || journeyAlerts.length > 0) && ' · Warnings — expand'}
+              <span className="journey-collapsed-body">
+                <span className="journey-collapsed-route">
+                  {renderLegChips(selectedItinerary)}
+                  <span className="journey-collapsed-dur">{formatDuration(selectedItinerary.duration)}</span>
+                </span>
+                <span className={`journey-monitor-summary ${stale ? 'warning' : ''}`}>
+                  {formatClock(selectedItinerary.endTime)} Helsinki · {monitorSummary}
+                  {error && ' · Update unavailable'}
+                  {(cancelled || transfers.some(t => t.risk !== 'normal') || journeyAlerts.length > 0) && ' · Warnings — expand'}
+                </span>
               </span>
               <ChevronDown size={15} className="journey-collapsed-caret" />
             </>
@@ -606,22 +616,58 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
           )}
           {error && <div className="journey-status error" role="status">{error}</div>}
           {alternativesError && <div className="journey-status error" role="status">{alternativesError}</div>}
+          {cancelled && <div className="journey-status error" role="status">Cancellation reported. Check alternatives before travelling.</div>}
+          {!planLoading && !error && itineraries.length === 0 && (
+            <div className="journey-status muted">
+              Pick a destination to see routes that take you there.
+            </div>
+          )}
           {from && to && (
-            <div className="journey-monitor-actions">
-              {selectedItinerary && <button className="journey-refresh" disabled={monitorLoading} onClick={() => runMonitor(from, to)}>
-                Refresh predictions
-              </button>}
+            <div className="journey-alternatives-head">
+              <h3 className="journey-alternatives-title">{itineraries.length > 0 ? 'Routes' : ''}</h3>
               <button className="journey-refresh" disabled={planLoading} onClick={() => runPlan(from, to)}>
                 Find alternatives
               </button>
             </div>
           )}
-          {selectedItinerary && (
-            <section className="journey-monitor" aria-label="Selected journey monitoring">
-              <h3>Selected journey</h3>
-              <p className={stale ? 'warning' : ''}>{monitorSummary} · Automatic refresh every 20s</p>
-              <p>Predictions and transfer margins are estimates, not guaranteed connections.</p>
-              {cancelled && <p className="warning" role="status">Cancellation reported. Check alternatives before travelling.</p>}
+          {itineraries.map((it, idx) => {
+              const transitLegs = it.legs.filter((l) => l.transit);
+              return (
+                <button
+                  key={idx}
+                  className={`journey-itinerary ${it === selectedItinerary || (selectedItinerary && itineraryIdentity(it) && itineraryIdentity(it) === itineraryIdentity(selectedItinerary)) ? 'active' : ''}`}
+                  onClick={() => handleSelectItinerary(idx)}
+                >
+                  <div className="journey-itinerary-top">
+                    <span className="journey-itinerary-time">
+                      {formatClock(it.startTime)} <ArrowRight size={11} /> {formatClock(it.endTime)}
+                    </span>
+                    <span className="journey-itinerary-duration">{formatDuration(it.duration)}</span>
+                  </div>
+                  {renderLegChips(it)}
+                  {transitLegs.length > 0 && (
+                    <div className="journey-itinerary-meta">
+                      Board at <strong>{transitLegs[0].from.name}</strong>
+                      {it.transfers > 0 && ` · ${it.transfers} transfer${it.transfers > 1 ? 's' : ''}`}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          {selectedItinerary && from && to && (
+            // The leg-by-leg monitoring is folded away by default: it is long,
+            // and open it pushes the routes (and on a phone, the map) aside.
+            // Anything that needs attention is still named in its summary.
+            <details className="journey-monitor" aria-label="Selected journey monitoring">
+              <summary>
+                <strong>Journey details</strong>
+                <span className={stale ? 'warning' : ''}> · {monitorSummary}</span>
+                {(transfers.some(t => t.risk !== 'normal') || journeyAlerts.length > 0) && <span className="warning"> · Warnings</span>}
+              </summary>
+              <p>Automatic refresh every 20s. Predictions and transfer margins are estimates, not guaranteed connections.</p>
+              <button className="journey-refresh" disabled={monitorLoading} onClick={() => runMonitor(from, to)}>
+                Refresh predictions
+              </button>
               {selectedItinerary.legs.map((leg, index) => {
                 const vehicle = leg.transit && !stale && journeyLegStatus(leg, false) !== 'Cancelled'
                   ? findJourneyVehicle(leg, vehicles, now) : undefined;
@@ -654,38 +700,8 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
                   <p>{alert.descriptionText}</p>
                 </div>
               ))}
-            </section>
+            </details>
           )}
-          {!planLoading && !error && itineraries.length === 0 && (
-            <div className="journey-status muted">
-              Pick a destination to see routes that take you there.
-            </div>
-          )}
-          {itineraries.length > 0 && <h3 className="journey-alternatives-title">Choose an itinerary</h3>}
-          {itineraries.map((it, idx) => {
-              const transitLegs = it.legs.filter((l) => l.transit);
-              return (
-                <button
-                  key={idx}
-                  className={`journey-itinerary ${it === selectedItinerary || (selectedItinerary && itineraryIdentity(it) && itineraryIdentity(it) === itineraryIdentity(selectedItinerary)) ? 'active' : ''}`}
-                  onClick={() => handleSelectItinerary(idx)}
-                >
-                  <div className="journey-itinerary-top">
-                    <span className="journey-itinerary-time">
-                      {formatClock(it.startTime)} <ArrowRight size={11} /> {formatClock(it.endTime)}
-                    </span>
-                    <span className="journey-itinerary-duration">{formatDuration(it.duration)}</span>
-                  </div>
-                  {renderLegChips(it)}
-                  {transitLegs.length > 0 && (
-                    <div className="journey-itinerary-meta">
-                      Board at <strong>{transitLegs[0].from.name}</strong>
-                      {it.transfers > 0 && ` · ${it.transfers} transfer${it.transfers > 1 ? 's' : ''}`}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
         </div>
       )}
     </div>

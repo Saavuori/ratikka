@@ -1563,6 +1563,21 @@ body {
   overflow: hidden;
 }
 .journey-collapsed-main:hover { background: var(--bg-button); }
+/* The route on one row, the arrival and update status under it: side by side
+   they made the bar too wide for the space between the corner buttons. */
+.journey-collapsed-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+}
+.journey-collapsed-route {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
 .journey-collapsed-main .journey-legs { flex-wrap: nowrap; overflow: hidden; }
 .journey-collapsed-label {
   font-size: 0.85rem;
@@ -1576,6 +1591,7 @@ body {
   font-weight: 700;
   color: var(--accent-green);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .journey-collapsed-caret {
   color: var(--text-secondary);

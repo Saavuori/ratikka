@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.75.5] - 2026-10-02
+
+### Changed
+- **The journey planner gets out of the way of the route it found.** On a phone the expanded planner covered most of the map, and once a destination was picked it filled with buttons and a long leg-by-leg monitor before the routes themselves, so the recommended route could be seen neither in the list nor on the map. Now, on a phone, the planner folds to its summary bar as soon as the recommended route is found, leaving the route drawn on the map; one tap brings the alternatives back. Expanded, the routes come first, under a small **Find alternatives** button, and the selected journey's leg-by-leg monitoring sits folded under **Journey details**, whose summary still names its update status and any warnings. A reported cancellation stays shown outside it. The summary bar puts the arrival and update status under the route chips instead of beside them, so the line numbers are no longer cut off and the bar stays clear of the corner buttons.
+
+---
+
 ## [v0.75.4] - 2026-09-25
 
 ### Fixed
