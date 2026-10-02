@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Search, MapPin, Navigation, X, LocateFixed, ArrowRight, Footprints, Train, Bus, TrainFront, Ship, ArrowUpDown, Loader2, ChevronDown, Minimize2 } from 'lucide-react';
+import { Search, MapPin, Navigation, X, LocateFixed, ArrowRight, Footprints, Train, Bus, TrainFront, Ship, ArrowUpDown, Loader2, ChevronLeft, ChevronRight, Minimize2 } from 'lucide-react';
 import type { Alert, VehiclePosition, GeocodeResult, JourneyItinerary, JourneyLeg, JourneyEndpoint } from '../types';
 import { fetchGeocode, fetchJourneyPlan, fetchJourneyMonitor } from '../lib/api';
 import { useGeolocation } from '../hooks/useGeolocation';
@@ -113,11 +113,9 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const originGenerationRef = useRef(0);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const selectionCallback = useRef(onSelectionChange);
-  const isMobileRef = useRef(isMobile);
   const toInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { selectionCallback.current = onSelectionChange; }, [onSelectionChange]);
-  useEffect(() => { isMobileRef.current = isMobile; }, [isMobile]);
 
   const cancelPending = useCallback(() => {
     generationRef.current++;
@@ -223,10 +221,10 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
           setUnavailable(false);
           setError(null);
           selectionCallback.current({ from: f, to: t, itinerary: next });
-          // On a phone the expanded planner covers the map the route is drawn
-          // on, so show the recommended route at once; the alternatives and the
-          // details are a tap away on the summary bar.
-          if (isMobileRef.current) setCollapsed(true);
+          // The point of planning is the route, and the expanded planner covers
+          // the map it is drawn on: show the first route at once. The other
+          // routes are a step away on the summary bar, the details a tap.
+          setCollapsed(true);
         } else {
           setError('No routes found for this trip.');
         }
@@ -365,7 +363,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
       ? { itinerary: selectedRef.current, updatedAt, unavailable, error } : null;
     const next = chooseJourneyItinerary(current, candidate, alternativesUpdatedAt, alternativesError);
     if (next === current) {
-      if (isMobile) setCollapsed(true);
+      setCollapsed(true);
       return;
     }
     planAbortRef.current?.abort();
@@ -380,9 +378,9 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     setUnavailable(next.unavailable);
     setError(next.error);
     onSelectionChange({ from, to, itinerary: next.itinerary });
-    // On mobile the expanded panel covers the map, so collapse to a summary bar
-    // once a route is chosen — the highlighted route on the map becomes visible.
-    if (isMobile) setCollapsed(true);
+    // Collapse to the summary bar once a route is chosen, so the highlighted
+    // route on the map is not hidden behind the list it was picked from.
+    setCollapsed(true);
   };
 
   const resetAll = () => {
@@ -411,6 +409,10 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const transfers = selectedItinerary ? transferEstimates(selectedItinerary) : [];
   const journeyAlerts = selectedItinerary ? relevantJourneyAlerts(selectedItinerary, alerts) : [];
   const cancelled = selectedItinerary?.legs.some(leg => journeyLegStatus(leg, false) === 'Cancelled');
+  const isSelected = (it: JourneyItinerary) => !!selectedItinerary && (it === selectedItinerary ||
+    (!!itineraryIdentity(it) && itineraryIdentity(it) === itineraryIdentity(selectedItinerary)));
+  const selectedIndex = itineraries.findIndex(isSelected);
+  const warnings = !!cancelled || transfers.some(t => t.risk !== 'normal') || journeyAlerts.length > 0;
   const monitorSummary = `${stale ? 'Stale · ' : ''}${ageSeconds === null ? 'Update time unavailable' : `Updated ${ageSeconds}s ago`}`;
 
   // Compact row of mode/route chips shared by the results list and summary bar.
@@ -452,39 +454,60 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     );
   }
 
-  // Collapsed summary bar: keeps the route highlighted on the map while showing a
-  // one-tap-to-expand summary. Closing (X) clears the journey entirely.
+  // Collapsed summary bar: the route and when it runs, and nothing else unless
+  // something is wrong. The arrows step through the other routes in place; a
+  // tap on the route opens the planner. Closing (X) clears the journey.
   if (collapsed) {
+    const stepTo = (idx: number) => { if (itineraries[idx]) handleSelectItinerary(idx); };
     return (
       <div className="journey-collapsed-bar">
+        {selectedItinerary && itineraries.length > 1 && (
+          <button
+            className="journey-collapsed-step"
+            onClick={() => stepTo(selectedIndex - 1)}
+            disabled={selectedIndex <= 0}
+            aria-label="Previous route"
+            title="Previous route"
+          >
+            <ChevronLeft size={16} />
+          </button>
+        )}
         <button
           className="journey-collapsed-main"
           onClick={() => setCollapsed(false)}
           aria-label="Expand journey planner"
         >
           {selectedItinerary ? (
-            <>
-              <span className="journey-collapsed-body">
-                <span className="journey-collapsed-route">
-                  {renderLegChips(selectedItinerary)}
-                  <span className="journey-collapsed-dur">{formatDuration(selectedItinerary.duration)}</span>
-                </span>
-                <span className={`journey-monitor-summary ${stale ? 'warning' : ''}`}>
-                  {formatClock(selectedItinerary.endTime)} Helsinki · {monitorSummary}
-                  {error && ' · Update unavailable'}
-                  {(cancelled || transfers.some(t => t.risk !== 'normal') || journeyAlerts.length > 0) && ' · Warnings — expand'}
-                </span>
+            <span className="journey-collapsed-body">
+              <span className="journey-collapsed-route">
+                {renderLegChips(selectedItinerary)}
+                <span className="journey-collapsed-dur">{formatDuration(selectedItinerary.duration)}</span>
               </span>
-              <ChevronDown size={15} className="journey-collapsed-caret" />
-            </>
+              <span className={`journey-monitor-summary ${stale || warnings ? 'warning' : ''}`}>
+                {formatClock(selectedItinerary.startTime)}–{formatClock(selectedItinerary.endTime)}
+                {itineraries.length > 1 && selectedIndex >= 0 && ` · ${selectedIndex + 1}/${itineraries.length}`}
+                {stale && ' · Stale'}
+                {cancelled ? ' · Cancelled — tap' : warnings && ' · Warnings — tap'}
+              </span>
+            </span>
           ) : (
             <>
               <Search size={15} style={{ color: 'var(--accent-green)' }} />
               <span className="journey-collapsed-label">{to?.name || 'Plan a journey'}</span>
-              <ChevronDown size={15} className="journey-collapsed-caret" />
             </>
           )}
         </button>
+        {selectedItinerary && itineraries.length > 1 && (
+          <button
+            className="journey-collapsed-step"
+            onClick={() => stepTo(selectedIndex + 1)}
+            disabled={selectedIndex >= itineraries.length - 1}
+            aria-label="Next route"
+            title="Next route"
+          >
+            <ChevronRight size={16} />
+          </button>
+        )}
         <button className="journey-collapsed-close" onClick={handleClose} aria-label="Clear journey">
           <X size={16} />
         </button>
@@ -635,7 +658,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
               return (
                 <button
                   key={idx}
-                  className={`journey-itinerary ${it === selectedItinerary || (selectedItinerary && itineraryIdentity(it) && itineraryIdentity(it) === itineraryIdentity(selectedItinerary)) ? 'active' : ''}`}
+                  className={`journey-itinerary ${isSelected(it) ? 'active' : ''}`}
                   onClick={() => handleSelectItinerary(idx)}
                 >
                   <div className="journey-itinerary-top">

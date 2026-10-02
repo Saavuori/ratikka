@@ -1593,11 +1593,8 @@ body {
   white-space: nowrap;
   flex-shrink: 0;
 }
-.journey-collapsed-caret {
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-.journey-collapsed-close {
+.journey-collapsed-close,
+.journey-collapsed-step {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1611,7 +1608,10 @@ body {
   cursor: pointer;
   outline: none;
 }
-.journey-collapsed-close:hover { color: var(--text-primary); background: var(--bg-button); }
+.journey-collapsed-close:hover,
+.journey-collapsed-step:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-button); }
+.journey-collapsed-step { width: 28px; }
+.journey-collapsed-step:disabled { opacity: 0.3; cursor: default; }
 
 /* Mobile responsive bottom navigation area safety adjustments */
 @media (max-width: 768px) {
