@@ -35,6 +35,7 @@ import type { MapTheme } from './lib/stopPlatforms';
 import { usePersistedFlag, usePersistedLines, usePersistedModes, usePersistedState } from './hooks/usePersisted';
 import {
   NO_MODES,
+  TRANSPORT_MODES,
   anyMode,
   asTransportMode,
   modeFlags,
@@ -144,7 +145,25 @@ function App() {
     return labels;
   }, [stopArrivalData, now]);
 
-  const journeyModes = journeyVehicleModes(journey?.itinerary.legs);
+  const journeyLegs = journey?.itinerary.legs;
+  // Held by value, as the lines below are: the 20 s journey refresh replaces
+  // the legs with equal copies, and the map should re-filter only on a change.
+  const journeyModeFlags = journeyVehicleModes(journeyLegs);
+  const journeyModeKey = TRANSPORT_MODES.filter((mode) => journeyModeFlags[mode]).join(',');
+  const journeyModes = useMemo(
+    () => modeFlags((mode) => journeyModeKey.split(',').includes(mode)),
+    [journeyModeKey]
+  );
+  // Lines used by the selected journey's transit legs. While there are any, the
+  // map is about that journey: it narrows to these lines and the modes they run
+  // in, as if the reader had filtered to them by hand, and goes back to the
+  // reader's own filters once the journey is cleared. A walk-only journey has
+  // nothing to narrow to and leaves the map as it was.
+  const journeyLineKey = [...new Set((journeyLegs ?? [])
+    .filter((leg) => leg.transit && leg.route?.shortName)
+    .map((leg) => leg.route!.shortName))].join('\n');
+  const journeyLines = useMemo(() => (journeyLineKey ? journeyLineKey.split('\n') : []), [journeyLineKey]);
+  const journeyFocused = journeyLines.length > 0;
 
   // What the detail panel is about: a vehicle, a stop, a bike station or a
   // junction, never two at once.
@@ -228,11 +247,12 @@ function App() {
   // On by default — hiding them is the deliberate choice.
   const [showRoutes, setShowRoutes] = usePersistedFlag('showRoutes', true);
 
-  // What the map draws: the reader's own toggles, plus the modes a selected
-  // journey or stop needs in order to answer for itself.
+  // What the map draws: the reader's own toggles, plus the modes an open stop
+  // needs in order to answer for itself — or, while a journey is selected, only
+  // the modes that journey rides.
   const shownModes = useMemo(
-    () => anyMode(showModes, journeyModes, stopModes),
-    [showModes, journeyModes, stopModes]
+    () => (journeyFocused ? anyMode(journeyModes, stopModes) : anyMode(showModes, stopModes)),
+    [journeyFocused, showModes, journeyModes, stopModes]
   );
   // What the backend is asked to ingest, declared here (after the mode toggles)
   // so the WebSocket below knows which optional feeds to subscribe to; trams
@@ -347,6 +367,9 @@ function App() {
   });
   // The line filter (favourite lines), remembered across reloads.
   const [selectedLines, setSelectedLines] = usePersistedLines('selectedLines');
+  // The lines the map is narrowed to: the selected journey's, else the
+  // reader's own filter, which is left untouched underneath.
+  const lineFilters = journeyFocused ? journeyLines : selectedLines;
 
   const [mapBearing, setMapBearing] = useState<number>(0);
 
@@ -375,7 +398,7 @@ function App() {
   // far too many to fetch a pattern each.
   const routeGeometries = useRouteGeometries([
     ...new Set([
-      ...(selectedLines.length > 0 ? selectedLines : activeRibbonLines),
+      ...(lineFilters.length > 0 ? lineFilters : activeRibbonLines),
       ...(selectedVehicle ? [selectedVehicle.desi] : []),
       ...stopRoutes,
     ]),
@@ -441,14 +464,6 @@ function App() {
     if (vehicle) setSelection({ kind: 'vehicle', vehicle });
   }, [selection, vehicles]);
 
-  // Lines used by the currently selected journey's transit legs. When a route is
-  // picked in the destination search, we filter the map down to just these lines —
-  // the same way selecting a line filter does.
-  const journeyLines = journey
-    ? journey.itinerary.legs
-        .filter((leg) => leg.transit && leg.route?.shortName)
-        .map((leg) => leg.route!.shortName)
-    : [];
   const journeyVehicleIds = useMemo(() => {
     return [...new Set(journey?.itinerary.legs.flatMap((leg) => {
       const vehicle = findJourneyVehicle(leg, vehicles, now);
@@ -470,16 +485,11 @@ function App() {
       if (ride.rideVehicleId === tram.veh) return true;
       const mode = asTransportMode(tram.mode);
       if (mode !== null && !shownModes[mode]) return false;
-      if (selectedLines.length > 0 && !selectedLines.includes(tram.desi)) {
+      if (lineFilters.length > 0 && !lineFilters.includes(tram.desi)) {
         return false;
       }
       // Filter by the open stop's routes
       if (stopRoutes.length > 0 && !stopRoutes.includes(tram.desi)) {
-        return false;
-      }
-      // Filter by the selected journey's lines so only vehicles running the
-      // planned route(s) stay visible on the map.
-      if (journeyLines.length > 0 && !journeyLines.includes(tram.desi)) {
         return false;
       }
       return true;
@@ -598,7 +608,7 @@ function App() {
     always3DVehicles,
     modes: shownModes,
     showRoutes,
-    lineFilters: selectedLines,
+    lineFilters,
   };
 
   const journeyOverlay: JourneyOverlay = {
