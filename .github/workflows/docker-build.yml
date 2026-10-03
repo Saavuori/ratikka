@@ -24,6 +24,15 @@ on:
       - 'deploy.sh'
       - '.gitignore'
 
+# One release at a time. Two merges close together otherwise build in
+# parallel: both tag jobs read the same last tag, and whichever build finishes
+# last owns :latest, even when it is the older commit (v0.76.2 overwrote
+# v0.77.0 this way). GitHub keeps one run pending per group, so a burst of
+# three merges skips the middle release; its commit still ships in the next.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
   packages: write

@@ -2,10 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.76.3] - 2026-10-03
+## [v0.78.0] - 2026-10-03
 
 ### Changed
 - **Following an arrival keeps the map in view on a phone.** "Catch the next one" used to open the stop's full timetable, which covered most of the screen and hid the vehicle it had just started following. While an arrival is tracked, the phone's stop sheet now folds to just the stop's name and the next-arrival card: the countdown, the walking verdict and Stop tracking. The rest of the screen is the map. **All departures** under the card opens the full timetable again, and shows how many service alerts the stop has. Pressing Track on map in the full timetable folds it the same way. The camera also frames the vehicle and the stop in the part of the map the sheet leaves uncovered, instead of possibly behind the sheet. The desktop panel is unchanged.
+
+---
+
+## [v0.77.0] - 2026-10-03
+
+### Changed
+- **A tram on the flat map looks like a tram.** The tram icon was a short rounded box, smaller than the bus beside it and nothing like the 27-metre Artic the 3D view draws. It is now a long, three-section articulated body with its two joints, a rounded cab with a windscreen, the pantograph on the middle section and a rear window. The small nose still shows which way it is heading. When a tram stands with its doors open, they light up on the right-hand side only, as on Helsinki's single-ended trams, and its brake lamps sit at the new, narrower tail. It is still not drawn to scale; the 3D models remain the true-scale view.
+- **Stops stay on the map when it is zoomed out.** Stop discs only appeared from zoom 13 (12 for stations), while the map zooms out to 10, so the city-wide views showed no stops at all. They now appear at the map's widest zoom as fine dots and grow into the usual discs as the map zooms in. The dark map's stops load from the same zoom.
 
 ---
 
@@ -41,7 +49,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [v0.75.1] - 2026-09-22
+## [v0.75.2] - 2026-09-22
 
 ### Fixed
 - **Switching the map's theme no longer puts the wrong stops on it.** Changing between the light, dark and satellite maps reloads the basemap, and the code that set it up again did its own version of deciding which stops to show. That version hid every bus stop whatever the Buses toggle said, and narrowed the tram stops to the lines picked when the page was loaded rather than the ones picked now. It also drew a second disc under the open stop's marker. In the live view the next position update put this right about a second later. With a replay paused, nothing arrives to correct it, so the wrong stops stayed. The reload now uses the same stop rules as every other update.
