@@ -1,6 +1,7 @@
 import React from 'react';
-import { Sun, Moon, Box, Route, TramFront, Satellite, CloudRain } from 'lucide-react';
+import { Sun, Moon, Box, Route, TramFront, Satellite, CloudRain, Layers } from 'lucide-react';
 import type { MapTheme } from '../lib/stopPlatforms';
+import { CornerToggleGroup } from './CornerToggleGroup';
 
 interface ViewTogglesProps {
   /** Faded out and taken out of the tab order while a mobile bottom sheet covers the map. */
@@ -102,7 +103,14 @@ export const ViewToggles: React.FC<ViewTogglesProps> = ({
   ];
 
   return (
-    <div className={`corner-toggles view-toggles${hidden ? ' corner-toggles--hidden' : ''}`} role="group" aria-label="Map view">
+    <CornerToggleGroup
+      side="left"
+      className="view-toggles"
+      label="Map view settings"
+      storageKey="viewTogglesCollapsed"
+      icon={<Layers size={ICON_SIZE} />}
+      hidden={hidden}
+    >
       {toggles.map((t) => (
         <button
           key={t.key}
@@ -125,6 +133,6 @@ export const ViewToggles: React.FC<ViewTogglesProps> = ({
           {t.icon}
         </button>
       ))}
-    </div>
+    </CornerToggleGroup>
   );
 };

@@ -1,7 +1,8 @@
 import React from 'react';
-import { TramFront, Bus, TrainFrontTunnel, TrainFront, Ship } from 'lucide-react';
+import { TramFront, Bus, TrainFrontTunnel, TrainFront, Ship, Filter } from 'lucide-react';
 import { TRAM_GREEN, BUS_BLUE, METRO_ORANGE, TRAIN_PURPLE, FERRY_CYAN } from '../lib/routeColors';
 import { TRANSPORT_MODES, type ModeFlags, type TransportMode } from '../lib/modes';
+import { CornerToggleGroup } from './CornerToggleGroup';
 
 interface ModeTogglesProps {
   /** Faded out and taken out of the tab order while a mobile bottom sheet covers the map. */
@@ -26,13 +27,17 @@ const MODE_CHIPS: Record<TransportMode, { label: string; color: string; icon: Re
  * they live: switching a mode on or off is the single most-used control (it is
  * also what makes the backend subscribe to that mode's HFP feed), so it belongs
  * one tap away on the map rather than behind a drawer. ViewToggles mirrors it in
- * the opposite corner with the theme and 3D switches.
+ * the opposite corner with the theme and 3D switches. Either row folds away
+ * behind its corner button (see CornerToggleGroup).
  */
 export const ModeToggles: React.FC<ModeTogglesProps> = ({ hidden = false, modes, onToggle }) => (
-  <div
-    className={`corner-toggles mode-toggles${hidden ? ' corner-toggles--hidden' : ''}`}
-    role="group"
-    aria-label="Vehicle modes"
+  <CornerToggleGroup
+    side="right"
+    className="mode-toggles"
+    label="Vehicle modes"
+    storageKey="modeTogglesCollapsed"
+    icon={<Filter size={ICON_SIZE} />}
+    hidden={hidden}
   >
     {TRANSPORT_MODES.map((mode) => {
       const chip = MODE_CHIPS[mode];
@@ -63,5 +68,5 @@ export const ModeToggles: React.FC<ModeTogglesProps> = ({ hidden = false, modes,
         </button>
       );
     })}
-  </div>
+  </CornerToggleGroup>
 );
