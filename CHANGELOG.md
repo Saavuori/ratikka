@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.81.1] - 2026-10-03
+
+### Fixed
+- **One tram on the wrong journey no longer marks its whole line as bunched.** A tram still signed on to a journey it isn't running reports itself hours late, and the headway check used that delay to work out how far apart the timetable spaces the trams. Behind such a tram, a line running every ten minutes was judged against a "timetable" of up to two hours. Nearly every tram on lines 3, 4 and 6 then showed as bunched for the first stretch after each restart. Delays more than 30 minutes off schedule are now ignored when working out the timetable. Gaps between trams are still measured from when each one left the stop.
+
+---
+
 ## [v0.81.0] - 2026-10-03
 
 ### Added
