@@ -44,9 +44,9 @@ export function installVehicleLayers(map: maplibregl.Map, seed: LayerSeed): void
   // Trams are sleek (large corner radius, HSL green); buses are boxier (HSL
   // blue). A "-open" variant swaps the flush side windows for amber door
   // gaps, shown while the real doors are open (`drst === 1`).
-  const registerVehicleImage = (name: string, svg: string, size = 40) => {
+  const registerVehicleImage = (name: string, svg: string, size = 40, height = size) => {
     if (map.hasImage(name)) return;
-    const img = new Image(size, size);
+    const img = new Image(size, height);
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     // pixelRatio 2 keeps the body crisp on retina; the 40px art shows at ~20 CSS px
     // before the layer's zoom-based icon-size scaling.
@@ -59,17 +59,35 @@ export function installVehicleLayers(map: maplibregl.Map, seed: LayerSeed): void
 
   // The tram carriage is tinted by its line colour (see lib/routeColors).
   // Window/door/shadow accents use neutral tones so any hue reads cleanly.
+  //
+  // Drawn as what runs on Helsinki's streets: a long, narrow Artic — three
+  // body sections on two articulation joints, a rounded cab at the front and
+  // the pantograph on the middle section — on a taller 40x50 canvas so the
+  // body can be over four times as long as it is wide rather than the stubby
+  // box a 40x40 square allows. Helsinki trams are single-ended with doors on
+  // the right only, so the open variant lights amber gaps on that side alone.
+  const TRAM_ICON_W = 40;
+  const TRAM_ICON_H = 50;
   const tramBody = (open: boolean, color: string = TRAM_GREEN) => `
-    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
-      <path d="M20 3.2 L24 8.4 L16 8.4 Z" fill="${color}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
-      <rect x="12.5" y="7.5" width="15" height="26" rx="6.5" fill="${color}" stroke="#ffffff" stroke-width="2"/>
-      <rect x="15" y="10" width="10" height="4.6" rx="2" fill="rgba(255,255,255,0.9)"/>
+    <svg xmlns="http://www.w3.org/2000/svg" width="${TRAM_ICON_W}" height="${TRAM_ICON_H}" viewBox="0 0 ${TRAM_ICON_W} ${TRAM_ICON_H}" fill="none">
+      <path d="M20 1.4 L23 5.6 L17 5.6 Z" fill="${color}" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M15 10 C15 6.5 17 4.6 20 4.6 C23 4.6 25 6.5 25 10 L25 44.2 C25 45.4 24 46.4 22.8 46.4 L17.2 46.4 C16 46.4 15 45.4 15 44.2 Z"
+            fill="${color}" stroke="#ffffff" stroke-width="2"/>
+      <path d="M16.8 10.2 C16.8 7.9 18.2 6.6 20 6.6 C21.8 6.6 23.2 7.9 23.2 10.2 Z" fill="rgba(255,255,255,0.92)"/>
+      <rect x="15" y="17.9" width="10" height="1.4" fill="rgba(0,0,0,0.5)"/>
+      <rect x="15" y="31.7" width="10" height="1.4" fill="rgba(0,0,0,0.5)"/>
+      <path d="M20 22.4 L21.8 25.5 L20 28.6 L18.2 25.5 Z" stroke="rgba(0,0,0,0.5)" stroke-width="0.9" stroke-linejoin="round"/>
+      <rect x="16.1" y="11.6" width="2.2" height="5" rx="0.8" fill="rgba(0,0,0,0.4)"/>
+      <rect x="16.1" y="20.8" width="2.2" height="9.4" rx="0.8" fill="rgba(0,0,0,0.4)"/>
+      <rect x="16.1" y="34.4" width="2.2" height="7.6" rx="0.8" fill="rgba(0,0,0,0.4)"/>
       ${open
-        ? `<rect x="11.9" y="18.4" width="4.4" height="7.6" rx="1.3" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>
-           <rect x="23.7" y="18.4" width="4.4" height="7.6" rx="1.3" fill="#ffb020" stroke="#ffffff" stroke-width="0.7"/>`
-        : `<rect x="14.7" y="17.5" width="4" height="9" rx="1.2" fill="rgba(0,0,0,0.4)"/>
-           <rect x="21.3" y="17.5" width="4" height="9" rx="1.2" fill="rgba(0,0,0,0.4)"/>`}
-      <rect x="15" y="29" width="10" height="3" rx="1.5" fill="rgba(0,0,0,0.3)"/>
+        ? `<rect x="23.3" y="12" width="3.2" height="4.4" rx="0.9" fill="#ffb020" stroke="#ffffff" stroke-width="0.6"/>
+           <rect x="23.3" y="23.3" width="3.2" height="4.4" rx="0.9" fill="#ffb020" stroke="#ffffff" stroke-width="0.6"/>
+           <rect x="23.3" y="35.8" width="3.2" height="4.4" rx="0.9" fill="#ffb020" stroke="#ffffff" stroke-width="0.6"/>`
+        : `<rect x="21.7" y="11.6" width="2.2" height="5" rx="0.8" fill="rgba(0,0,0,0.4)"/>
+           <rect x="21.7" y="20.8" width="2.2" height="9.4" rx="0.8" fill="rgba(0,0,0,0.4)"/>
+           <rect x="21.7" y="34.4" width="2.2" height="7.6" rx="0.8" fill="rgba(0,0,0,0.4)"/>`}
+      <rect x="17" y="43.2" width="6" height="1.8" rx="0.9" fill="rgba(0,0,0,0.3)"/>
     </svg>
   `;
 
@@ -132,12 +150,12 @@ export function installVehicleLayers(map: maplibregl.Map, seed: LayerSeed): void
   `;
 
   // Generic (unknown-line) tram bodies fall back to HSL green.
-  registerVehicleImage('tram-body', tramBody(false));
-  registerVehicleImage('tram-body-open', tramBody(true));
+  registerVehicleImage('tram-body', tramBody(false), TRAM_ICON_W, TRAM_ICON_H);
+  registerVehicleImage('tram-body-open', tramBody(true), TRAM_ICON_W, TRAM_ICON_H);
   // One tinted body per known line so each route is distinguishable on the map.
   Object.entries(ROUTE_COLORS).forEach(([line, color]) => {
-    registerVehicleImage(`tram-body-${line}`, tramBody(false, color));
-    registerVehicleImage(`tram-body-${line}-open`, tramBody(true, color));
+    registerVehicleImage(`tram-body-${line}`, tramBody(false, color), TRAM_ICON_W, TRAM_ICON_H);
+    registerVehicleImage(`tram-body-${line}-open`, tramBody(true, color), TRAM_ICON_W, TRAM_ICON_H);
   });
   registerVehicleImage('bus-body', busBody(false));
   registerVehicleImage('bus-body-open', busBody(true));
@@ -181,6 +199,17 @@ export function installVehicleLayers(map: maplibregl.Map, seed: LayerSeed): void
     </svg>
   `;
   registerVehicleImage('brake-lights', brakeLights);
+  // The tram's pair, on the tram's taller canvas: same lamps, pulled in to
+  // its narrower tail.
+  const tramBrakeLamp = (cx: number) => `
+      <circle cx="${cx}" cy="44.1" r="3.2" fill="#ff1f1f" opacity="0.30"/>
+      <circle cx="${cx}" cy="44.1" r="1.8" fill="#ff2d2d" opacity="0.8"/>
+      <circle cx="${cx}" cy="44.1" r="1" fill="#ff8a8a"/>`;
+  registerVehicleImage('brake-lights-tram', `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${TRAM_ICON_W}" height="${TRAM_ICON_H}" viewBox="0 0 ${TRAM_ICON_W} ${TRAM_ICON_H}" fill="none">
+      ${tramBrakeLamp(17)}${tramBrakeLamp(23)}
+    </svg>
+  `, TRAM_ICON_W, TRAM_ICON_H);
 
   // Create Selected Tram Highlight Image
   if (!map.hasImage('tram-selected')) {
@@ -404,7 +433,12 @@ export function installVehicleLayers(map: maplibregl.Map, seed: LayerSeed): void
       type: 'symbol',
       source: 'trams',
       layout: {
-        'icon-image': 'brake-lights',
+        // Trams are whatever the body layer does not claim for another mode.
+        'icon-image': [
+          'match', ['get', 'mode'],
+          ['bus', 'metro', 'train', 'ferry'], 'brake-lights',
+          'brake-lights-tram',
+        ] as unknown as maplibregl.DataDrivenPropertyValueSpecification<string>,
         'icon-rotate': ['get', 'hdg'],
         'icon-rotation-alignment': 'map',
         'icon-allow-overlap': true,

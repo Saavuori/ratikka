@@ -124,7 +124,9 @@ export function installStopLayers(map: maplibregl.Map, seed: LayerSeed): void {
       tiles: [
         'https://api.digitransit.fi/map/v3/hsl/fi/stops/{z}/{x}/{y}.pbf',
       ],
-      minzoom: 13,
+      // Down to the discs' first zoom, or the dark theme has no stop tiles
+      // to draw across the city-wide views.
+      minzoom: STOP_CIRCLE_MIN_ZOOM,
       maxzoom: 16,
     });
   }
