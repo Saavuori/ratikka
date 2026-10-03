@@ -70,6 +70,17 @@ export const StopPopup: React.FC<StopPopupProps> = ({
   // them to fill the panel on its own.
   const [alertsExpanded, setAlertsExpanded] = useState<boolean>(false);
   const isMobile = useIsMobile();
+  // While an arrival is being followed, a phone shows only the countdown card:
+  // the map is where the vehicle is, so the sheet shrinks to a strip rather
+  // than covering it. "All departures" opens the full timetable again. Set
+  // per stop, so the next stop opened starts from how it was opened.
+  const [peekStop, setPeekStop] = useState<string | null>(autoTrack ? stopId : null);
+  const [shownStop, setShownStop] = useState(stopId);
+  if (shownStop !== stopId) {
+    setShownStop(stopId);
+    setPeekStop(autoTrack ? stopId : null);
+  }
+  const peek = isMobile && peekStop === stopId;
   const swipe = usePanelSwipe('right', isCollapsed, onToggleCollapse);
 
   // The next arrivals, recomputed as positions stream in. `now` also ticks
@@ -104,6 +115,15 @@ export const StopPopup: React.FC<StopPopupProps> = ({
       setTrackedTripId(arrival.departure.tripId);
     }
   }, [autoTrack, arrival]);
+
+  const toggleTracking = () => {
+    if (tracking) {
+      setTrackedTripId(null);
+      return;
+    }
+    setTrackedTripId(arrival?.departure.tripId ?? null);
+    setPeekStop(stopId);
+  };
 
   const publishFocus = useEffectEvent((focus: ArrivalFocus | null) => onArrivalFocusChange?.(focus));
   const focusVehicleId = arrival?.vehicle?.veh;
@@ -172,7 +192,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
 
   return (
     <div
-      className={`glass-panel detail-popup stop-popup ${isCollapsed ? 'collapsed' : ''}`}
+      className={`glass-panel detail-popup stop-popup ${isCollapsed ? 'collapsed' : ''} ${peek ? 'is-peek' : ''}`}
       style={{ pointerEvents: 'auto' }}
       {...swipe}
       onClick={() => {
@@ -242,7 +262,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
             <X size={18} />
           </button>
         </div>
-        <button
+        {!peek && <button
           type="button"
           className="save-stop-button"
           aria-pressed={Boolean(savedStop)}
@@ -253,11 +273,11 @@ export const StopPopup: React.FC<StopPopupProps> = ({
           }}
         >
           {savedStop ? 'Remove saved stop' : savedStops.length >= MAX_SAVED_STOPS ? '10 saved stops maximum' : 'Save stop'}
-        </button>
+        </button>}
 
         {/* Service alerts — a one-line summary that expands into a scrollable
             list, so the timetable below always keeps its share of the panel. */}
-        {relevantAlerts.length > 0 && (
+        {!peek && relevantAlerts.length > 0 && (
           <div className="stop-alerts">
             <button
               className={`stop-alerts-summary severity-${worstSeverity.toLowerCase()}`}
@@ -305,7 +325,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
       {/* Body */}
       <div className="timeline-container" style={{ flex: 1, marginTop: '16px' }}>
         {/* Routes serving stop */}
-        {details && details.routes && details.routes.length > 0 && (
+        {!peek && details && details.routes && details.routes.length > 0 && (
           <div className="stop-lines">
             <div className="legend-title">Lines serving this stop</div>
             <div className="routes-chips">
@@ -340,15 +360,27 @@ export const StopPopup: React.FC<StopPopupProps> = ({
         {/* Departures List */}
         {!loading && details && (
           <div>
-            <div className="legend-title" style={{ marginBottom: '8px' }}>Next arrival</div>
+            {!peek && <div className="legend-title" style={{ marginBottom: '8px' }}>Next arrival</div>}
             <ArrivalHeadline
               arrival={arrival}
               now={now}
               stale={stale}
               verdict={verdict}
               tracking={tracking}
-              onToggleTracking={() => setTrackedTripId(tracking ? null : arrival?.departure.tripId ?? null)}
+              onToggleTracking={toggleTracking}
             />
+            {peek ? (
+              <button type="button" className="stop-peek-expand" onClick={() => setPeekStop(null)}>
+                <ChevronUp size={14} aria-hidden="true" />
+                All departures
+                {relevantAlerts.length > 0 && (
+                  <span className={`stop-peek-alerts severity-${worstSeverity.toLowerCase()}`}>
+                    <AlertTriangle size={12} aria-hidden="true" />
+                    {relevantAlerts.length === 1 ? '1 alert' : `${relevantAlerts.length} alerts`}
+                  </span>
+                )}
+              </button>
+            ) : (<>
             <div className="departures-heading">
               <div className="legend-title">Upcoming Departures</div>
               <p className={`departures-freshness ${stale ? 'is-stale' : ''}`} role="status">
@@ -398,6 +430,7 @@ export const StopPopup: React.FC<StopPopupProps> = ({
                 })}
               </div>
             )}
+            </>)}
           </div>
         )}
       </div>

@@ -95,6 +95,26 @@ const DARK_STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/st
 const basemapStyleUrl = (theme: MapTheme): string =>
   theme === 'light' ? `${window.location.origin}/style.json` : DARK_STYLE_URL;
 
+/** How long a bottom sheet takes to finish resizing (index.css: 0.32s). */
+const SHEET_SETTLE_MS = 350;
+
+/**
+ * Padding that frames an arrival in the part of the map nothing covers. On a
+ * desktop the side panel leaves the map clear; on a phone the open bottom
+ * sheet (or, failing that, the tab bar) takes the bottom of the screen, and
+ * the floating search and departures buttons the top.
+ */
+function arrivalFramePadding(container: HTMLElement): maplibregl.PaddingOptions {
+  const box = container.getBoundingClientRect();
+  if (box.width > 768) return { top: 96, bottom: 96, left: 96, right: 96 };
+  const cover = document.querySelector('.detail-popup:not(.collapsed)')
+    ?? document.querySelector('.bottom-nav');
+  const covered = cover ? Math.max(0, box.bottom - cover.getBoundingClientRect().top) : 0;
+  const top = 120;
+  // Never squeeze the frame below a usable sliver, however tall the sheet.
+  const bottom = Math.min(covered + 32, Math.max(32, box.height - top - 120));
+  return { top, bottom, left: 48, right: 48 };
+}
 
 
 // Paint expressions for the highlighted route paths live in lib/routeLineStyle,
@@ -779,21 +799,31 @@ export const Map: React.FC<MapProps> = ({
   // screen at once. Done once when the focus changes rather than on every
   // position tick — a camera that re-frames each second is unusable to
   // someone walking, and the point is a glance, not a chase.
+  //
+  // On a phone the stop sheet covers the bottom of the map, so the frame is
+  // fitted into what is left above it. The sheet shrinks to its countdown card
+  // as tracking starts; the camera waits out that transition and measures the
+  // sheet where it settled, so the vehicle is never framed behind it.
   const arrivalFocusKey = arrivalFocus ? `${arrivalFocus.stopId}|${arrivalFocus.vehicleId}` : null;
   useEffect(() => {
-    const map = mapRef.current;
-    const focused = arrivalFocusRef.current;
-    if (!map || !map.getStyle() || !arrivalFocusKey || !focused) return;
-    const vehicle = latestTramsRef.current[focused.vehicleId];
-    const stop = arrivalStopCoordsRef.current;
-    if (!vehicle || !stop || !Number.isFinite(vehicle.lat) || !Number.isFinite(vehicle.lng)) return;
-    map.fitBounds(
-      [
-        [Math.min(vehicle.lng, stop[0]), Math.min(vehicle.lat, stop[1])],
-        [Math.max(vehicle.lng, stop[0]), Math.max(vehicle.lat, stop[1])],
-      ],
-      { padding: 96, maxZoom: 16, duration: 900 },
-    );
+    if (!arrivalFocusKey) return;
+    const frame = () => {
+      const map = mapRef.current;
+      const focused = arrivalFocusRef.current;
+      if (!map || !map.getStyle() || !focused) return;
+      const vehicle = latestTramsRef.current[focused.vehicleId];
+      const stop = arrivalStopCoordsRef.current;
+      if (!vehicle || !stop || !Number.isFinite(vehicle.lat) || !Number.isFinite(vehicle.lng)) return;
+      map.fitBounds(
+        [
+          [Math.min(vehicle.lng, stop[0]), Math.min(vehicle.lat, stop[1])],
+          [Math.max(vehicle.lng, stop[0]), Math.max(vehicle.lat, stop[1])],
+        ],
+        { padding: arrivalFramePadding(map.getContainer()), maxZoom: 16, duration: 900 },
+      );
+    };
+    const timer = window.setTimeout(frame, SHEET_SETTLE_MS);
+    return () => window.clearTimeout(timer);
   }, [arrivalFocusKey]);
 
   // Update selected stop data source dynamically

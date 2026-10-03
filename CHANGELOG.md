@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.76.3] - 2026-10-03
+
+### Changed
+- **Following an arrival keeps the map in view on a phone.** "Catch the next one" used to open the stop's full timetable, which covered most of the screen and hid the vehicle it had just started following. While an arrival is tracked, the phone's stop sheet now folds to just the stop's name and the next-arrival card: the countdown, the walking verdict and Stop tracking. The rest of the screen is the map. **All departures** under the card opens the full timetable again, and shows how many service alerts the stop has. Pressing Track on map in the full timetable folds it the same way. The camera also frames the vehicle and the stop in the part of the map the sheet leaves uncovered, instead of possibly behind the sheet. The desktop panel is unchanged.
+
+---
+
 ## [v0.76.2] - 2026-10-03
 
 ### Fixed
