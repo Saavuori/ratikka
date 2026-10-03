@@ -79,6 +79,18 @@ const (
 	// the night before.
 	headwayMaxGap = 60 * 60 // seconds
 
+	// headwayMaxDelay is the most a vehicle can be off schedule and still have
+	// its delay believed. A tram still signed on to a journey it is not running
+	// reports itself as late as that journey now is: on the first afternoon
+	// the readings went to InfluxDB, four trams on lines 1T, 3, 4 and 6 were
+	// 1.5 to 2.3 hours "late", among a hundred that were within ten minutes.
+	// Its due time, and every spacing measured against it, is then hours out,
+	// and the trams behind it were judged against a "timetable" of 100 to 130
+	// minutes on lines that run every ten — bunched, nearly all of them. The
+	// time a vehicle left a stop is still real, so it is still measured
+	// against; only what its delay says the timetable was is ignored.
+	headwayMaxDelay = 30 * 60 // seconds
+
 	// A line's headway is the median over the pairs running on it of what the
 	// timetable spaces each pair at — one say per pair, however many stops it
 	// happens to have passed lately. Pooling every passage instead lets
@@ -294,10 +306,18 @@ func (t *headwayTracker) pass(line *lineHeadways, run *vehicleRun, veh, stop str
 	if ahead, ok := passageAhead(passages, veh, ts); ok {
 		secs := int(ts - ahead.ts)
 		// When each of the two was due here is its departure less its delay;
-		// the difference is the spacing the timetable gave the pair.
-		sched := secs - (dl - ahead.dl)
+		// the difference is the spacing the timetable gave the pair. Zero
+		// where that cannot be trusted. The bound applies to the pair's own
+		// figure as well as to the line's pool, because the pair's figure is
+		// what stands in for the line's until enough pairs are seen.
+		sched := 0
+		if plausibleDelay(dl) && plausibleDelay(ahead.dl) {
+			if s := secs - (dl - ahead.dl); s > 0 && s <= headwayMaxGap {
+				sched = s
+			}
+		}
 		run.last = &headwayMeasurement{ahead: ahead.veh, stop: stop, secs: secs, sched: sched}
-		if sched > 0 && sched <= headwayMaxGap {
+		if sched > 0 {
 			line.addSpacing(veh, ahead.veh, ts, sched)
 		}
 	}
@@ -398,6 +418,12 @@ func classifyHeadway(secs, sched int, boundOnly bool) string {
 		return HeadwayBunched
 	}
 	return HeadwayRegular
+}
+
+// plausibleDelay reports whether a reported delay can be taken to say when the
+// vehicle was due; see headwayMaxDelay.
+func plausibleDelay(dl int) bool {
+	return dl >= -headwayMaxDelay && dl <= headwayMaxDelay
 }
 
 // passageAhead finds the vehicle that left a stop most recently before ts,

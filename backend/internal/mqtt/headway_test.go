@@ -427,3 +427,41 @@ func TestIngestionWorker_PositionCarriesHeadway(t *testing.T) {
 		t.Errorf("hw = %+v, want 360 s behind 0040-401 at HSL:1130106", pos.Hw)
 	}
 }
+
+// A tram still signed on to a journey it is not running reports itself two
+// hours late. Before a line has enough pairs to pool, the pair's own timetable
+// stands in for the line's — and taken at its word, this one says the tram
+// behind is due two hours after it, so six minutes behind reads as bunched.
+// Measured in production: lines that run every ten minutes judged against
+// 100 to 130.
+func TestHeadway_ImplausibleDelayGivesNoTimetable(t *testing.T) {
+	tr := newHeadwayTracker()
+	leaves(tr, "0040-412", "06:00", "S1", "S2", 1_000, 2*60*60)
+	hw := leaves(tr, "0040-402", "08:06", "S1", "S2", 1_360, 0)
+
+	if hw == nil || hw.Secs != 360 || hw.Ahead != "0040-412" {
+		t.Fatalf("headway = %+v, want 360 s behind 0040-412: when it left is still real", hw)
+	}
+	if hw.Sched != 0 || hw.State != "" {
+		t.Errorf("sched/state = %d/%q, want nothing claimed against a timetable read off a bogus delay",
+			hw.Sched, hw.State)
+	}
+}
+
+// Within the hour a spacing may run to, a bogus delay would still slip into
+// the line's pool. It must not: the pool is what every other tram on the line
+// is judged against.
+func TestHeadway_ImplausibleDelayStaysOutOfTheLinePool(t *testing.T) {
+	tr := newHeadwayTracker()
+	fiveMinuteLine(tr, "S1", "S2", 1_000)
+	// Reports itself 40 minutes early, so it would claim a 45-minute spacing.
+	hw := leaves(tr, "0040-420", "06:55", "S1", "S2", 2_500, -40*60)
+
+	line := tr.lines[headwayLine{route: "1004", dir: "1"}]
+	if _, ok := line.pairs["0040-420"]; ok {
+		t.Errorf("pair behind a bogus delay was pooled: %+v", line.pairs["0040-420"])
+	}
+	if hw == nil || hw.Secs != 300 || hw.Sched != 300 || hw.State != HeadwayRegular {
+		t.Errorf("headway = %+v, want 300 s against the line's 300, regular", hw)
+	}
+}
