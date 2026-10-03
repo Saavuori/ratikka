@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,6 +118,24 @@ func TestReplayWindowReturnsSamples(t *testing.T) {
 	// A window that finished long ago can never change, so it is cacheable.
 	if cc := rec.Header().Get("Cache-Control"); cc == "" || cc == "no-store" {
 		t.Errorf("a settled window should be cacheable, got %q", cc)
+	}
+}
+
+// An empty stretch — before recording began, a deploy gap — is an empty list.
+// Encoded as null it broke the client, which showed an error instead of a gap.
+func TestReplayWindowWithNothingRecordedIsAnEmptyList(t *testing.T) {
+	h, _ := replayHandlers(t)
+	base := time.Now().Truncate(time.Minute).Add(-time.Hour)
+
+	url := fmt.Sprintf("/api/v1/replay/window?from=%d&to=%d", base.Unix(), base.Add(30*time.Second).Unix())
+	rec := httptest.NewRecorder()
+	h.ReplayWindow(rec, httptest.NewRequest(http.MethodGet, url, nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"samples":[]`) {
+		t.Errorf("want an empty samples list, got %s", rec.Body)
 	}
 }
 
