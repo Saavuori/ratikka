@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Pause, Play, Radio } from 'lucide-react';
-import { coverageMarks, REPLAY_SPEEDS } from '../lib/replay';
+import { coverageMarks, REPLAY_SKIPS, REPLAY_SPEEDS, skipTarget } from '../lib/replay';
 import type { ReplayDayCoverage } from '../types';
 
 interface TimelapsePanelProps {
@@ -55,9 +55,9 @@ function formatAgo(ts: number, edge: number): string {
  * from watching it now, and it is reached through the version badge. While it
  * is open it is the only chrome on the map — the filters, chips, planner and
  * tab bar all belong to the live feed and stand down until it closes. Which is
- * also why the panel is built to take as little of the map as it can: two rows,
- * no title of its own, no standing status line, and one way out rather than two
- * (the Live button, which says where it goes).
+ * also why the panel is built to take as little of the map as it can: three
+ * short rows, no title of its own, no standing status line, and one way out
+ * rather than two (the Live button, which says where it goes).
  */
 export const TimelapsePanel: React.FC<TimelapsePanelProps> = ({
   cursor,
@@ -75,13 +75,30 @@ export const TimelapsePanel: React.FC<TimelapsePanelProps> = ({
   onExit,
 }) => {
   const marks = useMemo(() => coverageMarks(days, range), [days, range]);
+  const skipButton = (skip: (typeof REPLAY_SKIPS)[number]) => {
+    const target = skipTarget(cursor, skip.seconds, range);
+    return (
+      <button
+        key={skip.seconds}
+        type="button"
+        className="timelapse-panel__skip"
+        onClick={() => onSeek(target)}
+        // Already at that end of the history: nowhere for the skip to go.
+        disabled={target === cursor}
+        title={skip.title}
+        aria-label={skip.title}
+      >
+        {skip.label}
+      </button>
+    );
+  };
 
   // Only said when there is something to say. A permanent status line costs a
   // row of the map for a sentence nobody needs twice.
   const note = error
     ? error
     : inGap
-      ? 'Nothing was recorded here — drag on to find history.'
+      ? 'Nothing was recorded here — skip or drag on to find history.'
       : loading
         ? 'Loading history…'
         : null;
@@ -89,28 +106,18 @@ export const TimelapsePanel: React.FC<TimelapsePanelProps> = ({
   return (
     <div className="timelapse-panel" role="group" aria-label="Timelapse playback">
       <div className="timelapse-panel__bar">
-        <button
-          type="button"
-          className="timelapse-panel__play"
-          onClick={onToggle}
-          title={playing ? 'Pause' : 'Play'}
-          aria-label={playing ? 'Pause' : 'Play'}
-        >
-          {playing ? <Pause size={14} /> : <Play size={14} />}
-        </button>
-
-        <div className="timelapse-panel__speeds" role="group" aria-label="Playback speed">
-          {REPLAY_SPEEDS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={`timelapse-panel__speed${option === speed ? ' is-active' : ''}`}
-              onClick={() => onSpeed(option)}
-              aria-pressed={option === speed}
-            >
-              {option}×
-            </button>
-          ))}
+        <div className="timelapse-panel__transport" role="group" aria-label="Skip through history">
+          {REPLAY_SKIPS.filter((skip) => skip.seconds < 0).map(skipButton)}
+          <button
+            type="button"
+            className="timelapse-panel__play"
+            onClick={onToggle}
+            title={playing ? 'Pause' : 'Play'}
+            aria-label={playing ? 'Pause' : 'Play'}
+          >
+            {playing ? <Pause size={14} /> : <Play size={14} />}
+          </button>
+          {REPLAY_SKIPS.filter((skip) => skip.seconds > 0).map(skipButton)}
         </div>
 
         <button
@@ -122,6 +129,20 @@ export const TimelapsePanel: React.FC<TimelapsePanelProps> = ({
           <Radio size={12} />
           Live
         </button>
+      </div>
+
+      <div className="timelapse-panel__speeds" role="group" aria-label="Playback speed">
+        {REPLAY_SPEEDS.map((option) => (
+          <button
+            key={option}
+            type="button"
+            className={`timelapse-panel__speed${option === speed ? ' is-active' : ''}`}
+            onClick={() => onSpeed(option)}
+            aria-pressed={option === speed}
+          >
+            {option}×
+          </button>
+        ))}
       </div>
 
       <div className="timelapse-panel__timeline">

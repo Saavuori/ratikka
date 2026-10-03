@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { TimelapsePanel } from './TimelapsePanel';
-import { REPLAY_SPEEDS } from '../lib/replay';
+import { REPLAY_SKIPS, REPLAY_SPEEDS } from '../lib/replay';
 import type { ReplayDayCoverage } from '../types';
 
 const hours = (recorded: Record<number, number>): number[] =>
@@ -74,6 +74,26 @@ describe('TimelapsePanel', () => {
     const markup = render();
     expect(markup).not.toContain('timelapse-panel__status');
     expect(markup).toContain('timelapse-panel__track'); // the panel did render
+  });
+
+  it('offers skips back and forward around play', () => {
+    const markup = render();
+    for (const skip of REPLAY_SKIPS) {
+      expect(markup).toContain(`aria-label="${skip.title}"`);
+    }
+    // Back skips, then play, then forward skips — position says direction.
+    expect(markup.indexOf('Back ten minutes')).toBeLessThan(markup.indexOf('aria-label="Play"'));
+    expect(markup.indexOf('aria-label="Play"')).toBeLessThan(markup.indexOf('Forward ten minutes'));
+  });
+
+  it('greys out the skips that have nowhere to go at either end', () => {
+    const atStart = render({ cursor: range.from });
+    expect(atStart).toMatch(/disabled=""[^>]*aria-label="Back one hour"/);
+    expect(atStart).not.toMatch(/disabled=""[^>]*aria-label="Forward one hour"/);
+
+    const atEnd = render({ cursor: range.to });
+    expect(atEnd).toMatch(/disabled=""[^>]*aria-label="Forward one hour"/);
+    expect(atEnd).not.toMatch(/disabled=""[^>]*aria-label="Back one hour"/);
   });
 
   it('always offers a way back to the live map', () => {

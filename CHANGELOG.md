@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.79.0] - 2026-10-03
+
+### Added
+- **Skip buttons on the timelapse.** A week of history on one slider is over half an hour per pixel, so finding a particular moment by dragging was close to impossible. Play now sits between buttons that jump back or forward by a day, an hour or ten minutes. A skip that would run past either end of the history stops at that end, and the buttons with nowhere to go are greyed out. The playback speeds move to a row of their own beneath them.
+
+### Fixed
+- **An empty stretch of history says so instead of reporting an error.** Scrubbing or skipping to a time nothing was recorded for, such as before recording began or during a deploy, showed "Could not load this stretch of history". The server sent the empty stretch in a form the page could not read; it now sends an empty list, and the timelapse shows its "Nothing was recorded here" note.
+
+---
+
 ## [v0.78.0] - 2026-10-03
 
 ### Changed
