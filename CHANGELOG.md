@@ -2,14 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.84.0] - 2026-10-03
+## [v1.1.0] - 2026-10-03
 
 ### Added
 - **The map's corner buttons fold away.** The vehicle-mode filters in the top-right corner and the map-view settings in the top-left each have a small arrow on their outer edge. Tap it and the row folds down to a single button (a filter icon for vehicle modes, a layers icon for map view) that sits in the same corner. Tap that to bring the row back. Each row folds on its own, and the app remembers which ones you left folded. On phones, where the rows stand upright, they fold upwards into their corners.
 
 ---
 
-## [v0.83.0] - 2026-10-03
+## [v1.0.0] - 2026-10-03
 
 ### Removed
 - **City bike stations are gone from the map.** The availability gauges, the 3D bike racks and the station capacity panel have been removed, along with the backend's `/api/v1/bike-station/{id}` and `/api/v1/bike-stations` endpoints. The map no longer polls bike availability every 30 seconds.
