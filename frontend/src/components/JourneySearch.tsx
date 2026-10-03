@@ -416,29 +416,34 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const monitorSummary = `${stale ? 'Stale · ' : ''}${ageSeconds === null ? 'Update time unavailable' : `Updated ${ageSeconds}s ago`}`;
 
   // Compact row of mode/route chips shared by the results list and summary bar.
-  const renderLegChips = (it: JourneyItinerary) => (
-    <div className="journey-legs">
-      {it.legs.map((leg, li) => {
-        const isLast = li === it.legs.length - 1;
-        return (
-          <React.Fragment key={li}>
-            <span
-              className="journey-leg-chip"
-              style={{
-                backgroundColor: leg.transit ? legColor(leg) : 'transparent',
-                color: leg.transit ? '#fff' : 'var(--text-secondary)',
-                border: leg.transit ? 'none' : '1px dashed var(--border-button-hover)',
-              }}
-            >
-              {legModeIcon(leg.mode)}
-              {leg.transit && <span className="journey-leg-label">{leg.route?.shortName}</span>}
-            </span>
-            {!isLast && <span className="journey-leg-sep">›</span>}
-          </React.Fragment>
-        );
-      })}
-    </div>
-  );
+  // The bar leaves out the walks between the rides: they are drawn on the map,
+  // and on a long trip they cost the line numbers their room.
+  const renderLegChips = (it: JourneyItinerary, ridesOnly = false) => {
+    const legs = ridesOnly && it.legs.some((leg) => leg.transit) ? it.legs.filter((leg) => leg.transit) : it.legs;
+    return (
+      <div className="journey-legs">
+        {legs.map((leg, li) => {
+          const isLast = li === legs.length - 1;
+          return (
+            <React.Fragment key={li}>
+              <span
+                className="journey-leg-chip"
+                style={{
+                  backgroundColor: leg.transit ? legColor(leg) : 'transparent',
+                  color: leg.transit ? '#fff' : 'var(--text-secondary)',
+                  border: leg.transit ? 'none' : '1px dashed var(--border-button-hover)',
+                }}
+              >
+                {legModeIcon(leg.mode)}
+                {leg.transit && <span className="journey-leg-label">{leg.route?.shortName}</span>}
+              </span>
+              {!isLast && <span className="journey-leg-sep">›</span>}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    );
+  };
 
   if (!open) {
     if (hidden) return null;
@@ -480,7 +485,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
           {selectedItinerary ? (
             <span className="journey-collapsed-body">
               <span className="journey-collapsed-route">
-                {renderLegChips(selectedItinerary)}
+                {renderLegChips(selectedItinerary, true)}
                 <span className="journey-collapsed-dur">{formatDuration(selectedItinerary.duration)}</span>
               </span>
               <span className={`journey-monitor-summary ${stale || warnings ? 'warning' : ''}`}>

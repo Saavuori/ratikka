@@ -2,7 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.75.5] - 2026-10-02
+## [v0.76.1] - 2026-10-03
+
+### Fixed
+- **The journey bar fits a long trip, and the map around it carries only the trip.** On a phone, a trip with a transfer made the bar too wide: it ran under the corner buttons and cut the second line's number off. The bar now leaves out the walks between rides, which are drawn on the map, so a tram-and-metro trip reads "7 › M1". While the planner is open on a phone, the map-view buttons step aside for it, and while a journey is selected the vehicle-mode buttons are put away everywhere, since the map then shows the journey's modes whatever they say. The whole length of each line the journey rides, out to both termini, is no longer drawn over the map; the journey draws its own legs, and the vehicles on its lines stay. Everything comes back when the journey is cleared.
+
+---
+
+## [v0.76.0] - 2026-10-02
 
 ### Changed
 - **The journey planner goes straight to the first route.** The expanded planner covered most of the map, and once a destination was picked it filled with buttons and a long leg-by-leg monitor before the routes themselves, so the route could be seen neither in the list nor on the map. Now, on every screen size, the planner folds to a slim bar as soon as the first route is found, leaving that route drawn on the map. The bar carries only what the route needs: its line chips, its duration, when it leaves and arrives, and which of the found routes it is (1/3). Arrows either side step to the next or previous route in place. "Stale", "Warnings" or "Cancelled" appear only when they apply, and the arrival status that used to sit there every time is gone. A tap on the bar opens the planner, where the routes come first under a small **Find alternatives** button, and the selected journey's leg-by-leg monitoring sits folded under **Journey details**, whose summary still names its update status and any warnings. A reported cancellation stays shown outside it.

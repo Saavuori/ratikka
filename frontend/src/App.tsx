@@ -607,7 +607,9 @@ function App() {
     is3D,
     always3DVehicles,
     modes: shownModes,
-    showRoutes,
+    // A journey draws its own legs; the whole length of each line it rides,
+    // out to both termini, is ink the trip does not need.
+    showRoutes: showRoutes && !journeyFocused,
     lineFilters,
   };
 
@@ -782,15 +784,18 @@ function App() {
       </div>
 
       {/* Quick vehicle-mode shortcuts (top-right corner) */}
+      {/* While a journey is selected the map shows its modes whatever these
+          say, so they are put away rather than left switching nothing. */}
       <ModeToggles
-        hidden={mobileSheetOpen || replayActive}
+        hidden={mobileSheetOpen || replayActive || journeyFocused}
         modes={showModes}
         onToggle={toggleMode}
       />
 
       {/* Map view shortcuts: light/dark and 3D (top-left corner) */}
+      {/* On a phone the journey bar needs the width of the screen. */}
       <ViewToggles
-        hidden={mobileSheetOpen || replayActive}
+        hidden={mobileSheetOpen || replayActive || (isMobile && journeyOpen)}
         mapTheme={mapTheme}
         setMapTheme={setMapTheme}
         satelliteAvailable={satelliteAvailable}
