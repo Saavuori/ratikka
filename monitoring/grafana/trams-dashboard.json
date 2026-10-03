@@ -96,6 +96,54 @@
         "options": [],
         "hide": 0,
         "regex": ""
+      },
+      {
+        "name": "pline",
+        "label": "Profile line",
+        "type": "query",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${DS_INFLUXDB}"
+        },
+        "query": "SHOW TAG VALUES FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WITH KEY = \"desi\"",
+        "definition": "SHOW TAG VALUES FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WITH KEY = \"desi\"",
+        "refresh": 2,
+        "sort": 3,
+        "multi": false,
+        "includeAll": false,
+        "allValue": ".*",
+        "current": {
+          "text": "4",
+          "value": "4"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": ""
+      },
+      {
+        "name": "pdir",
+        "label": "Direction",
+        "type": "custom",
+        "query": "1,2",
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "1",
+          "value": "1"
+        },
+        "hide": 0,
+        "options": [
+          {
+            "text": "1",
+            "value": "1",
+            "selected": true
+          },
+          {
+            "text": "2",
+            "value": "2",
+            "selected": false
+          }
+        ]
       }
     ]
   },
@@ -2109,6 +2157,131 @@
           "sort": "desc"
         }
       }
+    },
+    {
+      "id": 31,
+      "type": "row",
+      "title": "Speed along the route",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 100,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 32,
+      "type": "trend",
+      "title": "Speed profile",
+      "description": "Speed against distance into the journey: one line per trip of the line and direction picked above (Profile line, Direction), labelled with its tram and scheduled departure. Dips to zero are stops, signals and queues. Click a trip in the legend to show only it; shift-click to add others. Keep the time range within a day: a tram running the same departure on two days would join them.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_INFLUXDB}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 101,
+        "w": 24,
+        "h": 14
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "refId": "A",
+          "query": "SELECT max(\"odometer\") / 1000 AS \"distance\", mean(\"speed\") * 3.6 AS \"speed\", last(\"start\") AS \"start\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" = '$pline' AND \"dir\" = '$pdir' AND \"loc_source\" = 'GPS' GROUP BY time(5s), \"veh\" fill(none)",
+          "rawQuery": true,
+          "resultFormat": "table",
+          "alias": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "velocitykmh",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "drawStyle": "line"
+          },
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "distance"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthkm"
+              },
+              {
+                "id": "displayName",
+                "value": "Distance into the journey"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "xField": "distance",
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        },
+        {
+          "id": "partitionByValues",
+          "options": {
+            "fields": [
+              "start",
+              "veh"
+            ],
+            "keepFields": false,
+            "naming": {
+              "asLabels": false
+            }
+          }
+        },
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "distance",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "distance"
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }
