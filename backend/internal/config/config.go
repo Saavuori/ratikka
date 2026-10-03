@@ -32,6 +32,18 @@ type Config struct {
 	// are the one mode ingested unconditionally, so theirs is the only history
 	// without holes wherever nobody happened to be watching.
 	ReplayModes []string
+
+	// InfluxURL, when set, streams every recorded reading to an InfluxDB v2
+	// bucket for dashboards. Unset writes nothing. The token is a secret and
+	// belongs in .env, never in the compose file.
+	InfluxURL    string
+	InfluxToken  string
+	InfluxOrg    string
+	InfluxBucket string
+	// InfluxModes are the modes written. Trams only by default, for the same
+	// reason as ReplayModes: the others are ingested only while somebody is
+	// watching them.
+	InfluxModes []string
 }
 
 // loadDotEnv tries to find and parse a .env file from common locations and sets env vars
@@ -144,6 +156,14 @@ func LoadConfig() *Config {
 		ReplayDir:           os.Getenv("REPLAY_DIR"),
 		ReplayRetentionDays: parsePositiveInt(os.Getenv("REPLAY_RETENTION_DAYS"), 7),
 		ReplayModes:         parseModes(os.Getenv("REPLAY_MODES")),
+		InfluxURL:           strings.TrimSpace(os.Getenv("INFLUX_URL")),
+		InfluxToken:         strings.TrimSpace(os.Getenv("INFLUX_TOKEN")),
+		InfluxOrg:           strings.TrimSpace(os.Getenv("INFLUX_ORG")),
+		InfluxBucket:        strings.TrimSpace(os.Getenv("INFLUX_BUCKET")),
+		InfluxModes:         parseModes(os.Getenv("INFLUX_MODES")),
+	}
+	if cfg.InfluxBucket == "" {
+		cfg.InfluxBucket = "ratikka"
 	}
 
 	// Recording defaults on. An instance that named no directory gets the

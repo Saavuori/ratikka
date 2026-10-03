@@ -14,6 +14,7 @@ import (
 	"ratikka/internal/api"
 	"ratikka/internal/cache"
 	"ratikka/internal/config"
+	"ratikka/internal/influx"
 	"ratikka/internal/mqtt"
 	"ratikka/internal/replay"
 	"ratikka/internal/ws"
@@ -65,10 +66,33 @@ func main() {
 	}
 	defer archive.Close()
 
+	// Stream readings to InfluxDB for dashboards, if configured. Like the
+	// archive, a nil writer writes nothing and needs no branch below.
+	influxWriter, err := influx.New(influx.Config{
+		URL:    cfg.InfluxURL,
+		Token:  cfg.InfluxToken,
+		Org:    cfg.InfluxOrg,
+		Bucket: cfg.InfluxBucket,
+		Modes:  cfg.InfluxModes,
+	})
+	if err != nil {
+		log.Printf("WARNING: InfluxDB writer unavailable: %v. Readings will not be written.\n", err)
+	} else if influxWriter.Enabled() {
+		log.Printf("Writing %v readings to InfluxDB at %s\n", influxWriter.Modes(), influxWriter.Endpoint())
+		influxCtx, influxCancel := context.WithCancel(context.Background())
+		go influxWriter.Run(influxCtx)
+		// Deferred before the MQTT worker's Stop, so they run after it: the
+		// writer is cancelled once nothing more is coming, and the last batch
+		// gets its chance to land before the process exits.
+		defer influxWriter.Wait()
+		defer influxCancel()
+	}
+
 	// 5. Initialize MQTT Ingestion Worker
 	log.Printf("Starting MQTT ingestion from broker: %s...\n", cfg.MQTTBroker)
 	mqttWorker := mqtt.NewIngestionWorker(cfg.MQTTBroker, liveCache)
 	mqttWorker.SetArchive(archive)
+	mqttWorker.SetInflux(influxWriter)
 	if err := mqttWorker.Start(ctx); err != nil {
 		log.Printf("ERROR starting MQTT worker: %v\n", err)
 	}

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.80.0] - 2026-10-03
+
+### Added
+- **Every tram's second-by-second history in InfluxDB, for Grafana.** Prometheus shows how the service as a whole is doing, but not what one tram did at 08:14. The backend now also writes every tram reading it accepts to an InfluxDB v2 bucket as a `vehicle_position` point: position, speed, acceleration, delay, doors, the stop it is at and the one it is heading for, its gap to the tram ahead and its traffic-light priority requests. Points are tagged by vehicle, line, route and direction. Writes are batched and never slow down the live map. If InfluxDB is away, up to a quarter of an hour of points is held and retried. Off unless `INFLUX_URL` is set; see `docs/MONITORING.md` for the settings, the full schema and example dashboard queries.
+
+---
+
 ## [v0.79.0] - 2026-10-03
 
 ### Added
