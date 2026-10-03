@@ -59,8 +59,7 @@ describe('the load gauge scale', () => {
     expect(occupancyBucketIndex(5)).toBe(OCCUPANCY_BUCKETS.length - 1);
   });
 
-  // An empty boat is the good news and a full one the bad, so the colours run
-  // the opposite way to the city-bike gauge.
+  // An empty boat is the good news and a full one the bad.
   it('goes green when there is room and red when there is not', () => {
     expect(occupancyColor(0)).toBe(occupancyColor(0.2));
     expect(occupancyColor(1)).not.toBe(occupancyColor(0));

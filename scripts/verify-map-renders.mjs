@@ -70,8 +70,6 @@ page.on('pageerror', (e) => errors.push(`PAGEERROR: ${e.message}`));
 // sprite, glyphs -- goes to the real network, which is the entire point.
 await page.route('**/api/v1/**', (r) => r.fulfill({ json: {} }));
 await page.route('**/api/v1/alerts', (r) => r.fulfill({ json: { alerts: [] } }));
-await page.route('**/api/v1/bike-station/**', (r) =>
-  r.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
 await page.route('**/api/v1/version', (r) =>
   r.fulfill({ json: { version: 'test', build_date: 'test', git_sha: 'abcdef1234' } }));
 await page.route('**/api/v1/config', (r) => r.fulfill({ json: { digitransit_map_key: KEY } }));

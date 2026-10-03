@@ -135,8 +135,6 @@ anachronistic next to historical vehicles:
   morning's trams.
 - **Journey planning and monitoring** — meaningless against a past clock.
   Suppress.
-- **City-bike capacity** — live-only. Suppress, or record it too (it is tiny:
-  one poll a minute for the whole network).
 - **Trip details and route geometry** (`fetchTripDetails`) — these *should*
   still resolve for a trip that ran today, since the trip ID is stored with the
   reading, but Digitransit's retention of past operating days needs verifying
@@ -356,7 +354,7 @@ was proposed above:
 | §4: recorder tapping ingestion | Yes — one call beside `cache.SetPosition`, after dedupe |
 | §4: index + chunk endpoints | Yes — `/replay/index`, `/replay/window`, `/replay/timelapse` |
 | §5: `useReplay`, timeline UI, map time scale | Yes — all three |
-| §6: suppress live-only panels | Yes — entering a replay clears stop, journey, bike and arrival selections |
+| §6: suppress live-only panels | Yes — entering a replay clears stop, journey and arrival selections |
 | §6: speed capped by bandwidth | Solved instead by server-side `step` thinning, which holds the drawn rate near 8/s at any speed |
 | §11: retention of a week | Yes — `REPLAY_RETENTION_DAYS=7` |
 

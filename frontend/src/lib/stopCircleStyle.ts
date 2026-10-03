@@ -9,9 +9,8 @@ import type { DataDrivenPropertyValueSpecification } from 'maplibre-gl';
 // *above* the zoom at which the sign boards replace the discs, so in the band
 // the discs are actually drawn in — 13 to 15.5 — the ramp only ever produced
 // dots of one to two pixels. The stops were technically on the map and
-// practically invisible, which read as "the stops disappear when you zoom out"
-// next to the city-bike gauges, which stay a legible marker across the same
-// band. The ramp below is scoped to the band the discs live in instead, so a
+// practically invisible, which read as "the stops disappear when you zoom out".
+// The ramp below is scoped to the band the discs live in instead, so a
 // stop is a real dot the moment its layer switches on.
 
 // Where the discs switch on: the map's own minimum zoom, so stops never drop

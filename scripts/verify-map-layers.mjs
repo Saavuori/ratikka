@@ -86,8 +86,6 @@ const PNG = Buffer.from(
 // catch-all must be registered BEFORE the specific ones.
 await page.route('**/api/v1/**', (r) => r.fulfill({ json: {} }));
 await page.route('**/api/v1/alerts', (r) => r.fulfill({ json: { alerts: [] } }));
-await page.route('**/api/v1/bike-station/**', (r) =>
-  r.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
 // One real junction, so the marker layer has something to draw and the
 // junction panel has something to open onto.
 await page.route('**/api/v1/traffic-lights', (r) =>

@@ -38,10 +38,6 @@ import {
 import {
   STOP_FURNITURE_LAYER,
 } from '../../lib/stopModels';
-import {
-  BIKE_ICON_FADE_OUT,
-  BIKE_STATION_LAYER,
-} from '../../lib/bikeStationModels';
 
 const METRO_SIGN_LAYERS = [
   'subway-entrance_icon',
@@ -209,17 +205,8 @@ export const updateVehicle3DMode = (map: maplibregl.Map, active: boolean) => {
   if (map.getLayer(STOP_FURNITURE_LAYER)) {
     map.setLayoutProperty(STOP_FURNITURE_LAYER, 'visibility', active ? 'visible' : 'none');
   }
-  // City-bike racks are furniture too, and the flat gauge only hands over to
-  // one when there is a rack under it to hand over to.
-  if (map.getLayer(BIKE_STATION_LAYER)) {
-    map.setLayoutProperty(BIKE_STATION_LAYER, 'visibility', active ? 'visible' : 'none');
-  }
   // A traffic light is the exception: the junction marker is the same object
   // in 2D and in 3D, so it neither hides nor fades when the city stands up.
-  if (map.getLayer('citybike_gauge')) {
-    map.setPaintProperty('citybike_gauge', 'icon-opacity',
-      (active ? BIKE_ICON_FADE_OUT : 1) as maplibregl.DataDrivenPropertyValueSpecification<number>);
-  }
   if (map.getLayer('trams-body')) {
     map.setPaintProperty('trams-body', 'icon-opacity', (active ? VEHICLE_ICON_FADE_OUT : 1) as maplibregl.DataDrivenPropertyValueSpecification<number>);
   }

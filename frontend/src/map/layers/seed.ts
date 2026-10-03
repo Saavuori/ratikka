@@ -1,6 +1,6 @@
 import type * as maplibregl from 'maplibre-gl';
 import type { MapTheme } from '../../lib/stopPlatforms';
-import type { BikeStationsFeatureCollection, TrafficLightFeature } from '../../types';
+import type { TrafficLightFeature } from '../../types';
 
 /** The state the layers are seeded with, so they start out already correct. */
 export interface LayerSeed {
@@ -12,7 +12,6 @@ export interface LayerSeed {
   /** Vehicles the 3D bodies start out drawn for. */
   journeyVehicleIds: string[];
   selectedVehicleId: string | null;
-  bikeStations: BikeStationsFeatureCollection | null;
   trafficLights: TrafficLightFeature[];
   /**
    * Whether the map these layers are being added to is still the live one. An

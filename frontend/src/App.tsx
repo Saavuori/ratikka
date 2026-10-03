@@ -20,7 +20,6 @@ import { FilterPanel } from './components/FilterPanel';
 import { TramPopup } from './components/TramPopup';
 import { TramCard } from './components/TramCard';
 import { StopPopup } from './components/StopPopup';
-import { BikePopup } from './components/BikePopup';
 import { TrafficLightPopup } from './components/TrafficLightPopup';
 import { VersionBadge } from './components/VersionBadge';
 import { TimelapsePanel } from './components/TimelapsePanel';
@@ -166,8 +165,8 @@ function App() {
   const journeyLines = useMemo(() => (journeyLineKey ? journeyLineKey.split('\n') : []), [journeyLineKey]);
   const journeyFocused = journeyLines.length > 0;
 
-  // What the detail panel is about: a vehicle, a stop, a bike station or a
-  // junction, never two at once.
+  // What the detail panel is about: a vehicle, a stop or a junction, never
+  // two at once.
   const [selection, setSelection] = useState<Selection | null>(null);
   const openStop = selection?.kind === 'stop' ? selection : null;
   const stopRoutes = openStop?.routes ?? [];
@@ -176,7 +175,6 @@ function App() {
   // bus stop turns the bus feed on for as long as the stop is open: without it
   // there is no vehicle to match an arrival to in the first place.
   const stopModes = openStop?.modes ?? NO_MODES;
-  const selectedBikeStation = selection?.kind === 'bikeStation' ? selection.station : null;
   const selectedJunctionId = selection?.kind === 'junction' ? selection.junctionId : null;
   // The selected vehicle as the panels show it: the live copy while it is in
   // the feed, else the last one seen — or a scheduled trip's placeholder.
@@ -280,7 +278,7 @@ function App() {
   }, [mapTheme]);
 
   // Everything the map shows beside the vehicles — departures, alerts, journey
-  // plans, bike capacity — is fetched for right now, so beside an hour-old tram
+  // plans — is fetched for right now, so beside an hour-old tram
   // it would be quietly wrong. Leaving a replay puts them all back.
   useEffect(() => {
     if (!replay.active) return;
@@ -468,13 +466,6 @@ function App() {
     setIsDetailCollapsed(false); // Auto-expand detail panel to show schedule
   };
 
-  const handleSelectBikeStation = (station: { id: string; name: string } | null) => {
-    setSelection(station ? { kind: 'bikeStation', station } : null);
-    if (station) {
-      setIsDetailCollapsed(false); // Auto-expand detail panel to show bike capacity
-    }
-  };
-
   const handleSelectJunction = (junctionId: number | null) => {
     setSelection(junctionId !== null ? { kind: 'junction', junctionId } : null);
     if (junctionId !== null) {
@@ -647,7 +638,6 @@ function App() {
           isTrunk: openStop.stop.isTrunkStop || false,
         }
       : null,
-    bikeStationId: selectedBikeStation?.id || null,
     junctionId: selectedJunctionId,
   };
 
@@ -678,7 +668,6 @@ function App() {
   const mapCallbacks: MapCallbacks = {
     onSelectTram: handleSelectTram,
     onSelectStop: handleSelectStop,
-    onSelectBikeStation: handleSelectBikeStation,
     onSelectJunction: handleSelectJunction,
     onDisableFollowing: () => setIsFollowing(false),
     onMapBearingChange: setMapBearing,
@@ -767,17 +756,6 @@ function App() {
           isCollapsed={isDetailCollapsed}
           onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
           alerts={alerts}
-        />
-      )}
-
-      {/* Selected Bike Station Capacity Panel */}
-      {selectedBikeStation && (
-        <BikePopup
-          stationId={selectedBikeStation.id}
-          stationName={selectedBikeStation.name}
-          onClose={clearSelection}
-          isCollapsed={isDetailCollapsed}
-          onToggleCollapse={() => setIsDetailCollapsed(!isDetailCollapsed)}
         />
       )}
 

@@ -19,16 +19,6 @@ export interface OverlayState {
     /** Name, code and mode per stop, so a click on a shelter opens its popup. */
     meta: Record<string, { name: string; code: string; mode: string }>;
   };
-  /** 3D racks at the city-bike stations in view. */
-  bikeFurniture: {
-    drawn: boolean;
-    sig: string;
-    /**
-     * Bumped on every availability refresh, so the signature notices new counts
-     * arriving under a view that has not moved.
-     */
-    availabilityStamp: number;
-  };
   /** The stops currently carrying a next-arrival label. */
   arrivalLabels: {
     stops: Array<{ stopId: string; lng: number; lat: number }>;
@@ -43,22 +33,15 @@ export interface OverlayState {
 export function createOverlayState(): OverlayState {
   return {
     stopFurniture: { drawn: false, sig: '', meta: {} },
-    bikeFurniture: { drawn: false, sig: '', availabilityStamp: 0 },
     arrivalLabels: { stops: [], sig: '' },
     signalPriority: { sig: '' },
     routePaths: {},
   };
 }
 
-/** Bump the bike availability stamp so the racks notice new counts. */
-export function bikeAvailabilityChanged(state: OverlayState): void {
-  state.bikeFurniture.availabilityStamp += 1;
-}
-
 /** Force the next update to rebuild, whatever its signature says. */
 export function invalidateOverlays(state: OverlayState): void {
   state.stopFurniture.sig = '';
-  state.bikeFurniture.sig = '';
   state.arrivalLabels.sig = '';
   state.signalPriority.sig = '';
 }

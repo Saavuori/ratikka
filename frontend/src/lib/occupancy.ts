@@ -45,11 +45,8 @@ export interface OccupancyBucket {
   label: string;
 }
 
-// Six steps, coloured the opposite way round to the city-bike gauge and for the
-// same reason: there, a full rack is the good news; here, an empty deck is. The
-// palette is the one the bike gauge already uses, so the two markers read as one
-// system — green is "no question", amber is "think about it", red is "you may
-// not fit".
+// Six steps, from green for an empty deck to red for a full one: green is "no
+// question", amber is "think about it", red is "you may not fit".
 export const OCCUPANCY_BUCKETS: OccupancyBucket[] = [
   { fill: 0.0, color: '#20bf6b', label: 'Empty' },
   { fill: 0.2, color: '#20bf6b', label: 'Quiet' },

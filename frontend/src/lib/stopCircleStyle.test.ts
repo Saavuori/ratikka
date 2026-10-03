@@ -10,7 +10,6 @@ import {
   STATION_CIRCLE_MIN_ZOOM,
   STOP_CIRCLE_FADE_ZOOM,
 } from './stopCircleStyle';
-import { BIKE_STATION_MIN_ZOOM } from './bikeStationModels';
 
 const compile = (
   expression: unknown,
@@ -31,8 +30,7 @@ describe('stop discs', () => {
   const stroke = compile(STOP_CIRCLE_STROKE_WIDTH, 'circle-stroke-width');
   const opacity = compile(STOP_CIRCLE_OPACITY, 'circle-opacity');
 
-  it('appears alongside the city-bike gauges rather than later', () => {
-    expect(STOP_CIRCLE_MIN_ZOOM).toBeLessThanOrEqual(BIKE_STATION_MIN_ZOOM);
+  it('switches stations on no later than ordinary stops', () => {
     expect(STATION_CIRCLE_MIN_ZOOM).toBeLessThanOrEqual(STOP_CIRCLE_MIN_ZOOM);
   });
 

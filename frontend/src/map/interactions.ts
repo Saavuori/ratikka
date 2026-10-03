@@ -1,14 +1,13 @@
-import { BIKE_STATION_LAYER } from '../lib/bikeStationModels';
 import { STOP_FURNITURE_LAYER } from '../lib/stopModels';
 import { TRAFFIC_LIGHT_ICON_LAYER } from '../lib/trafficLightModels';
 import type * as maplibregl from 'maplibre-gl';
-import type { BikeStationsFeatureCollection, VehiclePosition } from '../types';
+import type { VehiclePosition } from '../types';
 import type { MapCallbacks } from './props';
 
 /** What a click on the map turns into. */
 export type InteractionHandlers = Pick<
   MapCallbacks,
-  'onSelectTram' | 'onSelectStop' | 'onSelectBikeStation' | 'onSelectJunction'
+  'onSelectTram' | 'onSelectStop' | 'onSelectJunction'
 >;
 
 /**
@@ -20,7 +19,6 @@ export interface InteractionLookups {
   vehicles: () => Record<string, VehiclePosition>;
   /** Name, code and mode per stop carrying 3D furniture. */
   stopFurnitureMeta: () => Record<string, { name: string; code: string; mode: string }>;
-  bikeStations: () => BikeStationsFeatureCollection | null;
 }
 
 /** Maps that already have handlers, so a style reload does not stack a second set. */
@@ -112,31 +110,6 @@ export function bindMapInteractions(
       });
     });
 
-    const handleBikeClick = (e: maplibregl.MapLayerMouseEvent) => {
-      if (!e.features || e.features.length === 0) return;
-      const feat = e.features[0];
-      const stationId = feat.properties?.id || feat.properties?.stationId;
-      const name = feat.properties?.name || 'Bike Station';
-      if (stationId) {
-        handlers.onSelectBikeStation({ id: stationId, name });
-      }
-    };
-
-    map.on('click', 'citybike_gauge', handleBikeClick);
-
-    // Up close the rack is the station, so clicking one opens the same panel.
-    // The name lives in the availability payload rather than in the extrusion
-    // properties, which carry only what the geometry needs.
-    map.on('click', BIKE_STATION_LAYER, (e: maplibregl.MapLayerMouseEvent) => {
-      if (!e.features || e.features.length === 0) return;
-      const stationId = e.features[0].properties?.stationId;
-      if (!stationId) return;
-      const id = String(stationId);
-      const known = lookups.bikeStations()?.features
-        .find((f) => f.properties.stationId === id);
-      handlers.onSelectBikeStation({ id, name: known?.properties.name || 'Bike Station' });
-    });
-
     // A junction is a thing you can select, because the exchange it is having
     // has two sides: the vehicle panel says what this tram is asking, and the
     // junction panel says who is asking *this crossing* and who it has
@@ -173,10 +146,6 @@ export function bindMapInteractions(
     map.on('mouseleave', 'stops_signs', resetCursor);
     map.on('mouseenter', STOP_FURNITURE_LAYER, setCursorPointer);
     map.on('mouseleave', STOP_FURNITURE_LAYER, resetCursor);
-    map.on('mouseenter', 'citybike_gauge', setCursorPointer);
-    map.on('mouseleave', 'citybike_gauge', resetCursor);
-    map.on('mouseenter', BIKE_STATION_LAYER, setCursorPointer);
-    map.on('mouseleave', BIKE_STATION_LAYER, resetCursor);
     map.on('mouseenter', TRAFFIC_LIGHT_ICON_LAYER, setCursorPointer);
     map.on('mouseleave', TRAFFIC_LIGHT_ICON_LAYER, resetCursor);
 

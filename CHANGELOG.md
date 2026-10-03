@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.83.0] - 2026-10-03
+
+### Removed
+- **City bike stations are gone from the map.** The availability gauges, the 3D bike racks and the station capacity panel have been removed, along with the backend's `/api/v1/bike-station/{id}` and `/api/v1/bike-stations` endpoints. The map no longer polls bike availability every 30 seconds.
+
+---
+
 ## [v0.82.0] - 2026-10-03
 
 ### Added

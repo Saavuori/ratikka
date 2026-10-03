@@ -84,7 +84,6 @@ const seed: LayerSeed = {
   mmlKey: '',
   journeyVehicleIds: [],
   selectedVehicleId: null,
-  bikeStations: null,
   trafficLights: [],
   isCurrent: () => true,
 };
@@ -97,7 +96,7 @@ describe('installMapLayers', () => {
     expect(rec.sources.size).toBeGreaterThan(5);
   });
 
-  it('draws every group: vehicles, routes, stops, bikes, junctions, journey', () => {
+  it('draws every group: vehicles, routes, stops, junctions, journey', () => {
     const rec = recordingMap();
     installMapLayers(rec.map, seed);
     const ids = [...rec.layers.keys()];
@@ -160,30 +159,6 @@ describe('installMapLayers', () => {
     installMapLayers(rec.map, { ...seed, is3D: true });
     const layout = rec.layers.get('vehicles-3d')?.spec.layout as { visibility?: string };
     expect(layout?.visibility).toBe('visible');
-  });
-
-  it('seeds the bike source with the stations it already had', () => {
-    const rec = recordingMap();
-    const bikeStations = {
-      type: 'FeatureCollection' as const,
-      features: [
-        {
-          type: 'Feature' as const,
-          geometry: { type: 'Point' as const, coordinates: [24.9, 60.17] as [number, number] },
-          properties: {
-            stationId: 'A1',
-            name: 'Rautatientori',
-            bikesAvailable: 3,
-            spacesAvailable: 9,
-            allowPickup: true,
-            allowDropoff: true,
-          },
-        },
-      ],
-    };
-    installMapLayers(rec.map, { ...seed, bikeStations });
-    const src = rec.sources.get('citybike') as { data?: { features?: unknown[] } };
-    expect(src?.data?.features).toHaveLength(1);
   });
 
   it('registers the vehicle marker images once they decode', async () => {

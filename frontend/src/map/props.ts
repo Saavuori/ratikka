@@ -48,7 +48,6 @@ export interface MapSelection {
   line: string | null;
   tripDetails: TripDetailsResponse | null;
   stop: SelectedStop | null;
-  bikeStationId: string | null;
   junctionId: number | null;
 }
 
@@ -94,7 +93,6 @@ export interface ArrivalOverlay {
 export interface MapCallbacks {
   onSelectTram: (tram: VehiclePosition | null) => void;
   onSelectStop: (stop: PickedStop) => void;
-  onSelectBikeStation: (station: { id: string; name: string } | null) => void;
   /** A signalised junction was picked off the map; null closes the panel. */
   onSelectJunction: (junctionId: number | null) => void;
   onDisableFollowing: () => void;
@@ -118,7 +116,6 @@ export const NO_SELECTION: MapSelection = {
   line: null,
   tripDetails: null,
   stop: null,
-  bikeStationId: null,
   junctionId: null,
 };
 
