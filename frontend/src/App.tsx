@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useReplay } from './hooks/useReplay';
+import { parseReplayLink, REPLAY_LINK_LEAD_SECONDS, withoutReplayLink } from './lib/replayLink';
 import { useIsMobile } from './hooks/useIsMobile';
 import { useEdgeSwipe } from './hooks/useEdgeSwipe';
 import { useTripDetails } from './hooks/useTripDetails';
@@ -300,6 +301,47 @@ function App() {
     setIsFollowing(false);
   }, [trackedVehicleId]);
 
+  // A link into the timelapse (`?at=…&veh=…`, see lib/replayLink): history at
+  // that moment, the vehicle picked, the camera on it. It is carried out in
+  // steps because each waits on something else — the archive's index before
+  // the timelapse can open, the history window before the vehicle is on the
+  // map to pick, the pick before the camera can follow.
+  const [replayLink, setReplayLink] = useState(() => parseReplayLink(window.location.search));
+  const [linkedVehicle, setLinkedVehicle] = useState<{ veh: string; stage: 'select' | 'follow' | 'shown' } | null>(null);
+  const enterReplay = replay.controls.enter;
+  useEffect(() => {
+    if (!replayLink || !replay.index) return;
+    window.history.replaceState(null, '', withoutReplayLink(window.location.href));
+    setReplayLink(null);
+    // An instance that records no history has nowhere to take the link.
+    if (!replay.available) return;
+    enterReplay(replayLink.at - REPLAY_LINK_LEAD_SECONDS);
+    setLinkedVehicle({ veh: replayLink.veh, stage: 'select' });
+  }, [replayLink, replay.index, replay.available, enterReplay]);
+
+  // Opening the timelapse clears the selection (above), so the pick waits for
+  // the vehicle to turn up in the history that opening fetched.
+  const linkedSnapshot = linkedVehicle?.stage === 'select' && replay.active
+    ? replay.vehicles[linkedVehicle.veh] ?? null
+    : null;
+  useEffect(() => {
+    if (!linkedSnapshot) return;
+    setSelection({ kind: 'vehicle', vehicle: linkedSnapshot });
+    setLinkedVehicle((current) => current && { ...current, stage: 'follow' });
+  }, [linkedSnapshot]);
+
+  // After the reset above, for the same reason as a ride's follow below.
+  useEffect(() => {
+    if (linkedVehicle?.stage !== 'follow' || trackedVehicleId !== linkedVehicle.veh) return;
+    setIsFollowing(true);
+    setLinkedVehicle({ ...linkedVehicle, stage: 'shown' });
+  }, [linkedVehicle, trackedVehicleId]);
+
+  // Leaving the timelapse is leaving the link behind.
+  useEffect(() => {
+    if (!replay.active) setLinkedVehicle(null);
+  }, [replay.active]);
+
   // Detail panel collapse state: defaults to true (hidden/collapsed when item is selected)
   const [isDetailCollapsed, setIsDetailCollapsed] = useState<boolean>(true);
 
@@ -486,6 +528,10 @@ function App() {
       // The vehicle the reader is riding in outranks every filter, for the
       // same reason: hiding it is exactly what riding along is meant to stop.
       if (ride.rideVehicleId === tram.veh) return true;
+      // So does a vehicle a link was opened for, while it is still the one
+      // picked: the reader came to see that tram, whatever lines they last
+      // narrowed the map to.
+      if (linkedVehicle?.veh === tram.veh && trackedVehicleId === tram.veh) return true;
       const mode = asTransportMode(tram.mode);
       if (mode !== null && !shownModes[mode]) return false;
       if (lineFilters.length > 0 && !lineFilters.includes(tram.desi)) {

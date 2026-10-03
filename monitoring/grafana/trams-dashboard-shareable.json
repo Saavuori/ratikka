@@ -30,9 +30,9 @@
       "version": ""
     }
   ],
-  "title": "HSL Trams",
-  "uid": "hsl-trams",
-  "description": "Per-tram history from the ratikka backend: punctuality, headways, speed and positions.",
+  "title": "HSL Trams (shareable)",
+  "uid": "hsl-trams-shareable",
+  "description": "Per-tram history from the ratikka backend: punctuality, headways, speed and positions. A copy without template variables, for sharing outside Grafana.",
   "tags": [
     "ratikka",
     "hsl",
@@ -48,56 +48,7 @@
   },
   "schemaVersion": 39,
   "templating": {
-    "list": [
-      {
-        "name": "line",
-        "label": "Line",
-        "type": "query",
-        "datasource": {
-          "type": "influxdb",
-          "uid": "${DS_INFLUXDB}"
-        },
-        "query": "SHOW TAG VALUES FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WITH KEY = \"desi\"",
-        "definition": "SHOW TAG VALUES FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WITH KEY = \"desi\"",
-        "refresh": 2,
-        "sort": 3,
-        "multi": true,
-        "includeAll": true,
-        "allValue": ".*",
-        "current": {
-          "selected": true,
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
-        },
-        "options": [],
-        "hide": 0,
-        "regex": ""
-      },
-      {
-        "name": "veh",
-        "label": "Tram",
-        "type": "query",
-        "datasource": {
-          "type": "influxdb",
-          "uid": "${DS_INFLUXDB}"
-        },
-        "query": "SHOW TAG VALUES FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WITH KEY = \"veh\" WHERE \"desi\" =~ /^$line$/",
-        "definition": "SHOW TAG VALUES FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WITH KEY = \"veh\" WHERE \"desi\" =~ /^$line$/",
-        "refresh": 2,
-        "sort": 3,
-        "multi": true,
-        "includeAll": false,
-        "allValue": ".*",
-        "current": {},
-        "options": [],
-        "hide": 0,
-        "regex": ""
-      }
-    ]
+    "list": []
   },
   "panels": [
     {
@@ -135,7 +86,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT count(\"lat\") FROM (SELECT last(\"lat\") AS \"lat\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m AND \"desi\" =~ /^$line$/ GROUP BY \"veh\")",
+          "query": "SELECT count(\"lat\") FROM (SELECT last(\"lat\") AS \"lat\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m GROUP BY \"veh\")",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": ""
@@ -195,7 +146,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT mean(\"d\") / 60 FROM (SELECT last(\"delay\") AS \"d\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m AND \"desi\" =~ /^$line$/ GROUP BY \"veh\") WHERE \"d\" > -1800 AND \"d\" < 1800",
+          "query": "SELECT mean(\"d\") / 60 FROM (SELECT last(\"delay\") AS \"d\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m GROUP BY \"veh\") WHERE \"d\" > -1800 AND \"d\" < 1800",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": ""
@@ -264,7 +215,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT count(\"d\") FROM (SELECT last(\"delay\") AS \"d\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m AND \"desi\" =~ /^$line$/ GROUP BY \"veh\") WHERE \"d\" > 180 AND \"d\" < 1800",
+          "query": "SELECT count(\"d\") FROM (SELECT last(\"delay\") AS \"d\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m GROUP BY \"veh\") WHERE \"d\" > 180 AND \"d\" < 1800",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": ""
@@ -332,7 +283,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT count(\"d\") FROM (SELECT last(\"delay\") AS \"d\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m AND \"desi\" =~ /^$line$/ GROUP BY \"veh\") WHERE \"d\" < -60 AND \"d\" > -1800",
+          "query": "SELECT count(\"d\") FROM (SELECT last(\"delay\") AS \"d\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m GROUP BY \"veh\") WHERE \"d\" < -60 AND \"d\" > -1800",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": ""
@@ -400,7 +351,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT count(\"s\") FROM (SELECT last(\"headway_state\") AS \"s\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m AND \"desi\" =~ /^$line$/ GROUP BY \"veh\") WHERE \"s\" = 'bunched'",
+          "query": "SELECT count(\"s\") FROM (SELECT last(\"headway_state\") AS \"s\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m GROUP BY \"veh\") WHERE \"s\" = 'bunched'",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": ""
@@ -468,7 +419,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT count(\"s\") FROM (SELECT last(\"headway_state\") AS \"s\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m AND \"desi\" =~ /^$line$/ GROUP BY \"veh\") WHERE \"s\" = 'gap'",
+          "query": "SELECT count(\"s\") FROM (SELECT last(\"headway_state\") AS \"s\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m GROUP BY \"veh\") WHERE \"s\" = 'gap'",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": ""
@@ -536,7 +487,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT last(\"lat\") AS \"lat\", last(\"lng\") AS \"lng\", last(\"delay\") / 60 AS \"delay\", last(\"speed\") * 3.6 AS \"speed\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m AND \"desi\" =~ /^$line$/ GROUP BY \"veh\", \"desi\"",
+          "query": "SELECT last(\"lat\") AS \"lat\", last(\"lng\") AS \"lng\", last(\"delay\") / 60 AS \"delay\", last(\"speed\") * 3.6 AS \"speed\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m GROUP BY \"veh\", \"desi\"",
           "rawQuery": true,
           "resultFormat": "table",
           "alias": ""
@@ -681,7 +632,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT last(\"delay\") / 60 AS \"Delay\", last(\"speed\") * 3.6 AS \"Speed\", last(\"headway\") / 60 AS \"Behind ahead\", last(\"headway_state\") AS \"Headway\", last(\"next_stop\") AS \"Next stop\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m AND \"desi\" =~ /^$line$/ GROUP BY \"desi\", \"veh\", \"dir\"",
+          "query": "SELECT last(\"delay\") / 60 AS \"Delay\", last(\"speed\") * 3.6 AS \"Speed\", last(\"headway\") / 60 AS \"Behind ahead\", last(\"headway_state\") AS \"Headway\", last(\"next_stop\") AS \"Next stop\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE time > now() - 2m GROUP BY \"desi\", \"veh\", \"dir\"",
           "rawQuery": true,
           "resultFormat": "table",
           "alias": ""
@@ -902,7 +853,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT mean(\"delay\") / 60 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"delay\" > -1800 AND \"delay\" < 1800 GROUP BY time($__interval), \"desi\" fill(null)",
+          "query": "SELECT mean(\"delay\") / 60 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"delay\" > -1800 AND \"delay\" < 1800 GROUP BY time($__interval), \"desi\" fill(null)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "$tag_desi"
@@ -959,7 +910,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT mean(\"delay\") / 60 AS \"delay\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"delay\" > -1800 AND \"delay\" < 1800 GROUP BY \"desi\"",
+          "query": "SELECT mean(\"delay\") / 60 AS \"delay\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"delay\" > -1800 AND \"delay\" < 1800 GROUP BY \"desi\"",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "$tag_desi"
@@ -1031,7 +982,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT count(\"lat\") FROM (SELECT last(\"lat\") AS \"lat\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ GROUP BY time(1m), \"veh\", \"desi\") WHERE $timeFilter GROUP BY time(1m), \"desi\" fill(0)",
+          "query": "SELECT count(\"lat\") FROM (SELECT last(\"lat\") AS \"lat\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter GROUP BY time(1m), \"veh\", \"desi\") WHERE $timeFilter GROUP BY time(1m), \"desi\" fill(0)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "$tag_desi"
@@ -1092,7 +1043,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT percentile(\"delay\", 10) / 60 AS \"p10\", median(\"delay\") / 60 AS \"median\", percentile(\"delay\", 90) / 60 AS \"p90\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"delay\" > -1800 AND \"delay\" < 1800 GROUP BY time($__interval) fill(null)",
+          "query": "SELECT percentile(\"delay\", 10) / 60 AS \"p10\", median(\"delay\") / 60 AS \"median\", percentile(\"delay\", 90) / 60 AS \"p90\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"delay\" > -1800 AND \"delay\" < 1800 GROUP BY time($__interval) fill(null)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "$col"
@@ -1162,7 +1113,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT count(\"headway\") * 1000 / $__interval_ms FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"headway_state\" = 'bunched' GROUP BY time($__interval), \"desi\" fill(0)",
+          "query": "SELECT count(\"headway\") * 1000 / $__interval_ms FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"headway_state\" = 'bunched' GROUP BY time($__interval), \"desi\" fill(0)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "$tag_desi"
@@ -1223,7 +1174,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT count(\"headway\") * 1000 / $__interval_ms FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"headway_state\" = 'gap' GROUP BY time($__interval), \"desi\" fill(0)",
+          "query": "SELECT count(\"headway\") * 1000 / $__interval_ms FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"headway_state\" = 'gap' GROUP BY time($__interval), \"desi\" fill(0)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "$tag_desi"
@@ -1284,7 +1235,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT mean(\"headway\") / 60 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"headway_at_least\" = false GROUP BY time($__interval), \"desi\" fill(null)",
+          "query": "SELECT mean(\"headway\") / 60 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"headway_at_least\" = false GROUP BY time($__interval), \"desi\" fill(null)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "$tag_desi"
@@ -1295,7 +1246,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "B",
-          "query": "SELECT mean(\"headway_scheduled\") / 60 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"headway_scheduled\" < 3600 GROUP BY time($__interval), \"desi\" fill(null)",
+          "query": "SELECT mean(\"headway_scheduled\") / 60 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"headway_scheduled\" < 3600 GROUP BY time($__interval), \"desi\" fill(null)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "$tag_desi timetabled"
@@ -1384,7 +1335,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT mean(\"speed\") * 3.6 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"speed\" > 0.5 GROUP BY time($__interval), \"desi\" fill(null)",
+          "query": "SELECT mean(\"speed\") * 3.6 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"speed\" > 0.5 GROUP BY time($__interval), \"desi\" fill(null)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "$tag_desi"
@@ -1441,7 +1392,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT count(\"speed\") FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"speed\" < 0.5 GROUP BY time($__interval) fill(0)",
+          "query": "SELECT count(\"speed\") FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"speed\" < 0.5 GROUP BY time($__interval) fill(0)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "still"
@@ -1452,7 +1403,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "B",
-          "query": "SELECT count(\"speed\") FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ GROUP BY time($__interval) fill(0)",
+          "query": "SELECT count(\"speed\") FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter GROUP BY time($__interval) fill(0)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "all"
@@ -1528,7 +1479,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT count(\"tlp_junction\") * 1000 / $__interval_ms FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"tlp_status\" = 'granted' GROUP BY time($__interval) fill(0)",
+          "query": "SELECT count(\"tlp_junction\") * 1000 / $__interval_ms FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"tlp_status\" = 'granted' GROUP BY time($__interval) fill(0)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "granted"
@@ -1539,7 +1490,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "B",
-          "query": "SELECT count(\"tlp_junction\") * 1000 / $__interval_ms FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"tlp_status\" = 'denied' GROUP BY time($__interval) fill(0)",
+          "query": "SELECT count(\"tlp_junction\") * 1000 / $__interval_ms FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"tlp_status\" = 'denied' GROUP BY time($__interval) fill(0)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "denied"
@@ -1550,7 +1501,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "C",
-          "query": "SELECT count(\"tlp_junction\") * 1000 / $__interval_ms FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"tlp_status\" = 'requesting' GROUP BY time($__interval) fill(0)",
+          "query": "SELECT count(\"tlp_junction\") * 1000 / $__interval_ms FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"tlp_status\" = 'requesting' GROUP BY time($__interval) fill(0)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "requesting"
@@ -1670,7 +1621,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT max(\"speed\") * 3.6 AS \"Top speed\", \"next_stop\" AS \"Heading for\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"loc_source\" = 'GPS' GROUP BY \"desi\", \"veh\"",
+          "query": "SELECT max(\"speed\") * 3.6 AS \"Top speed\", \"next_stop\" AS \"Heading for\" FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"loc_source\" = 'GPS' GROUP BY \"desi\", \"veh\"",
           "rawQuery": true,
           "resultFormat": "table",
           "alias": ""
@@ -1806,7 +1757,7 @@
             "uid": "${DS_INFLUXDB}"
           },
           "refId": "A",
-          "query": "SELECT max(\"speed\") * 3.6 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"desi\" =~ /^$line$/ AND \"loc_source\" = 'GPS' GROUP BY time($__interval), \"desi\" fill(null)",
+          "query": "SELECT max(\"speed\") * 3.6 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"loc_source\" = 'GPS' GROUP BY time($__interval), \"desi\" fill(null)",
           "rawQuery": true,
           "resultFormat": "time_series",
           "alias": "$tag_desi"
@@ -1821,275 +1772,6 @@
             "showPoints": "never",
             "spanNulls": false
           }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "sortBy": "Mean",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 26,
-      "type": "row",
-      "title": "Selected trams",
-      "collapsed": false,
-      "gridPos": {
-        "x": 0,
-        "y": 83,
-        "w": 24,
-        "h": 1
-      },
-      "panels": []
-    },
-    {
-      "id": 27,
-      "type": "timeseries",
-      "title": "Speed",
-      "description": "Pick trams in the Tram selector at the top. Click a point to watch that moment on the map.",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 84,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
-          },
-          "refId": "A",
-          "query": "SELECT mean(\"speed\") * 3.6 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"veh\" =~ /^$veh$/ GROUP BY time($__interval), \"veh\" fill(null)",
-          "rawQuery": true,
-          "resultFormat": "time_series",
-          "alias": "$tag_veh"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "velocitykmh",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false
-          },
-          "links": [
-            {
-              "title": "Watch on the map",
-              "url": "https://hsl-live.duckdns.org/?at=${__value.time}&veh=${__field.labels.veh}",
-              "targetBlank": true
-            }
-          ]
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "sortBy": "Mean",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 28,
-      "type": "timeseries",
-      "title": "Delay",
-      "description": "",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 84,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
-          },
-          "refId": "A",
-          "query": "SELECT mean(\"delay\") / 60 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"veh\" =~ /^$veh$/ GROUP BY time($__interval), \"veh\" fill(null)",
-          "rawQuery": true,
-          "resultFormat": "time_series",
-          "alias": "$tag_veh"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "m",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false
-          },
-          "links": [
-            {
-              "title": "Watch on the map",
-              "url": "https://hsl-live.duckdns.org/?at=${__value.time}&veh=${__field.labels.veh}",
-              "targetBlank": true
-            }
-          ]
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "sortBy": "Mean",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 29,
-      "type": "timeseries",
-      "title": "Behind the tram ahead",
-      "description": "",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 92,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
-          },
-          "refId": "A",
-          "query": "SELECT mean(\"headway\") / 60 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"veh\" =~ /^$veh$/ GROUP BY time($__interval), \"veh\" fill(null)",
-          "rawQuery": true,
-          "resultFormat": "time_series",
-          "alias": "$tag_veh"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "m",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false
-          },
-          "links": [
-            {
-              "title": "Watch on the map",
-              "url": "https://hsl-live.duckdns.org/?at=${__value.time}&veh=${__field.labels.veh}",
-              "targetBlank": true
-            }
-          ]
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "sortBy": "Mean",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 30,
-      "type": "timeseries",
-      "title": "Distance into the journey",
-      "description": "From the tram's odometer, which HFP counts from the start of each journey.",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "${DS_INFLUXDB}"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 92,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "${DS_INFLUXDB}"
-          },
-          "refId": "A",
-          "query": "SELECT last(\"odometer\") / 1000 FROM \"${VAR_BUCKET}\".\"autogen\".\"vehicle_position\" WHERE $timeFilter AND \"veh\" =~ /^$veh$/ GROUP BY time($__interval), \"veh\" fill(null)",
-          "rawQuery": true,
-          "resultFormat": "time_series",
-          "alias": "$tag_veh"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "lengthkm",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": false
-          },
-          "links": [
-            {
-              "title": "Watch on the map",
-              "url": "https://hsl-live.duckdns.org/?at=${__value.time}&veh=${__field.labels.veh}",
-              "targetBlank": true
-            }
-          ]
         },
         "overrides": []
       },

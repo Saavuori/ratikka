@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.82.0] - 2026-10-03
+
+### Added
+- **Links straight into the timelapse.** The address `?at=<time>&veh=<tram>` opens the map's timelapse 20 seconds before that moment, with that tram picked and the camera following it. It works whatever line filter was set, so the tram is never hidden. The parameters are cleared from the address bar once the timelapse opens, so reloading the page doesn't jump back. The Grafana tram dashboard uses this: click a tram among the fastest, or any point on a tram's graph, to watch that moment on the map.
+
+---
+
 ## [v0.81.1] - 2026-10-03
 
 ### Fixed
