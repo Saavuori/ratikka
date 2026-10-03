@@ -14,13 +14,16 @@ import type { DataDrivenPropertyValueSpecification } from 'maplibre-gl';
 // band. The ramp below is scoped to the band the discs live in instead, so a
 // stop is a real dot the moment its layer switches on.
 
-// Where the discs switch on. Kept level with the city-bike gauge layer so the
-// two kinds of marker appear together on the way out of a zoomed-in view.
-export const STOP_CIRCLE_MIN_ZOOM = 13;
+// Where the discs switch on: the map's own minimum zoom, so stops never drop
+// off the map however far out the reader goes. They used to start at 13 (12
+// for stations), which left the whole 10-13 band — the city-wide views —
+// without a single stop. Below 13 the ramps shrink them to fine dots instead,
+// so the network still reads without the stops carpeting the city.
+export const STOP_CIRCLE_MIN_ZOOM = 10;
 
 // Stations (metro, commuter rail) carry a whole neighbourhood rather than one
-// kerbside, so they earn their dot a zoom level earlier than street stops.
-export const STATION_CIRCLE_MIN_ZOOM = 12;
+// kerbside, so they are drawn larger than street stops at every zoom.
+export const STATION_CIRCLE_MIN_ZOOM = 10;
 
 // Where the discs hand over to the sign boards (stops_signs). The layers are
 // capped here and the opacity ramp below fades them out across the last half
@@ -29,7 +32,8 @@ export const STOP_CIRCLE_FADE_ZOOM = 15.5;
 
 export const STOP_CIRCLE_RADIUS: DataDrivenPropertyValueSpecification<number> = [
   'interpolate', ['linear'], ['zoom'],
-  12, 2.6,
+  10, 1.5,
+  12, 2.4,
   13, 3.2,
   15, 4.6,
   15.5, 5,
@@ -37,7 +41,8 @@ export const STOP_CIRCLE_RADIUS: DataDrivenPropertyValueSpecification<number> = 
 
 export const STATION_CIRCLE_RADIUS: DataDrivenPropertyValueSpecification<number> = [
   'interpolate', ['linear'], ['zoom'],
-  12, 3.6,
+  10, 2.6,
+  12, 3.4,
   13, 4.4,
   15, 6,
   15.5, 6.5,
@@ -48,6 +53,7 @@ export const STATION_CIRCLE_RADIUS: DataDrivenPropertyValueSpecification<number>
 // carry their own contrast against dark basemaps and dense street fill.
 export const STOP_CIRCLE_STROKE_WIDTH: DataDrivenPropertyValueSpecification<number> = [
   'interpolate', ['linear'], ['zoom'],
+  10, 0.5,
   12, 0.8,
   15.5, 1.4,
 ];

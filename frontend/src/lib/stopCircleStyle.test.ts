@@ -36,13 +36,24 @@ describe('stop discs', () => {
     expect(STATION_CIRCLE_MIN_ZOOM).toBeLessThanOrEqual(STOP_CIRCLE_MIN_ZOOM);
   });
 
-  it('is a legible dot everywhere the discs are drawn', () => {
-    for (const zoom of [STATION_CIRCLE_MIN_ZOOM, STOP_CIRCLE_MIN_ZOOM, 14, 15, STOP_CIRCLE_FADE_ZOOM]) {
+  it("is drawn all the way out to the map's minimum zoom", () => {
+    // The map stops zooming out at 10; a stop that only appears at 13 leaves
+    // every city-wide view without one.
+    expect(STOP_CIRCLE_MIN_ZOOM).toBeLessThanOrEqual(10);
+    expect(STATION_CIRCLE_MIN_ZOOM).toBeLessThanOrEqual(10);
+  });
+
+  it('is a visible dot everywhere the discs are drawn', () => {
+    for (const zoom of [STATION_CIRCLE_MIN_ZOOM, STOP_CIRCLE_MIN_ZOOM, 11, 12, 13, 14, 15, STOP_CIRCLE_FADE_ZOOM]) {
       // A stop the size of the old one-pixel dot is not on the map in any way
-      // a rider can see; 2.5 px across the whole disc band is the floor.
-      expect(radius(zoom)).toBeGreaterThanOrEqual(2.5);
+      // a rider can see: 1.5 px is the floor at the widest views...
+      expect(radius(zoom)).toBeGreaterThanOrEqual(1.5);
       expect(stationRadius(zoom)).toBeGreaterThan(radius(zoom));
       expect(stroke(zoom)).toBeGreaterThan(0);
+    }
+    // ...and 2.5 px from street level, where a stop is something to tap.
+    for (const zoom of [13, 14, 15, STOP_CIRCLE_FADE_ZOOM]) {
+      expect(radius(zoom)).toBeGreaterThanOrEqual(2.5);
     }
   });
 
@@ -52,7 +63,7 @@ describe('stop discs', () => {
   });
 
   it('grows with zoom', () => {
-    for (const [a, b] of [[12, 13], [13, 15], [15, 15.5]] as const) {
+    for (const [a, b] of [[10, 12], [12, 13], [13, 15], [15, 15.5]] as const) {
       expect(radius(b)).toBeGreaterThan(radius(a));
       expect(stationRadius(b)).toBeGreaterThan(stationRadius(a));
     }
