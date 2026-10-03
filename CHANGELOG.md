@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.76.2] - 2026-10-03
+
+### Fixed
+- **Service alerts can be read on the light map.** The alerts in the Lines panel had their colours fixed for the dark theme, so on the light map an alert's headline and summary came out near-white on a white panel. The stop panel's alerts had the same problem. Both now follow the theme. The Lines panel's alert summary also says what the alerts are about ("2 alerts · Line 6") and previews the worst one's headline. Opened, each alert is set in larger type, and a description that only repeats the headline is no longer shown twice.
+
+### Changed
+- **The desktop Lines panel has room to breathe.** It is wider (280px instead of 190px), and the line buttons sit four to a row instead of two. Alerts, the Spacing list and the line buttons all use larger type, so a gap reads "≥ 24 min, due every 10 min" on a single line. Phones keep their bottom sheet as before.
+
+---
+
 ## [v0.76.1] - 2026-10-03
 
 ### Fixed
