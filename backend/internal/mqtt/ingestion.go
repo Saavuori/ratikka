@@ -12,6 +12,7 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/prometheus/client_golang/prometheus"
 	"ratikka/internal/cache"
+	"ratikka/internal/influx"
 	"ratikka/internal/replay"
 )
 
@@ -218,6 +219,10 @@ type IngestionWorker struct {
 	// instance with no writable volume gets — records nothing; every method on
 	// it tolerates that, so there is no branch here.
 	archive *replay.Archive
+
+	// influx receives the same readings as the archive, for dashboards; see
+	// influx_point.go. Nil writes nothing, and every method tolerates that.
+	influx *influx.Writer
 
 	// enabledModes tracks which optional feeds (bus, metro, train, ferry) are
 	// currently subscribed. Guarded by mu because EnableMode/DisableMode are
@@ -514,6 +519,7 @@ func (w *IngestionWorker) handleMessage(client mqtt.Client, msg mqtt.Message) {
 	}
 
 	w.archiveReading(thinned, nextStop, eol, stopStr != nil)
+	w.writeInflux(thinned)
 }
 
 // archiveReading files the reading in the replay archive. It is handed the same

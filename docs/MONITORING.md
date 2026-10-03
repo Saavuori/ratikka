@@ -104,4 +104,100 @@ This dashboard is structured to facilitate full Application Performance Monitori
 4. Select your Prometheus datasource when prompted (the dashboard uses a datasource template variable named `${datasource_hsl}`).
 5. Click **Import**.
 
+---
 
+## 5. Per-Vehicle History in InfluxDB
+
+Prometheus answers "how is the service doing"; it cannot answer "what did tram 456 do at 08:14", because a label per vehicle and per second is exactly what Prometheus is built not to hold. So every reading the backend accepts — after HSL's quadruplicate tram messages are dropped, the same readings the timelapse archive records — is also written to an InfluxDB v2 bucket, one point per vehicle per second.
+
+```mermaid
+graph LR
+    MQTT["HSL MQTT (HFP)"] --> Ingest["Go backend ingestion"]
+    Ingest --> Redis["Redis (live map)"]
+    Ingest --> Archive["Replay archive (timelapse)"]
+    Ingest -- "batched, gzip'd line protocol<br/>every 10 s or 5000 points" --> Influx["InfluxDB v2 bucket"]
+    Influx --> Grafana["Grafana dashboards"]
+```
+
+The writer never blocks ingestion. Points are queued and sent from their own goroutine; while InfluxDB is unreachable up to 100,000 points (about a quarter of an hour of trams) are held and retried, and beyond that the oldest are dropped. A batch InfluxDB refuses outright — bad token, missing bucket — is dropped rather than retried forever.
+
+### Configuration
+
+Set in `~/ratikka/.env` on the server; the compose file passes them to the backend. Leave `INFLUX_URL` unset to write nothing.
+
+| Variable | Production value |
+|---|---|
+| `INFLUX_URL` | `http://host.containers.internal:8086` — the swarm-published InfluxDB on the same host, as seen from a rootless podman container |
+| `INFLUX_ORG` | the InfluxDB organization |
+| `INFLUX_BUCKET` | the bucket (`ratikka` if unset) |
+| `INFLUX_TOKEN` | a token with write access to that bucket — a secret, so `.env` only |
+| `INFLUX_MODES` | `tram` (default). Buses, metro and trains are ingested only while someone is watching them, so their history would be full of holes |
+
+### Schema: measurement `vehicle_position`
+
+Tags are what dashboards group by, and are kept to identities that stay few. Anything per-journey or per-reading is a field, so the series count stays in the hundreds rather than growing with every trip.
+
+| Tags | |
+|---|---|
+| `veh` | operator and vehicle number, e.g. `0040-456` |
+| `desi` | the line as riders know it, e.g. `4` |
+| `route` | the route ID, e.g. `1004` |
+| `dir` | `1` or `2` |
+| `mode` | `tram` |
+
+| Field | Type | Meaning |
+|---|---|---|
+| `lat`, `lng` | float | position, WGS84 |
+| `speed` | float | m/s (× 3.6 for km/h) |
+| `acceleration` | float | m/s² |
+| `heading` | int | degrees |
+| `delay` | int | seconds behind schedule, **positive is late** (HFP's own `dl` has the opposite sign) |
+| `doors_open` | bool | |
+| `at_stop` | bool | standing at or in a stop's area |
+| `stop` | string | the stop it is at, only while `at_stop` |
+| `next_stop` | string | the stop it is heading for |
+| `eol` | bool | reached the end of its line |
+| `trip_id`, `start` | string | GTFS trip ID and scheduled departure (`HH:MM`) |
+| `odometer` | float | metres |
+| `occupancy` | int | 0–100; trams always report 0 |
+| `operator`, `journey` | int | HFP `oper` and `jrn` |
+| `loc_source` | string | `GPS`, `ODO`, `MAN`, `DR`, `N/A` |
+| `headway` | int | seconds behind the vehicle ahead on the same line and direction |
+| `headway_scheduled` | int | the line's timetabled headway around now |
+| `headway_state` | string | `bunched`, `gap`, `regular` |
+| `headway_at_least`, `headway_ahead` | bool, string | `headway` is a lower bound; the vehicle ahead |
+| `tlp_status`, `tlp_level`, `tlp_request_type`, `tlp_junction` | | the newest traffic-light priority exchange: `requesting` / `granted` / `denied` and the junction asked |
+
+### Example Grafana queries
+
+InfluxQL, through the v1 compatibility API the existing dashboards already use:
+
+```sql
+-- Average delay per line
+SELECT mean("delay") FROM "<bucket>"."autogen"."vehicle_position"
+WHERE $timeFilter GROUP BY time($__interval), "desi"
+
+-- Speed of one tram, km/h
+SELECT mean("speed") * 3.6 FROM "<bucket>"."autogen"."vehicle_position"
+WHERE "veh" = '0040-456' AND $timeFilter GROUP BY time($__interval)
+
+-- Trams in service
+SELECT count(distinct("trip_id")) FROM "<bucket>"."autogen"."vehicle_position"
+WHERE $timeFilter GROUP BY time(1m)
+```
+
+Flux, for anything InfluxQL cannot express:
+
+```flux
+// Share of readings per line that are bunched
+from(bucket: "<bucket>")
+  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
+  |> filter(fn: (r) => r._measurement == "vehicle_position" and r._field == "headway_state")
+  |> group(columns: ["desi"])
+  |> map(fn: (r) => ({r with _value: if r._value == "bunched" then 1.0 else 0.0}))
+  |> aggregateWindow(every: v.windowPeriod, fn: mean)
+```
+
+### Volume
+
+About 80–90 points a second at the daytime peak, a few million a day. Grafana panels over long ranges should always aggregate (`GROUP BY time(...)` / `aggregateWindow`) rather than pull raw points. The writer's own health is in Prometheus: `ratikka_influx_points_written_total`, `ratikka_influx_points_dropped_total{reason}` and `ratikka_influx_write_errors_total`.
