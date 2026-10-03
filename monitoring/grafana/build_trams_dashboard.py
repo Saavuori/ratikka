@@ -1,6 +1,7 @@
 """Generates trams-dashboard.json, the Grafana dashboard over the per-vehicle
 history the backend writes to InfluxDB (measurement vehicle_position; see
-docs/MONITORING.md section 5).
+docs/MONITORING.md section 5), and trams-dashboard-shareable.json, the same
+without template variables, which Grafana's public dashboards do not support.
 
 The output is in Grafana's export format: importing it asks for the InfluxDB
 datasource (InfluxQL) and the bucket name, so neither is baked in here.
@@ -8,6 +9,7 @@ datasource (InfluxQL) and the bucket name, so neither is baked in here.
     python monitoring/grafana/build_trams_dashboard.py
 """
 
+import copy
 import json
 from pathlib import Path
 
@@ -15,6 +17,22 @@ DS = {"type": "influxdb", "uid": "${DS_INFLUXDB}"}
 M = '"${VAR_BUCKET}"."autogen"."vehicle_position"'
 LINE = '"desi" =~ /^$line$/'
 VEH = '"veh" =~ /^$veh$/'
+# Only readings with a satellite fix. Between fixes a tram dead-reckons
+# (loc_source "DR"), and its estimated speed runs away: one on line 15 "did"
+# 125 km/h for twelve seconds while its odometer said 50, and dropped to 54 the
+# moment the fix came back. Every reading over 90 km/h in the first hour of
+# data was dead reckoning.
+GPS = """"loc_source" = 'GPS'"""
+
+# The live map. Its timelapse takes a moment and a tram (?at=…&veh=…, see
+# frontend/src/lib/replayLink.ts) and opens history there, with that tram
+# picked and followed.
+APP_URL = "https://hsl-live.duckdns.org/"
+
+
+def replay_link(title, veh):
+    """A data link that opens the clicked moment in the app's timelapse."""
+    return {"title": title, "url": APP_URL + "?at=${__value.time}&veh=" + veh, "targetBlank": True}
 NOW = "time > now() - 2m"
 # A tram still signed on to a journey it is not running reports itself hours
 # late (two hours, measured on the first afternoon of data), and one such tram
@@ -316,13 +334,44 @@ panels[-1]["fieldConfig"]["overrides"] = [
 ]
 y += 7
 
+# --- Top speeds -----------------------------------------------------------
+panels.append(row("Top speeds", y)); y += 1
+panels.append(panel(
+    "table", "Fastest trams", 0, y, 12, 12,
+    [target(f'SELECT max("speed") * 3.6 AS "Top speed", "next_stop" AS "Heading for" FROM {M} '
+            f'WHERE $timeFilter AND {LINE} AND {GPS} GROUP BY "desi", "veh"', fmt="table")],
+    "Each tram's fastest reading in the time range, satellite fixes only. "
+    "Click a tram to watch that moment on the live map's timelapse.",
+    defaults={"custom": {"align": "auto", "filterable": True}},
+    overrides=[
+        {"matcher": {"id": "byName", "options": "Time"},
+         "properties": [{"id": "displayName", "value": "When"}, {"id": "unit", "value": "time:ddd D.M. HH:mm:ss"}]},
+        {"matcher": {"id": "byName", "options": "Top speed"},
+         "properties": [{"id": "unit", "value": "velocitykmh"}, {"id": "decimals", "value": 0},
+                        {"id": "custom.cellOptions", "value": {"type": "gauge", "mode": "basic"}},
+                        {"id": "min", "value": 0}, {"id": "max", "value": 80},
+                        {"id": "color", "value": {"mode": "continuous-GrYlRd"}}]},
+        {"matcher": {"id": "byName", "options": "veh"},
+         "properties": [{"id": "displayName", "value": "Tram"},
+                        {"id": "links", "value": [replay_link("Watch on the map", "${__data.fields.veh}")]}]},
+        {"matcher": {"id": "byName", "options": "desi"},
+         "properties": [{"id": "displayName", "value": "Line"}]},
+    ],
+    options={"showHeader": True, "sortBy": [{"displayName": "Top speed", "desc": True}], "cellHeight": "sm"}))
+panels.append(series(
+    "Top speed by line", 12, y, 12, 12,
+    [target(f'SELECT max("speed") * 3.6 FROM {M} WHERE $timeFilter AND {LINE} AND {GPS} '
+            f'GROUP BY time($__interval), "desi" fill(null)', alias="$tag_desi")],
+    "velocitykmh", "Fastest satellite-fixed reading on each line in each interval."))
+y += 12
+
 # --- One tram ------------------------------------------------------------
 panels.append(row("Selected trams", y)); y += 1
 panels.append(series(
     "Speed", 0, y, 12, 8,
     [target(f'SELECT mean("speed") * 3.6 FROM {M} WHERE $timeFilter AND {VEH} '
             f'GROUP BY time($__interval), "veh" fill(null)', alias="$tag_veh")],
-    "velocitykmh", "Pick trams in the Tram selector at the top."))
+    "velocitykmh", "Pick trams in the Tram selector at the top. Click a point to watch that moment on the map."))
 panels.append(series(
     "Delay", 12, y, 12, 8,
     [target(f'SELECT mean("delay") / 60 FROM {M} WHERE $timeFilter AND {VEH} '
@@ -340,6 +389,12 @@ panels.append(series(
             f'GROUP BY time($__interval), "veh" fill(null)', alias="$tag_veh")],
     "lengthkm", "From the tram's odometer, which HFP counts from the start of each journey."))
 y += 8
+
+# Every per-tram graph is one series per tram, labelled by it, so a click on
+# any point knows both the moment and the tram.
+for p in panels:
+    if p["type"] == "timeseries" and any(VEH in t["query"] for t in p["targets"]):
+        p["fieldConfig"]["defaults"]["links"] = [replay_link("Watch on the map", "${__field.labels.veh}")]
 
 
 def query_var(name, label, query, multi=True, include_all=True):
@@ -383,6 +438,28 @@ dashboard = {
 }
 dashboard["templating"]["list"][1]["current"] = {}
 
-out = Path(__file__).with_name("trams-dashboard.json")
-out.write_text(json.dumps(dashboard, indent=2) + "\n", encoding="utf-8")
-print(f"wrote {out} ({len(panels)} panels)")
+
+
+def shareable(d):
+    """The same dashboard without template variables. It shows every line, and
+    leaves out the per-tram section, which is nothing without a tram to pick.
+    The time range and $__interval are Grafana's own and still work."""
+    d = copy.deepcopy(d)
+    d["title"] += " (shareable)"
+    d["uid"] += "-shareable"
+    d["description"] += " A copy without template variables, for sharing outside Grafana."
+    d["templating"] = {"list": []}
+    cut = next(i for i, p in enumerate(d["panels"]) if p["type"] == "row" and p["title"] == "Selected trams")
+    d["panels"] = d["panels"][:cut]
+    for p in d["panels"]:
+        for t in p.get("targets", []):
+            t["query"] = t["query"].replace(f" AND {LINE}", "")
+            assert "$line" not in t["query"] and "$veh" not in t["query"], t["query"]
+    return d
+
+
+for name, d in (("trams-dashboard.json", dashboard), ("trams-dashboard-shareable.json", shareable(dashboard))):
+    out = Path(__file__).with_name(name)
+    out.write_text(json.dumps(d, indent=2) + "\n", encoding="utf-8")
+    print(f"wrote {out} ({len(d['panels'])} panels)")
+
