@@ -81,39 +81,20 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   const warningAlerts = filteredAlerts.filter((a) => a.severityLevel === 'WARNING');
   const filteredCount = filteredAlerts.length;
 
-  // Determine widget text and badge label context
+  // What the alerts are about, in the summary row. Only rendered while there
+  // is at least one alert to show.
   let widgetLabel: string;
-  let badgeText: string;
-
   if (selectedTram) {
-    widgetLabel = filteredCount > 0 ? `Alerts for Line ${selectedTram.desi}` : `Line ${selectedTram.desi} is clear`;
-    badgeText = filteredCount > 0 ? 'ALERT' : 'OK';
+    widgetLabel = `Line ${selectedTram.desi}`;
   } else if (selectedStop) {
-    widgetLabel = filteredCount > 0 ? `Alerts for ${selectedStop.name}` : `${selectedStop.name} is clear`;
-    badgeText = filteredCount > 0 ? 'ALERT' : 'OK';
+    widgetLabel = selectedStop.name;
   } else if (selectedLines.length > 0) {
-    const linesStr = selectedLines.join(', ');
-    widgetLabel = filteredCount > 0 ? `Alerts for Line ${linesStr}` : `Selected lines are clear`;
-    badgeText = filteredCount > 0 ? 'ALERT' : 'OK';
+    widgetLabel = `Line${selectedLines.length > 1 ? 's' : ''} ${selectedLines.join(', ')}`;
   } else {
-    // No selection: Show global/system-wide alerts
-    widgetLabel = filteredCount > 0 
-      ? `${filteredCount} System Alert${filteredCount > 1 ? 's' : ''}` 
-      : 'All systems normal';
-    badgeText = filteredCount > 0 ? 'SYSTEM' : 'OK';
+    widgetLabel = 'Network';
   }
 
-  const getAlertBadgeColor = () => {
-    if (severeAlerts.length > 0) return 'rgba(239, 68, 68, 0.2)';
-    if (warningAlerts.length > 0) return 'rgba(245, 158, 11, 0.2)';
-    return 'rgba(59, 130, 246, 0.2)';
-  };
-
-  const getAlertTextColor = () => {
-    if (severeAlerts.length > 0) return '#f87171';
-    if (warningAlerts.length > 0) return '#fbbf24';
-    return '#60a5fa';
-  };
+  const worstSeverity = severeAlerts.length > 0 ? 'severe' : warningAlerts.length > 0 ? 'warning' : 'info';
   // Bunches and gaps on the lines the map is showing — narrowed, like the alerts
   // above, to the reader's own lines once they have picked some.
   const spacingIssues = useMemo(() => {
@@ -213,184 +194,85 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         )}
       </div>
 
-      {/* Service Alerts Widget */}
+      {/* Service alerts — a summary row naming the worst alert, which unfolds
+          into the full list. */}
       {filteredCount > 0 && (
-        <div className="settings-section" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '12px', marginTop: '4px' }}>
+        <section className="panel-alerts" aria-label="Service alerts">
           <button
-            onClick={() => filteredCount > 0 && setIsAlertsExpanded(!isAlertsExpanded)}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              background: 'rgba(255, 255, 255, 0.02)',
-              border: '1px solid rgba(255, 255, 255, 0.06)',
-              padding: filteredCount > 0 ? '8px 10px' : '5px 8px',
-              borderRadius: '8px',
-              cursor: filteredCount > 0 ? 'pointer' : 'default',
-              color: '#f8fafc',
-              textAlign: 'left',
-              outline: 'none',
-            }}
+            type="button"
+            className={`panel-alerts-summary severity-${worstSeverity}`}
+            onClick={() => setIsAlertsExpanded(!isAlertsExpanded)}
+            aria-expanded={isAlertsExpanded}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {filteredCount > 0 && (
-                <AlertTriangle size={14} style={{ color: getAlertTextColor() }} />
+            <AlertTriangle size={16} className="panel-alerts-icon" />
+            <span className="panel-alerts-text">
+              <span className="panel-alerts-label">
+                {filteredCount === 1 ? '1 alert' : `${filteredCount} alerts`}
+                <span className="panel-alerts-scope"> · {widgetLabel}</span>
+              </span>
+              {!isAlertsExpanded && (
+                <span className="panel-alerts-preview">{filteredAlerts[0].headerText}</span>
               )}
-              <span style={{ fontSize: '0.7rem', fontWeight: 700 }}>
-                {widgetLabel}
-              </span>
-            </div>
-            {badgeText && badgeText !== 'OK' && (
-              <span
-                style={{
-                  fontSize: '0.55rem',
-                  backgroundColor: getAlertBadgeColor(),
-                  color: getAlertTextColor(),
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  fontWeight: 800,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '2px',
-                }}
-              >
-                {badgeText}
-                <ChevronDown
-                  size={10}
-                  style={{
-                    transform: isAlertsExpanded ? 'rotate(180deg)' : 'none',
-                    transition: 'transform 0.2s ease',
-                    marginLeft: '2px',
-                  }}
-                />
-              </span>
-            )}
+            </span>
+            <ChevronDown
+              size={16}
+              className="panel-alerts-chevron"
+              style={{ transform: isAlertsExpanded ? 'rotate(180deg)' : 'none' }}
+            />
           </button>
 
-          {isAlertsExpanded && filteredCount > 0 && (
-            <div
-              style={{
-                marginTop: '8px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-                maxHeight: '220px',
-                overflowY: 'auto',
-                paddingRight: '4px',
-              }}
-            >
+          {isAlertsExpanded && (
+            <div className="panel-alerts-list">
               {filteredAlerts.map((alert, idx) => {
-                const severityColor =
-                  alert.severityLevel === 'SEVERE'
-                    ? '#ef4444'
-                    : alert.severityLevel === 'WARNING'
-                    ? '#f59e0b'
-                    : '#3b82f6';
+                const routes = alert.entities?.filter((e) => e.type === 'Route' && e.shortName) ?? [];
+                const stops = alert.entities?.filter((e) => e.type === 'Stop' && e.name) ?? [];
                 return (
-                  <div
-                    key={idx}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.01)',
-                      border: `1px solid rgba(255, 255, 255, 0.03)`,
-                      borderLeft: `3px solid ${severityColor}`,
-                      padding: '8px',
-                      borderRadius: '4px',
-                      fontSize: '0.65rem',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '4px' }}>
-                      <h4 style={{ margin: 0, fontWeight: 700, color: '#f1f5f9', fontSize: '0.65rem' }}>
-                        {alert.headerText}
-                      </h4>
-                    </div>
-                    <p style={{ margin: '4px 0', color: '#94a3b8', lineHeight: 1.3 }}>
-                      {alert.descriptionText}
-                    </p>
-                    
-                    {/* Affected lines */}
-                    {alert.entities && alert.entities.some(e => e.type === 'Route') && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                        <span style={{ color: '#64748b', fontSize: '0.55rem', alignSelf: 'center' }}>Lines:</span>
-                        {alert.entities
-                          .filter(e => e.type === 'Route' && e.shortName)
-                          .map((e, eIdx) => (
-                            <span
-                              key={eIdx}
-                              style={{
-                                fontSize: '0.55rem',
-                                backgroundColor: e.mode === 'BUS' ? BUS_BLUE : getRouteColor(e.shortName),
-                                color: '#fff',
-                                padding: '1px 4px',
-                                borderRadius: '3px',
-                                fontWeight: 800,
-                              }}
-                            >
-                              {e.shortName}
-                            </span>
-                          ))}
+                  <article key={idx} className={`panel-alert severity-${alert.severityLevel.toLowerCase()}`}>
+                    <h4 className="panel-alert-title">{alert.headerText}</h4>
+                    {alert.descriptionText && alert.descriptionText !== alert.headerText && (
+                      <p className="panel-alert-desc">{alert.descriptionText}</p>
+                    )}
+
+                    {routes.length > 0 && (
+                      <div className="panel-alert-tags">
+                        <span className="panel-alert-tags-label">Lines</span>
+                        {routes.map((e, eIdx) => (
+                          <span
+                            key={eIdx}
+                            className="panel-alert-line"
+                            style={{ backgroundColor: e.mode === 'BUS' ? BUS_BLUE : getRouteColor(e.shortName) }}
+                          >
+                            {e.shortName}
+                          </span>
+                        ))}
                       </div>
                     )}
 
-                    {/* Affected stops */}
-                    {alert.entities && alert.entities.some(e => e.type === 'Stop') && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
-                        <span style={{ color: '#64748b', fontSize: '0.55rem', alignSelf: 'center' }}>Stops:</span>
-                        {alert.entities
-                          .filter(e => e.type === 'Stop' && e.name)
-                          .slice(0, 3)
-                          .map((e, eIdx) => (
-                            <span
-                              key={eIdx}
-                              style={{
-                                fontSize: '0.55rem',
-                                backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                                color: '#cbd5e1',
-                                padding: '1px 4px',
-                                borderRadius: '3px',
-                                maxWidth: '80px',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap'
-                              }}
-                              title={`${e.name} (${e.code})`}
-                            >
-                              {e.name}
-                            </span>
-                          ))}
-                        {alert.entities.filter(e => e.type === 'Stop').length > 3 && (
-                          <span style={{ color: '#64748b', fontSize: '0.55rem', alignSelf: 'center' }}>
-                            +{alert.entities.filter(e => e.type === 'Stop').length - 3} more
+                    {stops.length > 0 && (
+                      <div className="panel-alert-tags">
+                        <span className="panel-alert-tags-label">Stops</span>
+                        {stops.slice(0, 3).map((e, eIdx) => (
+                          <span key={eIdx} className="panel-alert-stop" title={`${e.name} (${e.code})`}>
+                            {e.name}
                           </span>
+                        ))}
+                        {stops.length > 3 && (
+                          <span className="panel-alert-tags-label">+{stops.length - 3} more</span>
                         )}
                       </div>
                     )}
 
                     {alert.url && (
-                      <a
-                        href={alert.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '2px',
-                          color: '#38bdf8',
-                          textDecoration: 'none',
-                          marginTop: '6px',
-                          fontWeight: 600,
-                          fontSize: '0.55rem',
-                        }}
-                      >
-                        Read more <ExternalLink size={8} />
+                      <a className="panel-alert-link" href={alert.url} target="_blank" rel="noopener noreferrer">
+                        Read more <ExternalLink size={11} />
                       </a>
                     )}
-                  </div>
+                  </article>
                 );
               })}
             </div>
           )}
-        </div>
+        </section>
       )}
 
       <LineSpacing issues={spacingIssues} onSelectVehicle={onSelectVehicle} />

@@ -134,3 +134,47 @@
 @media (max-width: 768px) {
   .arrival-track, .arrival-now-button { min-height: 40px; }
 }
+
+/* The stop sheet folded down to its countdown while the map follows the
+   arrival: one row back to the full timetable, with the alert count riding
+   along so a disruption is not hidden by the fold. */
+.stop-peek-expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.stop-peek-expand:hover { color: var(--text-primary); background: var(--bg-button); }
+
+.stop-peek-alerts {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  color: #3b82f6;
+}
+.stop-peek-alerts.severity-warning { color: #f59e0b; }
+.stop-peek-alerts.severity-severe { color: #ef4444; }
+
+@media (max-width: 768px) {
+  /* Only as tall as the card it holds — the rest of the screen is the map. */
+  .detail-popup.stop-popup.is-peek:not(.collapsed) {
+    max-height: 45vh;
+    max-height: 45dvh;
+  }
+  .stop-popup.is-peek .panel-header { padding-bottom: 4px !important; }
+  .stop-popup.is-peek .timeline-container { margin-top: 0 !important; }
+  .stop-popup.is-peek .arrival-headline { margin-top: 4px; }
+  .stop-popup.is-peek .stop-peek-expand { min-height: 36px; margin-top: 4px; }
+}
