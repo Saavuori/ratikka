@@ -1883,8 +1883,8 @@ body {
 
 /* Timelapse panel — the replay controls, revealed from the version badge. It is
    the only chrome on the map while history plays, and the point of a timelapse
-   is the city moving, so it is built to give the map everything it can: two
-   rows in the bottom-left corner, sitting on the corner itself rather than
+   is the city moving, so it is built to give the map everything it can: three
+   short rows in the bottom-left corner, sitting on the corner itself rather than
    above the badge and tab bar that are hidden for the duration. */
 .timelapse-panel {
   position: absolute;
@@ -1907,14 +1907,47 @@ body {
   pointer-events: auto;
 }
 
-/* Row one: play, the speeds, and the way back to the live map. */
+/* Row one: skip back, play, skip forward, and the way back to the live map. */
 .timelapse-panel__bar {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-/* Row two: the moment being replayed, beside the scrubber that sets it. */
+/* The skips flank play so back and forward read by position alone. */
+.timelapse-panel__transport {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.timelapse-panel__skip {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0;
+  background: var(--bg-button);
+  border: 1px solid var(--border-button);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.timelapse-panel__skip:hover:not(:disabled) {
+  background: var(--bg-button-hover);
+}
+
+.timelapse-panel__skip:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Row three: the moment being replayed, beside the scrubber that sets it. */
 .timelapse-panel__timeline {
   display: flex;
   align-items: center;
@@ -2027,11 +2060,10 @@ body {
   background: var(--bg-button-hover);
 }
 
+/* Row two: the playback speeds, the full width of the panel. */
 .timelapse-panel__speeds {
   display: flex;
-  flex: 1;
   gap: 2px;
-  min-width: 0;
 }
 
 .timelapse-panel__speed {
@@ -2079,7 +2111,7 @@ body {
 }
 
 /* Rendered only when there is a gap, a load or an error to report, so the
-   panel is two rows tall the rest of the time. */
+   panel is three rows tall the rest of the time. */
 .timelapse-panel__status {
   font-size: 10px;
   color: var(--text-secondary);

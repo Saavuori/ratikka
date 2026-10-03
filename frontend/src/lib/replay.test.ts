@@ -20,6 +20,7 @@ import {
   replayRange,
   REPLAY_SPEEDS,
   replayTimeScale,
+  skipTarget,
   TARGET_SNAPSHOTS_PER_SECOND,
 } from './replay';
 
@@ -464,5 +465,22 @@ describe('nextFetchSpan horizon', () => {
 
   it('still stops at the end of the archive however far it is asked to reach', () => {
     expect(nextFetchSpan(1000, held, 1150, 2000)).toBeNull();
+  });
+});
+
+describe('skipTarget', () => {
+  const range = { from: 1_000_000, to: 1_000_000 + 7 * 86400 };
+
+  it('moves the cursor by the step', () => {
+    expect(skipTarget(range.from + 86400, -3600, range)).toBe(range.from + 86400 - 3600);
+    expect(skipTarget(range.from + 86400, 600, range)).toBe(range.from + 86400 + 600);
+  });
+
+  it('stops at the oldest history rather than refusing the skip', () => {
+    expect(skipTarget(range.from + 6 * 3600, -86400, range)).toBe(range.from);
+  });
+
+  it('stops at the live edge going forward', () => {
+    expect(skipTarget(range.to - 300, 3600, range)).toBe(range.to);
   });
 });
