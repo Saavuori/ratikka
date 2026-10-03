@@ -60,6 +60,8 @@ export interface MapView {
   /** Which vehicle modes the map draws, and with them their stops and routes. */
   modes: ModeFlags;
   showRoutes: boolean;
+  /** FMI's rain radar over the ground, under everything else. */
+  showRainRadar: boolean;
   /** Lines the reader has narrowed the map to; empty means all of them. */
   lineFilters: string[];
 }
