@@ -55,6 +55,13 @@ services:
       - REPLAY_DIR=/data/replay
       - REPLAY_RETENTION_DAYS=7
       - REPLAY_MODES=tram
+      # Every recorded reading also goes to InfluxDB for Grafana, when
+      # INFLUX_URL is set in .env (with INFLUX_TOKEN, INFLUX_ORG and
+      # optionally INFLUX_BUCKET, default "ratikka"). Unset writes nothing.
+      - INFLUX_URL=${INFLUX_URL}
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
     volumes:
       # The history has to outlive the container: update.sh recreates it on a
       # five-minute cron, and a week's archive inside the container layer would
@@ -172,6 +179,12 @@ set_env_var "DOMAIN_NAME" "Enter your Domain Name (e.g. hsl-live.duckdns.org, le
 set_env_var "GRAFANA_CLOUD_PROMETHEUS_URL" "Enter your GRAFANA_CLOUD_PROMETHEUS_URL (Optional, for monitoring)" "false"
 set_env_var "GRAFANA_CLOUD_PROMETHEUS_USER" "Enter your GRAFANA_CLOUD_PROMETHEUS_USER (Optional, for monitoring)" "false"
 set_env_var "GRAFANA_CLOUD_PROMETHEUS_TOKEN" "Enter your GRAFANA_CLOUD_PROMETHEUS_TOKEN (Optional, for monitoring)" "false"
+set_env_var "INFLUX_URL" "Enter your INFLUX_URL, e.g. http://host.containers.internal:8086 (Optional, for per-vehicle history in InfluxDB)" "false"
+if grep -q "^INFLUX_URL=" .env; then
+    set_env_var "INFLUX_TOKEN" "Enter an InfluxDB token with write access to the bucket" "true"
+    set_env_var "INFLUX_ORG" "Enter your InfluxDB organization" "true"
+    set_env_var "INFLUX_BUCKET" "Enter your InfluxDB bucket (blank for ratikka)" "false"
+fi
 
 export $(grep -v '^#' .env | xargs)
 

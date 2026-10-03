@@ -179,6 +179,16 @@ The repository name is lowercased in a `meta` step (`${GITHUB_REPOSITORY,,}`)
 because `Saavuori/ratikka` is not a valid image reference. Images are public, so
 the host pulls without auth.
 
+Release runs share the concurrency group `release`, so they tag and build one
+at a time. Without it, two merges a few seconds apart ran side by side and
+whichever build finished last owned `:latest`, older commit or not: #143 and
+#144 were merged 8 s apart on 2026-10-03, v0.76.2's build finished two minutes
+after v0.77.0's, and the host ran v0.76.2 for twenty minutes until the next
+release replaced it. The parallel tag jobs could also both read the same last
+tag and pick the same version number. GitHub keeps one run pending per group,
+so a burst of three merges skips the middle release; its commit still ships in
+the next one.
+
 Three build args are threaded into the Go binary via `-ldflags`:
 
 | Build arg | Value | Lands in |

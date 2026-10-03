@@ -159,10 +159,16 @@ func (h *Handlers) serveReplayQuery(w http.ResponseWriter, r *http.Request, boxe
 		w.Header().Set("Cache-Control", "no-store")
 	}
 
+	// A stretch nothing was recorded for is an empty list, not null: the client
+	// reads `samples.length`, and a null there turned every gap into an error.
+	samples := res.Samples
+	if samples == nil {
+		samples = []replay.Sample{}
+	}
 	json.NewEncoder(w).Encode(ReplayWindowResponse{
 		From:      from,
 		To:        to,
-		Samples:   res.Samples,
+		Samples:   samples,
 		Truncated: res.Truncated,
 		Scanned:   res.Scanned,
 	})

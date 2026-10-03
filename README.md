@@ -162,6 +162,11 @@ Set the following in `.env` or in your environment. The backend auto-loads a `.e
 | `MQTT_BROKER` | HSL public MQTT endpoint | `tls://mqtt.hsl.fi:8883` |
 | `PORT` | Go backend server port | `8080` |
 | `NO_REDIS` | Set to `true` to use an in-memory cache instead of Redis (same as `--no-redis`) | `false` |
+| `INFLUX_URL` | InfluxDB v2 base URL. When set, every recorded reading is written to it as a `vehicle_position` point, for Grafana dashboards; see [docs/MONITORING.md](docs/MONITORING.md#5-per-vehicle-history-in-influxdb) | *(Off)* |
+| `INFLUX_TOKEN` | InfluxDB API token with write access to the bucket | |
+| `INFLUX_ORG` | InfluxDB organization | |
+| `INFLUX_BUCKET` | InfluxDB bucket | `ratikka` |
+| `INFLUX_MODES` | Comma-separated modes written to InfluxDB | `tram` |
 
 ### Monitoring sidecar
 

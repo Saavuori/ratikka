@@ -338,6 +338,29 @@ export function replayRange(serverTime: number, retentionDays: number): ReplayRa
 }
 
 /**
+ * The panel's skip buttons, back and forward in fixed steps. A week on a slider
+ * a few hundred pixels wide is over half an hour per pixel, so the scrubber
+ * gets you to the right day and these get you to the right moment in it.
+ */
+export const REPLAY_SKIPS = [
+  { seconds: -24 * 3600, label: '−1d', title: 'Back one day' },
+  { seconds: -3600, label: '−1h', title: 'Back one hour' },
+  { seconds: -600, label: '−10m', title: 'Back ten minutes' },
+  { seconds: 600, label: '+10m', title: 'Forward ten minutes' },
+  { seconds: 3600, label: '+1h', title: 'Forward one hour' },
+  { seconds: 24 * 3600, label: '+1d', title: 'Forward one day' },
+] as const;
+
+/**
+ * Where a skip lands: the step from the cursor, held inside the retained range.
+ * A skip that would run off either end stops at that end rather than doing
+ * nothing, so "back a day" from six hours in still goes as far back as it can.
+ */
+export function skipTarget(cursor: number, seconds: number, range: ReplayRange): number {
+  return Math.min(Math.max(cursor + seconds, range.from), range.to);
+}
+
+/**
  * Whether an instant has any recorded minutes, from the index's coverage. Used
  * to draw the timeline's gaps and to skip a stretch nothing was recorded for —
  * a deploy, a broker reconnect — instead of playing silence through it.
