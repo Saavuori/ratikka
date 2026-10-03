@@ -29,6 +29,13 @@ import {
   nonLabelLayersAboveSatellite,
 } from '../../lib/satelliteBasemap';
 import {
+  RAIN_RADAR_LAYER_ID,
+  RAIN_RADAR_SOURCE_ID,
+  RADAR_OPACITY,
+  radarSourceSpec,
+  radarTileUrl,
+} from '../../lib/rainRadar';
+import {
   STOP_FURNITURE_LAYER,
 } from '../../lib/stopModels';
 import {
@@ -66,6 +73,41 @@ export const ensureSatelliteBasemap = (map: maplibregl.Map, theme: MapTheme, mml
     if (layerId === SATELLITE_LAYER_ID) return;
     if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', 'none');
   });
+};
+
+// The rain radar (see lib/rainRadar): one frame, or nothing when `frame` is
+// null. It sits where the aerial photo does -- directly under the base style's
+// first label, so above the ground, the roads and the photo itself, and under
+// every label, route, stop and vehicle. A new frame swaps the source's tile
+// URL in place rather than rebuilding the layer. Safe to call again after a
+// theme swap, which recreates the style without it.
+export const applyRainRadar = (map: maplibregl.Map, frame: string | null) => {
+  if (!frame) {
+    if (map.getLayer(RAIN_RADAR_LAYER_ID)) map.removeLayer(RAIN_RADAR_LAYER_ID);
+    if (map.getSource(RAIN_RADAR_SOURCE_ID)) map.removeSource(RAIN_RADAR_SOURCE_ID);
+    return;
+  }
+  const source = map.getSource(RAIN_RADAR_SOURCE_ID) as maplibregl.RasterTileSource | undefined;
+  if (!source) {
+    map.addSource(
+      RAIN_RADAR_SOURCE_ID,
+      radarSourceSpec(frame) as maplibregl.RasterSourceSpecification,
+    );
+  } else {
+    const url = radarTileUrl(frame);
+    if (source.tiles?.[0] !== url) source.setTiles([url]);
+  }
+  if (!map.getLayer(RAIN_RADAR_LAYER_ID)) {
+    map.addLayer(
+      {
+        id: RAIN_RADAR_LAYER_ID,
+        type: 'raster',
+        source: RAIN_RADAR_SOURCE_ID,
+        paint: { 'raster-opacity': RADAR_OPACITY },
+      },
+      firstLabelLayerId(map.getStyle()?.layers),
+    );
+  }
 };
 
 // HSL's single mode green, so a line's route on the map reads in the same

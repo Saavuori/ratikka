@@ -10,7 +10,7 @@ import { installHeadwayLayers } from './headways';
 
 export type { LayerSeed } from './seed';
 export { STOP_MODE, ARRIVAL_LABEL_SOURCE, ARRIVAL_LABEL_LAYER } from './stops';
-export { update3DMode, updateVehicle3DMode, updateMetroSignVisibility } from './basemap';
+export { update3DMode, updateVehicle3DMode, updateMetroSignVisibility, applyRainRadar } from './basemap';
 
 /**
  * Install everything the map draws that the base style does not provide: the

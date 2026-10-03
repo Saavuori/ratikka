@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.77.0] - 2026-10-03
+
+### Added
+- **Rain radar on the map.** A new cloud-and-rain button among the map-view buttons draws the Finnish Meteorological Institute's rain radar over the map. Showers sit above the streets and under the labels, routes, stops and vehicles, so they never hide the transit. It works on the light, dark and aerial maps. It shows the newest radar picture, which FMI publishes every five minutes. The app checks for a new one every two minutes while the radar is on and the tab is open, and immediately when you come back to the tab. The credit in the corner shows the radar picture's time ("Rain radar 15:30"), so you can see how fresh it is. The radar is FMI's open data, so it needs no key and costs nothing. It is off by default, and the app remembers whether you left it on.
+
+---
+
 ## [v0.76.3] - 2026-10-03
 
 ### Changed

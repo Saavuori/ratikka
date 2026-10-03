@@ -246,6 +246,9 @@ function App() {
   // in the way when you only want the vehicles and the streets under them.
   // On by default — hiding them is the deliberate choice.
   const [showRoutes, setShowRoutes] = usePersistedFlag('showRoutes', true);
+  // FMI's rain radar. Off by default: it is weather, not transit, and most
+  // looks at the map do not need it.
+  const [showRainRadar, setShowRainRadar] = usePersistedFlag('showRainRadar', false);
 
   // What the map draws: the reader's own toggles, plus the modes an open stop
   // needs in order to answer for itself — or, while a journey is selected, only
@@ -610,6 +613,7 @@ function App() {
     // A journey draws its own legs; the whole length of each line it rides,
     // out to both termini, is ink the trip does not need.
     showRoutes: showRoutes && !journeyFocused,
+    showRainRadar,
     lineFilters,
   };
 
@@ -805,6 +809,8 @@ function App() {
         setAlways3DVehicles={setAlways3DVehicles}
         showRoutes={showRoutes}
         setShowRoutes={setShowRoutes}
+        showRainRadar={showRainRadar}
+        setShowRainRadar={setShowRainRadar}
       />
 
       {/* Version Badge — clicking it reveals the timelapse controls. Once they

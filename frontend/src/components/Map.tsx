@@ -44,6 +44,7 @@ import {
   updateRouteVisibility,
 } from '../map/routeNetwork';
 import {
+  applyRainRadar,
   installMapLayers,
   update3DMode,
   updateMetroSignVisibility,
@@ -60,6 +61,8 @@ import type { MapTheme } from '../lib/stopPlatforms';
 import {
   SATELLITE_ATTRIBUTION,
 } from '../lib/satelliteBasemap';
+import { RADAR_ATTRIBUTION, radarFrameLabel } from '../lib/rainRadar';
+import { useRainRadar } from '../hooks/useRainRadar';
 import {
   STOP_CIRCLE_MIN_ZOOM,
   STATION_CIRCLE_MIN_ZOOM,
@@ -172,7 +175,7 @@ export const Map: React.FC<MapProps> = ({
   const selectedStopCoords = selectedStop?.coords ?? null;
   const selectedStopMode = selectedStop?.mode ?? null;
   const selectedStopIsTrunk = selectedStop?.isTrunk ?? false;
-  const { theme: mapTheme, is3D, always3DVehicles, modes, showRoutes, lineFilters } = view;
+  const { theme: mapTheme, is3D, always3DVehicles, modes, showRoutes, showRainRadar, lineFilters } = view;
   const { legs: journeyLegs, endpoints: journeyEndpoints, vehicleIds: journeyVehicleIds } = journey;
   const {
     focus: arrivalFocus,
@@ -271,6 +274,11 @@ export const Map: React.FC<MapProps> = ({
   const isFollowingRef = useRef<boolean>(isFollowing);
   useSyncRef(mapThemeRef, mapTheme);
   useSyncRef(isFollowingRef, isFollowing);
+  // The rain radar frame on show, null while the overlay is off. Kept in a ref
+  // too so a theme swap can put it back on the recreated style.
+  const rainFrame = useRainRadar(showRainRadar);
+  const rainFrameRef = useRef<string | null>(rainFrame);
+  useSyncRef(rainFrameRef, rainFrame);
   // Latest live city-bike station GeoJSON, refreshed on an interval. Kept in a
   // ref so a theme/style reload can re-seed the recreated source without
   // waiting for the next fetch.
@@ -463,6 +471,7 @@ export const Map: React.FC<MapProps> = ({
       trafficLights: trafficLightsDataRef.current,
       isCurrent: (candidate) => mapRef.current === candidate,
     });
+    applyRainRadar(map, rainFrameRef.current);
 
     // Draw route geometries now that style and layer are loaded
     overlaysRef.current.routeGeometries(map, routeGeometriesRef.current, selectedLineRef.current);
@@ -941,6 +950,12 @@ export const Map: React.FC<MapProps> = ({
     }
   }, [is3D, mapTheme]);
 
+  // A new radar frame, or the overlay switched on or off.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && map.getStyle()) applyRainRadar(map, rainFrame);
+  }, [rainFrame]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (map && map.getStyle()) {
@@ -989,9 +1004,16 @@ export const Map: React.FC<MapProps> = ({
   return (
     <div className="map-wrapper">
       <div ref={mapContainerRef} className="map-container" />
-      {/* The orthophotos are open data, and open data comes with a credit. */}
-      {mapTheme === 'satellite' && (
-        <div className="map-attribution">{SATELLITE_ATTRIBUTION}</div>
+      {/* The orthophotos and the radar are open data, and open data comes with
+          a credit. The radar's carries its frame time: a five-minute-old
+          shower is not where it was. */}
+      {(mapTheme === 'satellite' || rainFrame) && (
+        <div className="map-attribution">
+          {[
+            mapTheme === 'satellite' ? SATELLITE_ATTRIBUTION : null,
+            rainFrame ? `Rain radar ${radarFrameLabel(rainFrame)} ${RADAR_ATTRIBUTION}` : null,
+          ].filter(Boolean).join(' · ')}
+        </div>
       )}
       {webglFailed && (
         <div className="map-unsupported" role="alert">
