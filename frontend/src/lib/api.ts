@@ -1,4 +1,4 @@
-import type { MapConfigResponse, TripDetailsResponse, StopDetailsResponse, NearbyStopsResponse, StopsArrivalsResponse, VersionResponse, RouteDetailsResponse, BikeStationDetailsResponse, BikeStationsFeatureCollection, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyMonitorResponse, JourneyEndpoint, ReplayIndexResponse, ReplayWindowResponse } from '../types';
+import type { MapConfigResponse, TripDetailsResponse, StopDetailsResponse, NearbyStopsResponse, StopsArrivalsResponse, VersionResponse, RouteDetailsResponse, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyMonitorResponse, JourneyEndpoint, ReplayIndexResponse, ReplayWindowResponse } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -79,27 +79,6 @@ export async function fetchRouteDetails(shortName: string): Promise<RouteDetails
   const res = await fetch(`${API_BASE}/route/${encodeURIComponent(shortName)}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch route details: ${res.statusText}`);
-  }
-  return res.json();
-}
-
-export async function fetchBikeStationDetails(stationId: string): Promise<BikeStationDetailsResponse> {
-  const res = await fetch(`${API_BASE}/bike-station/${encodeURIComponent(stationId)}`);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch bike station details: ${res.statusText}`);
-  }
-  return res.json();
-}
-
-/**
- * Fetch every city-bike station with live bike/dock counts as a GeoJSON
- * FeatureCollection, ready to feed straight into a MapLibre source. The counts
- * come from the realtime API (the map's vector tiles carry no availability).
- */
-export async function fetchBikeStations(): Promise<BikeStationsFeatureCollection> {
-  const res = await fetch(`${API_BASE}/bike-stations`);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch bike stations: ${res.statusText}`);
   }
   return res.json();
 }

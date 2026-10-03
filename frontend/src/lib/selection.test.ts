@@ -73,7 +73,7 @@ describe('selectionKey', () => {
   });
 
   it('tells apart different kinds that share an id', () => {
-    expect(selectionKey({ kind: 'bikeStation', station: { id: '7', name: 'Kamppi' } }))
+    expect(selectionKey(stopSelection({ id: '7', name: 'Kamppi', code: 'H0007' })))
       .not.toBe(selectionKey({ kind: 'junction', junctionId: 7 }));
   });
 });

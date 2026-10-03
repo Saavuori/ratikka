@@ -306,7 +306,7 @@ export function installStopLayers(map: maplibregl.Map, seed: LayerSeed): void {
           '',
           17, ['coalesce', ['get', 'name'], ['get', 'nameFi'], ''],
         ],
-        // Same stack the vehicle and bike labels use, so stop names sit in
+        // Same stack the vehicle labels use, so stop names sit in
         // the app's own typeface rather than the basemap's.
         'text-font': ['Gotham Rounded Book'],
         'text-size': ['interpolate', ['linear'], ['zoom'], 17, 11, 20, 14],

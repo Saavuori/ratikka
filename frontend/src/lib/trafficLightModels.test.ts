@@ -211,7 +211,7 @@ describe('warningLightIconSvg', () => {
 
 // The layer paint expressions are only validated by MapLibre at runtime, in a
 // browser; one bad ramp silently drops the layer, and takes the layers anchored
-// to it with it. Same guard the stop and bike styles carry.
+// to it with it. Same guard the stop styles carry.
 describe('zoom ramps', () => {
   const evaluate = (expression: unknown, property: string, zoom: number) => {
     const spec = v8['paint_symbol']['icon-opacity'] as StylePropertySpecification;

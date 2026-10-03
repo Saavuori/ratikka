@@ -242,7 +242,7 @@ export interface FrameInputs {
 
 /** Work the loop asks the app to do when something it draws has moved on. */
 export interface FrameEffects {
-  /** Rebuild the 3D stop and bike furniture around a changed highlight. */
+  /** Rebuild the 3D stop furniture around a changed highlight. */
   rebuildFurniture: () => void;
 }
 

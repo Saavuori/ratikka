@@ -48,7 +48,6 @@ export type Selection =
    */
   | { kind: 'scheduledTrip'; placeholder: VehiclePosition }
   | StopSelection
-  | { kind: 'bikeStation'; station: { id: string; name: string } }
   | { kind: 'junction'; junctionId: number };
 
 export function stopSelection(stop: PickedStop): StopSelection {
@@ -96,8 +95,6 @@ export function selectionKey(selection: Selection | null): string | null {
       return `trip:${selection.placeholder.tripId}`;
     case 'stop':
       return `stop:${selection.stop.id}`;
-    case 'bikeStation':
-      return `bikeStation:${selection.station.id}`;
     case 'junction':
       return `junction:${selection.junctionId}`;
   }

@@ -25,7 +25,7 @@ export function installTrafficLightLayers(map: maplibregl.Map, seed: LayerSeed):
     // Traffic-light junction markers (Helsinki open data, CC BY 4.0 — see
   // the "Waiting at traffic lights" popup badge). This is a static
   // reference layer, so it's populated once from `trafficLightsDataRef`
-  // rather than polled like citybike availability.
+  // rather than polled.
   if (!map.getSource(TRAFFIC_LIGHT_SOURCE)) {
     map.addSource(TRAFFIC_LIGHT_SOURCE, {
       type: 'geojson',
@@ -172,29 +172,6 @@ export function installTrafficLightLayers(map: maplibregl.Map, seed: LayerSeed):
         ]
       }
     }, 'trams-circles');
-  }
-
-  // Selected bike station highlight halo layer. Sits directly under the gauge
-  // marker (which is centre-anchored), so the halo is centred on it too.
-  if (!map.getLayer('citybike-selected-highlight')) {
-    map.addLayer({
-      id: 'citybike-selected-highlight',
-      type: 'circle',
-      source: 'citybike',
-      paint: {
-        'circle-radius': [
-          'interpolate',
-          ['exponential', 1.15],
-          ['zoom'],
-          12, 12,
-          22, 42
-        ],
-        'circle-color': 'rgba(253, 203, 110, 0.25)', // glowing gold halo
-        'circle-stroke-color': '#fdcb6e',
-        'circle-stroke-width': 3.5,
-      },
-      filter: ['==', ['to-string', ['coalesce', ['get', 'stationId'], ['get', 'id'], '']], '']
-    }, 'citybike_gauge');
   }
 
   // Next stop highlight symbol layer (follows same highlight practice as selected stop)

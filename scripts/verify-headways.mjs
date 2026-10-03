@@ -137,8 +137,6 @@ const PNG = Buffer.from(
 // catch-all must be registered BEFORE the specific ones.
 await page.route('**/api/v1/**', (r) => r.fulfill({ json: {} }));
 await page.route('**/api/v1/alerts', (r) => r.fulfill({ json: { alerts: [] } }));
-await page.route('**/api/v1/bike-stations', (r) =>
-  r.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
 await page.route('**/api/v1/traffic-lights', (r) =>
   r.fulfill({ json: { type: 'FeatureCollection', features: [] } }));
 await page.route('**/api/v1/route/**', (r) => r.fulfill({ json: {

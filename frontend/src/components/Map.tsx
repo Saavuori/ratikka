@@ -17,9 +17,9 @@ import type { ModeFlags } from '../lib/modes';
 import { bindMapInteractions } from '../map/interactions';
 import { updateStopVisibility } from '../map/overlays/stopVisibility';
 import { NETWORK_COLORS } from '../lib/routeColors';
-import { createOverlayState, bikeAvailabilityChanged, invalidateOverlays } from '../map/overlays/state';
+import { createOverlayState, invalidateOverlays } from '../map/overlays/state';
 import type { OverlayState } from '../map/overlays/state';
-import { updateStopFurniture, updateBikeFurniture } from '../map/overlays/furniture';
+import { updateStopFurniture } from '../map/overlays/furniture';
 import { updateArrivalLabelStops, drawArrivalLabels, updateSignalPriority } from '../map/overlays/labels';
 import type { LabelInputs } from '../map/overlays/labels';
 import { drawRouteGeometries, updateJourney } from '../map/overlays/routes';
@@ -76,12 +76,12 @@ import {
   STATION_CIRCLE_LAYERS,
 } from '../lib/stopCircleStyle';
 import { vehicles3DEnabled } from '../lib/vehicleAnimation';
-import { fetchBikeStations, fetchMapConfig } from '../lib/api';
+import { fetchMapConfig } from '../lib/api';
 import {
   TRAFFIC_LIGHT_SOURCE,
   TRAFFIC_LIGHT_SELECTION_LAYER,
 } from '../lib/trafficLightModels';
-import type { BikeStationsFeatureCollection, TrafficLightFeature } from '../types';
+import type { TrafficLightFeature } from '../types';
 import { useTrafficLights } from '../hooks/useTrafficLights';
 import { useRoutePatterns } from '../hooks/useRoutePatterns';
 
@@ -168,7 +168,6 @@ export const Map: React.FC<MapProps> = ({
     line: selectedLine,
     tripDetails: selectedTripDetails,
     stop: selectedStop,
-    bikeStationId: selectedBikeStationId,
     junctionId: selectedJunctionId,
   } = selection;
   const selectedStopId = selectedStop?.id ?? null;
@@ -185,7 +184,6 @@ export const Map: React.FC<MapProps> = ({
   const {
     onSelectTram,
     onSelectStop,
-    onSelectBikeStation,
     onSelectJunction,
     onDisableFollowing,
     onMapBearingChange,
@@ -227,12 +225,11 @@ export const Map: React.FC<MapProps> = ({
 
   // References to keep state fresh in map event handlers and tick loop without closure issues
   const latestTramsRef = useRef<Record<string, VehiclePosition>>(trams);
-  const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectBikeStation, onSelectJunction, onDisableFollowing, onMapBearingChange, onLocatingChange, onVisibleStopsChange });
+  const callbacksRef = useRef({ onSelectTram, onSelectStop, onSelectJunction, onDisableFollowing, onMapBearingChange, onLocatingChange, onVisibleStopsChange });
   const routeGeometriesRef = useRef<RouteGeometries>(routeGeometries);
   const selectedTramIdRef = useRef<string | null>(selectedTramId);
   const journeyVehicleIdsRef = useRef<string[]>(journeyVehicleIds);
   const selectedLineRef = useRef<string | null>(selectedLine);
-  const selectedBikeStationIdRef = useRef<string | null>(selectedBikeStationId);
   const lineFiltersRef = useRef<string[]>(lineFilters);
   const selectedStopIdRef = useRef<string | null>(selectedStopId);
   const modesRef = useRef<ModeFlags>(modes);
@@ -240,12 +237,11 @@ export const Map: React.FC<MapProps> = ({
   const is3DRef = useRef<boolean>(is3D);
   const always3DVehiclesRef = useRef<boolean>(always3DVehicles);
   useSyncRef(latestTramsRef, trams);
-  useSyncRef(callbacksRef, { onSelectTram, onSelectStop, onSelectBikeStation, onSelectJunction, onDisableFollowing, onMapBearingChange, onLocatingChange, onVisibleStopsChange });
+  useSyncRef(callbacksRef, { onSelectTram, onSelectStop, onSelectJunction, onDisableFollowing, onMapBearingChange, onLocatingChange, onVisibleStopsChange });
   useSyncRef(routeGeometriesRef, routeGeometries);
   useSyncRef(selectedTramIdRef, selectedTramId);
   useSyncRef(journeyVehicleIdsRef, journeyVehicleIds);
   useSyncRef(selectedLineRef, selectedLine);
-  useSyncRef(selectedBikeStationIdRef, selectedBikeStationId);
   useSyncRef(lineFiltersRef, lineFilters);
   useSyncRef(selectedStopIdRef, selectedStopId);
   useSyncRef(modesRef, modes);
@@ -279,18 +275,9 @@ export const Map: React.FC<MapProps> = ({
   const rainFrame = useRainRadar(showRainRadar);
   const rainFrameRef = useRef<string | null>(rainFrame);
   useSyncRef(rainFrameRef, rainFrame);
-  // Latest live city-bike station GeoJSON, refreshed on an interval. Kept in a
-  // ref so a theme/style reload can re-seed the recreated source without
-  // waiting for the next fetch.
-  const bikeStationsDataRef = useRef<BikeStationsFeatureCollection | null>(null);
-  // The 3D racks, tracked the same way as the stop furniture: drawn-or-not, and
-  // a signature of what they were last built for.
-  // Bumped on every availability refresh, so the rack signature notices new
-  // counts arriving under an unmoved view.
   // Latest signalized-junction features (static reference data, shared with
-  // the tram popup via useTrafficLights). Kept in a ref for the same reason
-  // as bikeStationsDataRef: re-seed the source immediately after a
-  // theme/style reload recreates it.
+  // the tram popup via useTrafficLights). Kept in a ref so a theme/style
+  // reload can re-seed the recreated source immediately.
   const trafficLightsDataRef = useRef<TrafficLightFeature[]>([]);
   const trafficLightFeatures = useTrafficLights();
   // Signatures: the junction source is only rebuilt when the set of live
@@ -327,16 +314,6 @@ export const Map: React.FC<MapProps> = ({
         is3D: is3DRef.current,
         always3DVehicles: always3DVehiclesRef.current,
         stopHighlight: animationRef.current.stopHighlight,
-        bikeStations: bikeStationsDataRef.current,
-        selectedBikeStationId: selectedBikeStationIdRef.current,
-      }),
-    bikeFurniture: (map: maplibregl.Map, theme: MapTheme) =>
-      updateBikeFurniture(map, theme, overlayRef.current, {
-        is3D: is3DRef.current,
-        always3DVehicles: always3DVehiclesRef.current,
-        stopHighlight: animationRef.current.stopHighlight,
-        bikeStations: bikeStationsDataRef.current,
-        selectedBikeStationId: selectedBikeStationIdRef.current,
       }),
     arrivalLabelStops: (map: maplibregl.Map) =>
       updateArrivalLabelStops(map, overlayRef.current, labelInputs(), callbacksRef.current.onVisibleStopsChange),
@@ -467,7 +444,6 @@ export const Map: React.FC<MapProps> = ({
       mmlKey: mmlKeyRef.current,
       journeyVehicleIds: journeyVehicleIdsRef.current,
       selectedVehicleId: selectedTramIdRef.current,
-      bikeStations: bikeStationsDataRef.current,
       trafficLights: trafficLightsDataRef.current,
       isCurrent: (candidate) => mapRef.current === candidate,
     });
@@ -515,7 +491,6 @@ export const Map: React.FC<MapProps> = ({
     // which came back off the recreated source.
     invalidateOverlays(overlayRef.current);
     overlaysRef.current.stopFurniture(map, mapThemeRef.current);
-    overlaysRef.current.bikeFurniture(map, mapThemeRef.current);
     overlaysRef.current.signalPriority(map);
     overlaysRef.current.arrivalLabelStops(map);
 
@@ -538,11 +513,9 @@ export const Map: React.FC<MapProps> = ({
       {
         vehicles: () => latestTramsRef.current,
         stopFurnitureMeta: () => overlayRef.current.stopFurniture.meta,
-        bikeStations: () => bikeStationsDataRef.current,
       },
       (settled) => {
         overlaysRef.current.stopFurniture(settled, mapThemeRef.current);
-        overlaysRef.current.bikeFurniture(settled, mapThemeRef.current);
         overlaysRef.current.arrivalLabelStops(settled);
       },
     );
@@ -553,7 +526,7 @@ export const Map: React.FC<MapProps> = ({
     // ramp built for a style whose stops stay discs all the way in — it puts a
     // one-pixel dot on the map across the whole band where we draw discs, which
     // is a stop that is there but cannot be seen. The ramp below is scoped to
-    // that band, so a stop reads as a marker next to the city-bike gauges, and
+    // that band, so a stop reads as a marker across it, and
     // the discs still fade out as the sign boards take over at 15.5.
     const applyStopCircleStyle = (layerId: string, radius: typeof STOP_CIRCLE_RADIUS, minzoom: number) => {
       if (!map.getLayer(layerId)) return;
@@ -699,7 +672,6 @@ export const Map: React.FC<MapProps> = ({
     const stopAnimation = startAnimationLoop(map, animationRef.current, readFrame, {
       rebuildFurniture: () => {
         overlaysRef.current.stopFurniture(map, mapThemeRef.current);
-        overlaysRef.current.bikeFurniture(map, mapThemeRef.current);
       },
     });
 
@@ -728,44 +700,9 @@ export const Map: React.FC<MapProps> = ({
     map.setStyle(basemapStyleUrl(mapTheme));
   }, [mapTheme]);
 
-  // Poll live city-bike availability and feed it into the 'citybike' source.
-  // Cached ~20s server-side, so a 30s client refresh keeps counts fresh without
-  // hammering the upstream API. The latest payload is stashed in a ref so a
-  // theme/style reload can re-seed the recreated source right away.
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        const data = await fetchBikeStations();
-        if (cancelled) return;
-        bikeStationsDataRef.current = data;
-        const map = mapRef.current;
-        const src = map?.getSource('citybike') as maplibregl.GeoJSONSource | undefined;
-        if (src && typeof src.setData === 'function') {
-          src.setData(data as unknown as FeatureCollection);
-        }
-        // New counts mean new racks, even if nobody has touched the map.
-        bikeAvailabilityChanged(overlayRef.current);
-        if (map && map.getStyle()) overlaysRef.current.bikeFurniture(map, mapThemeRef.current);
-      } catch (err) {
-        // Transient upstream/network failures just leave the last good data in
-        // place; the next tick retries.
-        console.error('Failed to refresh bike station availability', err);
-      }
-    };
-
-    load();
-    const timer = setInterval(load, 30000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, []);
-
   // Feed signalized-junction locations (from the shared useTrafficLights
   // hook) into the 'traffic-lights' source once they arrive. This is static
-  // reference data with nothing to poll for, unlike bike availability above.
+  // reference data with nothing to poll for.
   useEffect(() => {
     if (trafficLightFeatures.length === 0) return;
     trafficLightsDataRef.current = trafficLightFeatures;
@@ -870,32 +807,6 @@ export const Map: React.FC<MapProps> = ({
     });
   }, [selectedStopId, selectedStopCoords, selectedStopMode, selectedStopIsTrunk]);
 
-  // Update selected bike station highlight filter
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !map.getStyle()) return;
-
-    if (map.getLayer('citybike-selected-highlight')) {
-      const rawId = selectedBikeStationId || '';
-      if (rawId === '') {
-        map.setFilter('citybike-selected-highlight', ['==', ['to-string', ['coalesce', ['get', 'stationId'], ['get', 'id'], '']], '']);
-      } else {
-        map.setFilter('citybike-selected-highlight', [
-          'match',
-          ['to-string', ['coalesce', ['get', 'stationId'], ['get', 'id'], '']],
-          [rawId],
-          true,
-          false
-        ]);
-      }
-    }
-    // The selected station's rack is drawn in the highlight colour, so it has
-    // to be rebuilt when the selection moves.
-    overlayRef.current.bikeFurniture.sig = '';
-    overlaysRef.current.bikeFurniture(map, mapThemeRef.current);
-  }, [selectedBikeStationId]);
-
-
   // Center, orient and tilt map on selected tram
   useEffect(() => {
     const map = mapRef.current;
@@ -962,8 +873,6 @@ export const Map: React.FC<MapProps> = ({
       updateVehicle3DMode(map, vehicles3DEnabled(is3D, always3DVehicles));
       overlayRef.current.stopFurniture.sig = '';
       overlaysRef.current.stopFurniture(map, mapTheme);
-      overlayRef.current.bikeFurniture.sig = '';
-      overlaysRef.current.bikeFurniture(map, mapTheme);
     }
   }, [is3D, always3DVehicles, mapTheme]);
 

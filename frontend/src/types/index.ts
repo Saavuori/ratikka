@@ -237,36 +237,6 @@ export interface MapConfigResponse {
   mml_api_key?: string;
 }
 
-export interface BikeStationDetailsResponse {
-  stationId: string;
-  name: string;
-  allowPickup: boolean;
-  allowDropoff: boolean;
-  bikesAvailable: number;
-  spacesAvailable: number;
-}
-
-export interface BikeStationFeature {
-  type: 'Feature';
-  geometry: {
-    type: 'Point';
-    coordinates: [number, number]; // [lon, lat]
-  };
-  properties: {
-    stationId: string;
-    name: string;
-    bikesAvailable: number;
-    spacesAvailable: number;
-    allowPickup: boolean;
-    allowDropoff: boolean;
-  };
-}
-
-export interface BikeStationsFeatureCollection {
-  type: 'FeatureCollection';
-  features: BikeStationFeature[];
-}
-
 export interface TrafficLightFeature {
   type: 'Feature';
   geometry: {

@@ -1,5 +1,3 @@
-import { BIKE_3D_MIN_ZOOM, BIKE_STATION_LIMIT, BIKE_STATION_SOURCE, bikeStationCollection } from '../../lib/bikeStationModels';
-import type { BikeStationState } from '../../lib/bikeStationModels';
 import { STOP_3D_MIN_ZOOM, STOP_FURNITURE_LIMIT, STOP_FURNITURE_SOURCE, longestEdgeBearing, nearestLineBearing, pointInRing, stopFurnitureCollection } from '../../lib/stopModels';
 import type { StopFurnitureState } from '../../lib/stopModels';
 import { PLATFORM_FILL_LAYER } from '../../lib/stopPlatforms';
@@ -7,7 +5,6 @@ import { vehicles3DEnabled } from '../../lib/vehicleAnimation';
 import type * as maplibregl from 'maplibre-gl';
 import type { MapTheme } from '../../lib/stopPlatforms';
 import type { OverlayState } from './state';
-import type { BikeStationsFeatureCollection } from '../../types';
 
 /** What the furniture is drawn for, as of now. */
 export interface FurnitureInputs {
@@ -20,8 +17,6 @@ export interface FurnitureInputs {
     boarding: boolean;
     coords: [number, number] | null;
   };
-  bikeStations: BikeStationsFeatureCollection | null;
-  selectedBikeStationId: string | null;
 }
 
 export function updateStopFurniture(
@@ -144,93 +139,4 @@ export function updateStopFurniture(
   state.stopFurniture.meta = meta;
   source.setData(stopFurnitureCollection(states, theme));
   state.stopFurniture.drawn = true;
-}
-
-// The city-bike counterpart to `updateStopFurniture`: turn the stations the
-// gauge layer is drawing into racks of real-metre boxes. Same bookkeeping —
-// built from what is on screen, capped, and skipped entirely when nothing
-// that matters has moved.
-export function updateBikeFurniture(
-  map: maplibregl.Map,
-  theme: MapTheme,
-  state: OverlayState,
-  live: FurnitureInputs,
-) {
-  const source = map.getSource(BIKE_STATION_SOURCE) as maplibregl.GeoJSONSource | undefined;
-  if (!source) return;
-  const empty = { type: 'FeatureCollection' as const, features: [] };
-
-  const active =
-    vehicles3DEnabled(live.is3D, live.always3DVehicles) &&
-    map.getZoom() >= BIKE_3D_MIN_ZOOM &&
-    map.getLayer('citybike_gauge') !== undefined;
-  if (!active) {
-    if (state.bikeFurniture.drawn) {
-      source.setData(empty);
-      state.bikeFurniture.drawn = false;
-      state.bikeFurniture.sig = '';
-    }
-    return;
-  }
-
-  const centre = map.getCenter();
-  const signature = [
-    theme,
-    centre.lng.toFixed(4),
-    centre.lat.toFixed(4),
-    map.getZoom().toFixed(2),
-    live.selectedBikeStationId ?? '',
-    // Availability is what the rack is made of, so a refresh has to rebuild
-    // it even when the view has not moved.
-    String(live.bikeStations?.features.length ?? 0),
-    state.bikeFurniture.availabilityStamp,
-  ].join('|');
-  if (signature === state.bikeFurniture.sig) return;
-  state.bikeFurniture.sig = signature;
-
-  // Route lines give the rack its orientation where one runs past: stations
-  // sit along streets, and the tram or bus line in the street is the only
-  // thing on this map that knows which way the street goes.
-  const routeLines: [number, number][][] = [];
-  if (map.getLayer('route-lines-layer')) {
-    for (const feature of map.queryRenderedFeatures({ layers: ['route-lines-layer'] })) {
-      const geometry = feature.geometry;
-      if (geometry.type === 'LineString') {
-        routeLines.push(geometry.coordinates as [number, number][]);
-      } else if (geometry.type === 'MultiLineString') {
-        for (const line of geometry.coordinates) routeLines.push(line as [number, number][]);
-      }
-    }
-  }
-
-  const selectedId = live.selectedBikeStationId ?? null;
-  const seen = new Set<string>();
-  const stations: Array<{ state: BikeStationState; distance: number }> = [];
-  for (const feature of map.queryRenderedFeatures({ layers: ['citybike_gauge'] })) {
-    if (feature.geometry.type !== 'Point') continue;
-    const properties = feature.properties ?? {};
-    const stationId = String(properties.stationId ?? properties.id ?? '');
-    if (!stationId || seen.has(stationId)) continue;
-    seen.add(stationId);
-    const [lng, lat] = feature.geometry.coordinates as [number, number];
-    stations.push({
-      state: {
-        stationId,
-        lng,
-        lat,
-        bikesAvailable: Number(properties.bikesAvailable ?? 0),
-        spacesAvailable: Number(properties.spacesAvailable ?? 0),
-        bearing: nearestLineBearing([lng, lat], routeLines, 40),
-        highlighted: selectedId !== null && stationId === selectedId,
-      },
-      distance: Math.hypot(lng - centre.lng, lat - centre.lat),
-    });
-  }
-
-  stations.sort((a, b) => a.distance - b.distance);
-  source.setData(bikeStationCollection(
-    stations.slice(0, BIKE_STATION_LIMIT).map((s) => s.state),
-    theme,
-  ));
-  state.bikeFurniture.drawn = true;
 }
