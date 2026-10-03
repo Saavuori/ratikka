@@ -2003,10 +2003,40 @@ body {
 
 .mode-toggles {
   right: 16px;
+  /* The fold button comes first in the markup but sits on the outer edge, so
+     it stays in the corner whether the row is open or folded. */
+  flex-direction: row-reverse;
 }
 
 .view-toggles {
   left: 16px;
+}
+
+.corner-toggles__chips {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+}
+
+.corner-toggles__chips[hidden] {
+  display: none;
+}
+
+/* The fold button is quieter than the switches beside it while the row is
+   open, so it does not read as one more setting. */
+.corner-toggle.corner-toggles__fold {
+  background: transparent;
+  border-color: transparent;
+}
+
+.corner-toggles--collapsed .corner-toggle.corner-toggles__fold {
+  background: var(--bg-button);
+  border-color: var(--border-button);
+}
+
+.corner-toggle.corner-toggles__fold:hover {
+  border-color: var(--border-button-hover);
+  background: var(--bg-button-hover);
 }
 
 .corner-toggles:hover,
@@ -2068,6 +2098,19 @@ body {
   }
   .view-toggles {
     left: 12px;
+  }
+  .corner-toggles__chips {
+    flex-direction: column;
+  }
+  /* Stacked, the row folds upwards into its corner. */
+  .corner-toggles__fold svg {
+    transform: rotate(90deg);
+  }
+  .mode-toggles .corner-toggles__fold svg {
+    transform: rotate(-90deg);
+  }
+  .corner-toggles--collapsed .corner-toggles__fold svg {
+    transform: none;
   }
 }
 
