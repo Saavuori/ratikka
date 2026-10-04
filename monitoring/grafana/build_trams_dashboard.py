@@ -396,6 +396,47 @@ for p in panels:
     if p["type"] == "timeseries" and any(VEH in t["query"] for t in p["targets"]):
         p["fieldConfig"]["defaults"]["links"] = [replay_link("Watch on the map", "${__field.labels.veh}")]
 
+# --- Speed along the route -------------------------------------------------
+# Every trip of one line and direction, speed against how far into the journey
+# it was. HFP's odometer counts from the start of each journey, so trips of
+# the same route share a distance axis and overlay: the same stop is a dip to
+# zero at the same distance on every line, and a slow run shows as a lower
+# line rather than as a later timestamp.
+#
+# Grafana's Trend panel draws one series per field against a numeric x, but
+# takes a single frame. So the readings are split into a frame per trip, named
+# by tram and scheduled departure, and outer-joined back together on distance;
+# spanNulls bridges the gaps the join leaves between one trip's readings.
+# Averaged over 5 s to keep a few hours of a line to a few thousand rows.
+PROFILE = '"desi" = \'$pline\' AND "dir" = \'$pdir\''
+panels.append(row("Speed along the route", y)); y += 1
+panels.append(panel(
+    "trend", "Speed profile", 0, y, 24, 14,
+    [target(f'SELECT max("odometer") / 1000 AS "distance", mean("speed") * 3.6 AS "speed", '
+            f'last("start") AS "start" FROM {M} WHERE $timeFilter AND {PROFILE} AND {GPS} '
+            f'GROUP BY time(5s), "veh" fill(none)', fmt="table")],
+    "Speed against distance into the journey: one line per trip of the line and direction picked "
+    "above (Profile line, Direction), labelled with its tram and scheduled departure. Dips to zero are "
+    "stops, signals and queues. Click a trip in the legend to show only it; shift-click to add others. "
+    "Keep the time range within a day: a tram running the same departure on two days would join them.",
+    "velocitykmh",
+    defaults={"custom": {"lineWidth": 1, "fillOpacity": 0, "showPoints": "never", "spanNulls": True,
+                         "drawStyle": "line"}, "min": 0},
+    overrides=[{"matcher": {"id": "byName", "options": "distance"},
+                "properties": [{"id": "unit", "value": "lengthkm"},
+                               {"id": "displayName", "value": "Distance into the journey"}]}],
+    options={"xField": "distance",
+             "legend": {"showLegend": True, "displayMode": "list", "placement": "right"},
+             "tooltip": {"mode": "single", "sort": "none"}},
+    transformations=[
+        {"id": "organize", "options": {"excludeByName": {"Time": True}}},
+        {"id": "partitionByValues", "options": {"fields": ["start", "veh"], "keepFields": False,
+                                                "naming": {"asLabels": False}}},
+        {"id": "joinByField", "options": {"byField": "distance", "mode": "outer"}},
+        {"id": "sortBy", "options": {"sort": [{"field": "distance"}]}},
+    ]))
+y += 14
+
 
 def query_var(name, label, query, multi=True, include_all=True):
     return {
@@ -433,6 +474,13 @@ dashboard = {
         # No "All": a hundred trams on one graph says nothing. Grafana starts
         # on the first tram instead.
         query_var("veh", "Tram", f'SHOW TAG VALUES FROM {M} WITH KEY = "veh" WHERE {LINE}', include_all=False),
+        # The speed profile is one route at a time: two lines' trips share no
+        # distance axis.
+        dict(query_var("pline", "Profile line", f'SHOW TAG VALUES FROM {M} WITH KEY = "desi"',
+                       multi=False, include_all=False), current={"text": "4", "value": "4"}),
+        {"name": "pdir", "label": "Direction", "type": "custom", "query": "1,2", "multi": False,
+         "includeAll": False, "current": {"text": "1", "value": "1"}, "hide": 0,
+         "options": [{"text": "1", "value": "1", "selected": True}, {"text": "2", "value": "2", "selected": False}]},
     ]},
     "panels": panels,
 }
