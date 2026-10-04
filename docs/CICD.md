@@ -30,7 +30,7 @@ graph TD
     Build --> GHCR["ghcr.io/saavuori/ratikka<br/>:latest :vX.Y.Z :sha"]
 
     GHCR -->|update.sh cron, every 5 min| Host["Oracle host — podman<br/>pull :latest, down/up"]
-    Host --> Live["https://hsl-live.duckdns.org/"]
+    Host --> Live["https://hsl.saavuori.live/"]
 
     Merge -->|deploy-pages.yml<br/>only if CHANGELOG.md changed| Pages["GitHub Pages changelog"]
 ```
@@ -203,7 +203,7 @@ and surfaced at `GET /api/v1/version`, which the frontend `VersionBadge` renders
 That endpoint is the quickest way to confirm what is actually running:
 
 ```bash
-curl -s https://hsl-live.duckdns.org/api/v1/version
+curl -s https://hsl.saavuori.live/api/v1/version
 ```
 
 The image is a three-stage build: Node builds the frontend → the assets are
@@ -232,6 +232,11 @@ The host also runs sibling apps (tieliikenne, bensa, railway) behind the single
 Caddy container owned by the ratikka stack. See memory
 `oracle-host-multi-app-deploy` for the layout, and [MONITORING.md](MONITORING.md)
 for the Alloy → Grafana Cloud metrics path.
+
+The app answers on two hostnames, each a block in the server's
+`~/ratikka/Caddyfile` proxying to `ratikka-backend:8080`:
+`hsl.saavuori.live` (primary; A record at GoDaddy → `130.61.41.177`) and the
+older `hsl-live.duckdns.org`, kept so existing links still work.
 
 ---
 
@@ -326,7 +331,7 @@ Renovate it needs no explicit rule to leave it alone.
 4. **Merge.** The `chore(deps):` commits cut a patch; the tag, build and deploy
    follow automatically.
 5. **The host picks it up** within ~5 minutes. Confirm with
-   `curl -s https://hsl-live.duckdns.org/api/v1/version`.
+   `curl -s https://hsl.saavuori.live/api/v1/version`.
 6. **Note it in `CHANGELOG.md`** with the next hand-written entry, if the bump
    is worth a reader knowing about.
 
