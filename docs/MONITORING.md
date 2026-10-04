@@ -211,7 +211,7 @@ It has six sections:
 - **Top speeds:** each tram's fastest reading in the time range, and the top speed by line.
 - **Selected trams:** speed, delay, headway and distance for the trams picked in the selector.
 
-**Links into the app.** A tram in the *Fastest trams* table, or any point on a *Selected trams* graph, links to the live map's timelapse at that moment: `https://hsl-live.duckdns.org/?at=<unix seconds or ms>&veh=<tram>`. The map opens history 20 seconds before the moment, picks the tram, and follows it with the camera, whatever line filter the viewer had set. The archive keeps a week (`REPLAY_RETENTION_DAYS`), so a link to anything older opens on the oldest history there is.
+**Links into the app.** A tram in the *Fastest trams* table, or any point on a *Selected trams* graph, links to the live map's timelapse at that moment: `https://hsl.saavuori.live/?at=<unix seconds or ms>&veh=<tram>`. The map opens history 20 seconds before the moment, picks the tram, and follows it with the camera, whatever line filter the viewer had set. The archive keeps a week (`REPLAY_RETENTION_DAYS`), so a link to anything older opens on the oldest history there is.
 
 **Sharing.** Grafana's public ("shared externally") dashboards do not support template variables, so the generator also writes [`trams-dashboard-shareable.json`](../monitoring/grafana/trams-dashboard-shareable.json). It is the same dashboard showing every line, without the *Selected trams* section, which depends on the tram picker. Share that one.
 

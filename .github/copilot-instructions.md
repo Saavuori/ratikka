@@ -10,7 +10,7 @@ broker, is cached in Redis, and is streamed to a React frontend over a WebSocket
 The Go backend also proxies Digitransit's map, geocoding, and routing APIs so the
 Digitransit subscription key never reaches the browser.
 
-- Live app: https://hsl-live.duckdns.org/
+- Live app: https://hsl.saavuori.live/
 - Changelog (GitHub Pages): https://saavuori.github.io/ratikka/
 - Deploy host runs behind a shared Caddy on an Oracle box — see memory `oracle-host-multi-app-deploy`.
 

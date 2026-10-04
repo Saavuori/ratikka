@@ -1703,7 +1703,7 @@
                 "value": [
                   {
                     "title": "Watch on the map",
-                    "url": "https://hsl-live.duckdns.org/?at=${__value.time}&veh=${__data.fields.veh}",
+                    "url": "https://hsl.saavuori.live/?at=${__value.time}&veh=${__data.fields.veh}",
                     "targetBlank": true
                   }
                 ]

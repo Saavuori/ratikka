@@ -27,7 +27,7 @@ GPS = """"loc_source" = 'GPS'"""
 # The live map. Its timelapse takes a moment and a tram (?at=…&veh=…, see
 # frontend/src/lib/replayLink.ts) and opens history there, with that tram
 # picked and followed.
-APP_URL = "https://hsl-live.duckdns.org/"
+APP_URL = "https://hsl.saavuori.live/"
 
 
 def replay_link(title, veh):
