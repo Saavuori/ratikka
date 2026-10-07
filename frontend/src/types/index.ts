@@ -365,6 +365,13 @@ export interface JourneyMonitorResponse {
   fetchedAt?: number;
 }
 
+/**
+ * How the rider gets about outside transit: to the first stop, between rides
+ * and on to the destination. A bike is the rider's own, carried aboard where
+ * the trip allows it — not a city bike.
+ */
+export type JourneyStreetMode = 'walk' | 'bike';
+
 // A resolved point used as journey origin/destination.
 export interface JourneyEndpoint {
   name: string;

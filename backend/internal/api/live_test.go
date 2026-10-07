@@ -218,10 +218,11 @@ func TestLivePlanIdentityDateAndCache(t *testing.T) {
 		path + "&modes=BUS",
 		path + "&numItineraries=6",
 		base,
+		path + "&street=bike",
 	} {
 		getLive(t, router, p, 200, nil)
 	}
-	if len(requests) != 7 {
+	if len(requests) != 8 {
 		t.Fatalf("distinct planning parameters must not share caches: %d fetches", len(requests))
 	}
 	if requests[0].Variables["date"] != "2026-09-05" || requests[0].Variables["time"] != "23:50" ||
@@ -231,6 +232,23 @@ func TestLivePlanIdentityDateAndCache(t *testing.T) {
 	if _, present := requests[6].Variables["date"]; present {
 		t.Fatal("depart-now plan unexpectedly fixed to a date")
 	}
+	if street := firstPlanMode(requests[0]); street != "WALK" {
+		t.Fatalf("plan without street must walk, got %q", street)
+	}
+	if street := firstPlanMode(requests[7]); street != "BICYCLE" {
+		t.Fatalf("street=bike not forwarded as BICYCLE, got %q", street)
+	}
+}
+
+// firstPlanMode is the street mode a forwarded plan query leads with.
+func firstPlanMode(req graphQLRequest) string {
+	modes, _ := req.Variables["modes"].([]interface{})
+	if len(modes) == 0 {
+		return ""
+	}
+	first, _ := modes[0].(map[string]interface{})
+	mode, _ := first["mode"].(string)
+	return mode
 }
 
 func TestLivePlanValidation(t *testing.T) {

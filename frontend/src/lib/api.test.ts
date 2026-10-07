@@ -28,6 +28,14 @@ describe('live transit API requests', () => {
     const url = new URL(fetcher.mock.calls[0][0], 'https://example.test');
     expect(Object.fromEntries(url.searchParams)).toEqual({ fromLat: '60.1', fromLon: '24.9', toLat: '60.2', toLon: '25' });
   });
+  it('asks for a bike journey only when the rider is cycling', async () => {
+    const fetcher = mockFetch();
+    const signal = new AbortController().signal;
+    await fetchJourneyPlan({ name: 'A', lat: 60.1, lon: 24.9 }, { name: 'B', lat: 60.2, lon: 25 }, 'bike', signal);
+    const url = new URL(fetcher.mock.calls[0][0], 'https://example.test');
+    expect(url.searchParams.get('street')).toBe('bike');
+    expect(fetcher.mock.calls[0][1].signal).toBe(signal);
+  });
   it('encodes opaque leg identities individually and keeps their order', async () => {
     const fetcher = mockFetch();
     const signal = new AbortController().signal;

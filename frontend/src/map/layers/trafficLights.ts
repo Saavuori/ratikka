@@ -236,13 +236,30 @@ export function installTrafficLightLayers(map: maplibregl.Map, seed: LayerSeed):
       id: 'journey-walk-layer',
       type: 'line',
       source: 'journey-lines',
-      filter: ['!', ['get', 'transit']] as maplibregl.FilterSpecification,
+      filter: ['all', ['!', ['get', 'transit']], ['!', ['get', 'bike']]] as maplibregl.FilterSpecification,
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: {
         'line-color': '#94a3b8',
         'line-width': 4,
         'line-opacity': 0.85,
         'line-dasharray': [1.5, 1.5],
+      },
+    }, 'trams-circles');
+  }
+
+  // Bike legs: the same grey as a walk, drawn solid, so riding and walking
+  // read apart at a glance while both stay quieter than the rides.
+  if (!map.getLayer('journey-bike-layer')) {
+    map.addLayer({
+      id: 'journey-bike-layer',
+      type: 'line',
+      source: 'journey-lines',
+      filter: ['get', 'bike'] as maplibregl.FilterSpecification,
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#94a3b8',
+        'line-width': 4,
+        'line-opacity': 0.9,
       },
     }, 'trams-circles');
   }

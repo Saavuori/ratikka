@@ -1,11 +1,12 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Search, MapPin, Navigation, X, LocateFixed, ArrowRight, Footprints, Train, Bus, TrainFront, Ship, ArrowUpDown, Loader2, ChevronLeft, ChevronRight, Minimize2 } from 'lucide-react';
-import type { Alert, VehiclePosition, GeocodeResult, JourneyItinerary, JourneyLeg, JourneyEndpoint } from '../types';
+import { Search, MapPin, Navigation, X, LocateFixed, ArrowRight, Bike, Footprints, Train, Bus, TrainFront, Ship, ArrowUpDown, Loader2, ChevronLeft, ChevronRight, Minimize2 } from 'lucide-react';
+import type { Alert, VehiclePosition, GeocodeResult, JourneyItinerary, JourneyLeg, JourneyEndpoint, JourneyStreetMode } from '../types';
 import { fetchGeocode, fetchJourneyPlan, fetchJourneyMonitor } from '../lib/api';
 import { useGeolocation } from '../hooks/useGeolocation';
+import { usePersistedState } from '../hooks/usePersisted';
 import { findJourneyVehicle } from '../lib/journeyVehicles';
-import { chooseJourneyItinerary, findRefreshedItinerary, helsinkiDateTime, isJourneySourceStale, itineraryIdentity, journeyFetchedAt, journeyLegStatus, mergeMonitoredLegs, monitoredLegIds, nextOriginLookupGeneration, relevantJourneyAlerts, transferEstimates, JOURNEY_REFRESH_MS } from '../lib/journeyMonitor';
+import { chooseJourneyItinerary, findRefreshedItinerary, helsinkiDateTime, isBikeLeg, isJourneySourceStale, itineraryIdentity, journeyFetchedAt, journeyLegStatus, mergeMonitoredLegs, monitoredLegIds, nextOriginLookupGeneration, relevantJourneyAlerts, transferEstimates, JOURNEY_REFRESH_MS } from '../lib/journeyMonitor';
 import './JourneyMonitor.css';
 
 export interface JourneySelection {
@@ -29,12 +30,21 @@ interface JourneySearchProps {
 
 const CURRENT_LOCATION_LABEL = 'Current location';
 
+const STREET_MODES: { mode: JourneyStreetMode; label: string; icon: React.ReactNode }[] = [
+  { mode: 'walk', label: 'Walk', icon: <Footprints size={14} /> },
+  { mode: 'bike', label: 'Bike', icon: <Bike size={14} /> },
+];
+
 function formatDuration(seconds: number): string {
   const mins = Math.round(seconds / 60);
   if (mins < 60) return `${mins} min`;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
+function formatDistance(metres: number): string {
+  return metres < 1000 ? `${Math.round(metres)} m` : `${(metres / 1000).toFixed(1)} km`;
 }
 
 function formatClock(epochMs: number): string {
@@ -45,6 +55,8 @@ function legModeIcon(mode: string, size = 12) {
   switch (mode.toUpperCase()) {
     case 'WALK':
       return <Footprints size={size} />;
+    case 'BICYCLE':
+      return <Bike size={size} />;
     case 'BUS':
       return <Bus size={size} />;
     case 'RAIL':
@@ -89,6 +101,14 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   const [to, setTo] = useState<JourneyEndpoint | null>(null);
   const [fromText, setFromText] = useState('');
   const [toText, setToText] = useState('');
+  // Walking or the rider's own bike, to the stops and between them. Remembered:
+  // someone who cycles tends to cycle every time.
+  const [streetMode, setStreetMode] = usePersistedState<JourneyStreetMode>(
+    'journeyStreetMode',
+    'walk',
+    (raw) => (raw === 'walk' || raw === 'bike' ? raw : null),
+    (value) => value
+  );
 
   const [activeField, setActiveField] = useState<'from' | 'to' | null>(null);
   const [suggestions, setSuggestions] = useState<GeocodeResult[]>([]);
@@ -193,7 +213,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
   }, [activeQuery, activeField, coords, open, collapsed]);
 
   // Searching alternatives never replaces an existing selection.
-  const runPlan = useCallback((f: JourneyEndpoint, t: JourneyEndpoint) => {
+  const runPlan = useCallback((f: JourneyEndpoint, t: JourneyEndpoint, street: JourneyStreetMode) => {
     planAbortRef.current?.abort();
     const generation = ++generationRef.current;
     const controller = new AbortController();
@@ -201,7 +221,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     setPlanLoading(true);
     setAlternativesError(null);
     // No date/time: the planner is a live board, so every plan leaves now.
-    fetchJourneyPlan(f, t, controller.signal)
+    fetchJourneyPlan(f, t, street, controller.signal)
       .then((res) => {
         if (controller.signal.aborted || generation !== generationRef.current) return;
         const list = res.itineraries || [];
@@ -240,7 +260,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
       });
   }, []);
 
-  const runMonitor = useCallback((f: JourneyEndpoint, t: JourneyEndpoint) => {
+  const runMonitor = useCallback((f: JourneyEndpoint, t: JourneyEndpoint, street: JourneyStreetMode) => {
     const selected = selectedRef.current;
     if (!selected) return;
     monitorAbortRef.current?.abort();
@@ -254,7 +274,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         ...mergeMonitoredLegs(selected, response.legs),
         fetchedAt: response.fetchedAt,
       }))
-      : fetchJourneyPlan(f, t, controller.signal).then(response => {
+      : fetchJourneyPlan(f, t, street, controller.signal).then(response => {
         const match = findRefreshedItinerary(selected, response.itineraries);
         return {
           itinerary: match ?? selected,
@@ -296,9 +316,9 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
     setAlternativesError(null);
     setPlanLoading(false);
     selectionCallback.current(null);
-    if (open && from && to) runPlan(from, to);
+    if (open && from && to) runPlan(from, to, streetMode);
     return cancelPending;
-  }, [from, to, open, runPlan, cancelPending]);
+  }, [from, to, open, streetMode, runPlan, cancelPending]);
 
   useEffect(() => {
     if (!open || !selectedItinerary) return;
@@ -308,10 +328,10 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
 
   useEffect(() => {
     if (!open || !selectedItinerary || !from || !to) return;
-    const timer = setInterval(() => runMonitor(from, to), JOURNEY_REFRESH_MS);
+    const timer = setInterval(() => runMonitor(from, to, streetMode), JOURNEY_REFRESH_MS);
     refreshTimerRef.current = timer;
     return () => clearInterval(timer);
-  }, [open, selectedItinerary, from, to, runMonitor]);
+  }, [open, selectedItinerary, from, to, streetMode, runMonitor]);
 
   const handlePickSuggestion = (field: 'from' | 'to', s: GeocodeResult) => {
     originGenerationRef.current = nextOriginLookupGeneration(originGenerationRef.current, field);
@@ -431,7 +451,8 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
                 style={{
                   backgroundColor: leg.transit ? legColor(leg) : 'transparent',
                   color: leg.transit ? '#fff' : 'var(--text-secondary)',
-                  border: leg.transit ? 'none' : '1px dashed var(--border-button-hover)',
+                  // Dashed for a walk and solid for a ride, as on the map.
+                  border: leg.transit ? 'none' : `1px ${isBikeLeg(leg) ? 'solid' : 'dashed'} var(--border-button-hover)`,
                 }}
               >
                 {legModeIcon(leg.mode)}
@@ -600,6 +621,20 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
         </button>
       </div>
 
+      <div className="journey-street-modes" role="group" aria-label="To and between stops">
+        {STREET_MODES.map(({ mode, label, icon }) => (
+          <button
+            key={mode}
+            type="button"
+            className="journey-street-mode"
+            aria-pressed={streetMode === mode}
+            onClick={() => setStreetMode(mode)}
+          >
+            {icon} {label}
+          </button>
+        ))}
+      </div>
+
       {/* Autocomplete suggestions */}
       {showSuggestions && (
         <div className="journey-suggestions">
@@ -653,7 +688,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
           {from && to && (
             <div className="journey-alternatives-head">
               <h3 className="journey-alternatives-title">{itineraries.length > 0 ? 'Routes' : ''}</h3>
-              <button className="journey-refresh" disabled={planLoading} onClick={() => runPlan(from, to)}>
+              <button className="journey-refresh" disabled={planLoading} onClick={() => runPlan(from, to, streetMode)}>
                 Find alternatives
               </button>
             </div>
@@ -673,10 +708,15 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
                     <span className="journey-itinerary-duration">{formatDuration(it.duration)}</span>
                   </div>
                   {renderLegChips(it)}
-                  {transitLegs.length > 0 && (
+                  {transitLegs.length > 0 ? (
                     <div className="journey-itinerary-meta">
                       Board at <strong>{transitLegs[0].from.name}</strong>
                       {it.transfers > 0 && ` · ${it.transfers} transfer${it.transfers > 1 ? 's' : ''}`}
+                    </div>
+                  ) : (
+                    // No ride to board: how far it is is what is left to say.
+                    <div className="journey-itinerary-meta">
+                      {it.legs.some(isBikeLeg) ? 'Cycle' : 'Walk'} <strong>{formatDistance(it.legs.reduce((sum, leg) => sum + leg.distance, 0))}</strong> all the way
                     </div>
                   )}
                 </button>
@@ -693,7 +733,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
                 {(transfers.some(t => t.risk !== 'normal') || journeyAlerts.length > 0) && <span className="warning"> · Warnings</span>}
               </summary>
               <p>Automatic refresh every 20s. Predictions and transfer margins are estimates, not guaranteed connections.</p>
-              <button className="journey-refresh" disabled={monitorLoading} onClick={() => runMonitor(from, to)}>
+              <button className="journey-refresh" disabled={monitorLoading} onClick={() => runMonitor(from, to, streetMode)}>
                 Refresh predictions
               </button>
               {selectedItinerary.legs.map((leg, index) => {
@@ -701,7 +741,7 @@ export const JourneySearch: React.FC<JourneySearchProps> = ({ onSelectionChange,
                   ? findJourneyVehicle(leg, vehicles, now) : undefined;
                 return (
                   <div className="journey-monitored-leg" key={index}>
-                    <strong>{leg.transit ? `${leg.route?.shortName ?? leg.mode} ${leg.headsign ?? ''}` : 'Walk'}</strong>
+                    <strong>{leg.transit ? `${leg.route?.shortName ?? leg.mode} ${leg.headsign ?? ''}` : isBikeLeg(leg) ? 'Bike' : 'Walk'}</strong>
                     {leg.transit && <span className="journey-prediction-status">{journeyLegStatus(leg, stale)}{stale && journeyLegStatus(leg, false) === 'Cancelled' ? ' · Stale' : ''}</span>}
                     <div>{leg.transit ? 'Board' : 'Leave'} {leg.from.name} · {formatClock(leg.startTime)}
                       {leg.from.platformCode && ` · Platform ${leg.from.platformCode}`}

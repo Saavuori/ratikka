@@ -1,5 +1,6 @@
 import { decodePolyline } from '../../lib/polyline';
 import { getRouteColor } from '../../lib/routeColors';
+import { isBikeLeg } from '../../lib/journeyMonitor';
 import { assignCorridorSlots, directionalPaths } from '../../lib/routeSlots';
 import type { RoutePath } from '../../lib/routeSlots';
 import type { JourneyEndpoint, JourneyLeg } from '../../types';
@@ -109,7 +110,7 @@ export function updateJourney(
       lineFeatures.push({
         type: 'Feature',
         geometry: { type: 'LineString', coordinates: coords },
-        properties: { transit: leg.transit, color },
+        properties: { transit: leg.transit, bike: isBikeLeg(leg), color },
       });
     }
   });
