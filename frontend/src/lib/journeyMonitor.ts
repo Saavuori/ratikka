@@ -83,7 +83,7 @@ export function mergeMonitoredLegs(
     }
     return prediction;
   });
-  // Walking is still a duration estimate, positioned after the updated arrival.
+  // Walking or cycling is still a duration estimate, positioned after the updated arrival.
   for (let index = 1; index < legs.length; index++) {
     if (legs[index].transit) continue;
     const startTime = legs[index - 1].endTime;
@@ -122,6 +122,11 @@ export interface TransferEstimate {
   message: string;
 }
 
+/** A leg the rider rides on their own bike, rather than walks or rides transit. */
+export function isBikeLeg(leg: JourneyLeg): boolean {
+  return !leg.transit && leg.mode.toUpperCase() === 'BICYCLE';
+}
+
 export function transferEstimates(itinerary: JourneyItinerary): TransferEstimate[] {
   const result: TransferEstimate[] = [];
   let previousTransit = -1;
@@ -129,16 +134,17 @@ export function transferEstimates(itinerary: JourneyItinerary): TransferEstimate
     if (!leg.transit) return;
     if (previousTransit >= 0) {
       const previous = itinerary.legs[previousTransit];
-      const walkingSeconds = itinerary.legs.slice(previousTransit + 1, index)
-        .reduce((sum, connection) => sum + connection.duration, 0);
-      const marginSeconds = (leg.startTime - previous.endTime) / 1000 - walkingSeconds;
+      const connections = itinerary.legs.slice(previousTransit + 1, index);
+      const connectionSeconds = connections.reduce((sum, connection) => sum + connection.duration, 0);
+      const marginSeconds = (leg.startTime - previous.endTime) / 1000 - connectionSeconds;
+      const moving = connections.some(isBikeLeg) ? 'cycling' : 'walking';
       const risk = marginSeconds < 0 ? 'missed' : marginSeconds < 180 ? 'tight' : 'normal';
       const margin = Math.round(Math.abs(marginSeconds) / 60);
       result.push({
         legIndex: index, marginSeconds, risk,
         message: risk === 'missed'
-          ? `Transfer may be missed: estimated ${margin} min short after walking.`
-          : `Estimated ${margin} min available after walking${risk === 'tight' ? ' — tight transfer' : ''}.`,
+          ? `Transfer may be missed: estimated ${margin} min short after ${moving}.`
+          : `Estimated ${margin} min available after ${moving}${risk === 'tight' ? ' — tight transfer' : ''}.`,
       });
     }
     previousTransit = index;

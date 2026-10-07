@@ -274,13 +274,26 @@ func toJourneyPlace(p rawPlanPlace) JourneyPlace {
 	return jp
 }
 
+// planStreetMode maps the `street` query parameter to how the rider moves
+// outside transit: on foot, or on their own bike, carried aboard wherever the
+// trip allows bikes. Plain BICYCLE is the rider's own bike; city bikes would be
+// BICYCLE with the RENT qualifier, which this planner does not offer.
+func planStreetMode(raw string) string {
+	if strings.EqualFold(strings.TrimSpace(raw), "bike") {
+		return "BICYCLE"
+	}
+	return "WALK"
+}
+
 // planModes maps the CSV `modes` query parameter to the transportModes input
-// expected by the routing API. WALK is always included so legs can connect.
-func planModes(raw string) []map[string]string {
+// expected by the routing API. The street mode always leads so legs can
+// connect: it is how the rider reaches the first stop, changes between rides
+// and finishes the trip.
+func planModes(raw, street string) []map[string]string {
 	allowed := map[string]bool{
 		"TRAM": true, "BUS": true, "RAIL": true, "SUBWAY": true, "FERRY": true,
 	}
-	modes := []map[string]string{{"mode": "WALK"}}
+	modes := []map[string]string{{"mode": street}}
 	seen := map[string]bool{}
 	if strings.TrimSpace(raw) == "" {
 		for m := range allowed {
@@ -334,10 +347,11 @@ func (h *Handlers) Plan(w http.ResponseWriter, r *http.Request) {
 		numItineraries = v
 	}
 	arriveBy := q.Get("arriveBy") == "true"
-	modes := planModes(q.Get("modes"))
+	street := planStreetMode(q.Get("street"))
+	modes := planModes(q.Get("modes"), street)
 
-	key := fmt.Sprintf("plan:%g,%g>%g,%g:%d:%v:%s:%s:%s",
-		fromLat, fromLon, toLat, toLon, numItineraries, arriveBy, q.Get("modes"), date, clock)
+	key := fmt.Sprintf("plan:%g,%g>%g,%g:%d:%v:%s:%s:%s:%s",
+		fromLat, fromLon, toLat, toLon, numItineraries, arriveBy, q.Get("modes"), street, date, clock)
 
 	serveCached(h, w, key, 20*time.Second, func() (JourneyPlanResponse, error) {
 

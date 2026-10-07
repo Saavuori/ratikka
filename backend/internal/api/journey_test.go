@@ -234,8 +234,8 @@ func TestHandlers_Plan_BadCoords(t *testing.T) {
 }
 
 func TestPlanModes(t *testing.T) {
-	// WALK is always present.
-	got := planModes("TRAM,BUS")
+	// The street mode is always present.
+	got := planModes("TRAM,BUS", "WALK")
 	hasWalk, hasTram, hasBus := false, false, false
 	for _, m := range got {
 		switch m["mode"] {
@@ -252,12 +252,34 @@ func TestPlanModes(t *testing.T) {
 	}
 
 	// Empty string falls back to all transit modes (>1 entry incl. WALK).
-	if all := planModes(""); len(all) <= 1 {
+	if all := planModes("", "WALK"); len(all) <= 1 {
 		t.Errorf("expected fallback to all modes, got %+v", all)
 	}
 
 	// Invalid-only input falls back to all transit modes.
-	if fallback := planModes("banana"); len(fallback) <= 1 {
+	if fallback := planModes("banana", "WALK"); len(fallback) <= 1 {
 		t.Errorf("expected fallback for invalid modes, got %+v", fallback)
+	}
+}
+
+func TestPlanStreetMode(t *testing.T) {
+	for raw, want := range map[string]string{
+		"": "WALK", "walk": "WALK", "bike": "BICYCLE", " Bike ": "BICYCLE", "car": "WALK",
+	} {
+		if got := planStreetMode(raw); got != want {
+			t.Errorf("planStreetMode(%q) = %q, want %q", raw, got, want)
+		}
+	}
+
+	// Riding a bike replaces walking: the routing API would otherwise be free
+	// to send the rider on foot between the rides.
+	got := planModes("TRAM", "BICYCLE")
+	if got[0]["mode"] != "BICYCLE" {
+		t.Errorf("expected BICYCLE to lead, got %+v", got)
+	}
+	for _, m := range got {
+		if m["mode"] == "WALK" {
+			t.Errorf("expected no WALK alongside BICYCLE, got %+v", got)
+		}
 	}
 }

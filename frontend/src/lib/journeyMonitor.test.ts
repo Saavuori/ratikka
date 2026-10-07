@@ -192,6 +192,17 @@ describe('transfer estimates', () => {
     ]);
     expect(transferEstimates(journey)[0]).toMatchObject({ marginSeconds: 60, risk: 'tight', legIndex: 3 });
     expect(transferEstimates(journey)[0].message).toContain('Estimated');
+    expect(transferEstimates(journey)[0].message).toContain('after walking');
+  });
+
+  it('subtracts cycling time the same way, and says the rider is cycling', () => {
+    const journey = itinerary([
+      leg(),
+      leg({ transit: false, mode: 'BICYCLE', duration: 120 }),
+      leg({ tripId: 'HSL:next', startTime: start + 900_000 }),
+    ]);
+    expect(transferEstimates(journey)[0]).toMatchObject({ marginSeconds: 180, risk: 'normal' });
+    expect(transferEstimates(journey)[0].message).toBe('Estimated 3 min available after cycling.');
   });
 
   it('warns that a connection may be missed and never promises a connection', () => {

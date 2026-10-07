@@ -862,7 +862,8 @@ seconds. The frontend defaults the origin to the user's current location.
 | `numItineraries` | No | `4` | Number of itineraries (1–6, default 4) |
 | `arriveBy` | No | `false` | If `true`, treat the time as an arrival deadline |
 | `date` / `time` | Together | `2026-09-05` / `23:55` | Service-local planning date and time in Europe/Helsinki; omit both to plan now |
-| `modes` | No | `TRAM,BUS` | CSV of transit modes (`TRAM,BUS,RAIL,SUBWAY,FERRY`); `WALK` is always included. Empty = all |
+| `modes` | No | `TRAM,BUS` | CSV of transit modes (`TRAM,BUS,RAIL,SUBWAY,FERRY`); the street mode is always included. Empty = all |
+| `street` | No | `bike` | How the rider gets to, between and from the rides: `walk` (default) or `bike`, the rider's own bike, carried aboard where the trip allows bikes. Bike legs come back with `mode: "BICYCLE"`. City bikes are not offered |
 
 **Response** `200 OK`:
 

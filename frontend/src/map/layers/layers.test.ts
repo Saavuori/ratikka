@@ -115,6 +115,7 @@ describe('installMapLayers', () => {
       'stops_ferry',
       'stops_signs',
       'journey-walk-layer',
+      'journey-bike-layer',
       'journey-transit-layer',
     ]) {
       expect(ids, `${expected} missing`).toContain(expected);

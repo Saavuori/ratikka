@@ -1,4 +1,4 @@
-import type { MapConfigResponse, TripDetailsResponse, StopDetailsResponse, NearbyStopsResponse, StopsArrivalsResponse, VersionResponse, RouteDetailsResponse, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyMonitorResponse, JourneyEndpoint, ReplayIndexResponse, ReplayWindowResponse } from '../types';
+import type { MapConfigResponse, TripDetailsResponse, StopDetailsResponse, NearbyStopsResponse, StopsArrivalsResponse, VersionResponse, RouteDetailsResponse, TrafficLightsFeatureCollection, AlertsListResponse, GeocodeResponse, JourneyPlanResponse, JourneyMonitorResponse, JourneyEndpoint, JourneyStreetMode, ReplayIndexResponse, ReplayWindowResponse } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -133,6 +133,7 @@ export async function fetchGeocode(
 export async function fetchJourneyPlan(
   from: JourneyEndpoint,
   to: JourneyEndpoint,
+  streetMode: JourneyStreetMode = 'walk',
   signal?: AbortSignal,
 ): Promise<JourneyPlanResponse> {
   const params = new URLSearchParams({
@@ -141,6 +142,8 @@ export async function fetchJourneyPlan(
     toLat: String(to.lat),
     toLon: String(to.lon),
   });
+  // Walking is the server's default, so a walking plan stays the plain query.
+  if (streetMode === 'bike') params.set('street', 'bike');
   const res = await fetch(`${API_BASE}/plan?${params.toString()}`, { signal });
   if (!res.ok) {
     throw new Error(`Failed to plan journey: ${res.statusText}`);

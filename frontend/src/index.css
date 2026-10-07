@@ -1573,6 +1573,37 @@ body {
 }
 .journey-swap:hover { color: var(--accent-green); border-color: var(--accent-green); }
 
+/* Walk or bike, to the stops and between them */
+.journey-street-modes {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.journey-street-mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--bg-button);
+  border: 1px solid var(--border-button);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.journey-street-mode:hover { color: var(--text-primary); }
+.journey-street-mode[aria-pressed="true"] {
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+.journey-street-mode:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
+}
+
 /* Autocomplete suggestions */
 .journey-suggestions {
   display: flex;

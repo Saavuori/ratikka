@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.2.0] - 2026-10-07
+
+### Added
+- **Plan a journey by bike.** The journey planner has a Walk / Bike switch under the start and destination fields. With Bike chosen, every route is planned for riding your own bike to the first stop, between rides and on to the destination, taking it aboard only where the trip allows bikes (in practice the metro and trains). One of the routes is usually the whole way by bike, and it shows how many kilometres that is. On the map a bike stretch is a solid grey line, where a walk stays dashed, and the journey details call it "Bike". Transfer margins say "after cycling". The planner remembers which you chose. City bikes are not part of this.
+
+---
+
 ## [v1.1.0] - 2026-10-03
 
 ### Added
