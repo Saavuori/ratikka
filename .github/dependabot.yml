@@ -11,6 +11,8 @@
 # pattern, so a batch of dependency merges cuts a patch rather than a minor.
 version: 2
 
+# Majors are ignored on every entry: they are upgraded by hand rather than
+# proposed as PRs that sit open waiting for a review.
 updates:
   - package-ecosystem: gomod
     directory: /backend
@@ -24,6 +26,9 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
     groups:
       go-minor-patch:
         update-types: [minor, patch]
@@ -44,6 +49,8 @@ updates:
       npm-minor-patch:
         update-types: [minor, patch]
     ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
       # A MapLibre major shipped a blank map through a green CI once (v0.46.0).
       # Majors need `scripts/verify-map-layers.mjs`, `verify-map-renders.mjs`
       # and `verify-route-offsets.mjs` run by hand, so they are raised
@@ -62,6 +69,9 @@ updates:
     labels: [dependencies]
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
     groups:
       actions-minor-patch:
         update-types: [minor, patch]
@@ -77,6 +87,9 @@ updates:
     labels: [dependencies]
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
     groups:
       docker-minor-patch:
         update-types: [minor, patch]
@@ -95,6 +108,9 @@ updates:
     labels: [dependencies]
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
     groups:
       compose-minor-patch:
         update-types: [minor, patch]
