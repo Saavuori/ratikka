@@ -50,7 +50,7 @@ jobs:
 
       - name: Determine next version
         id: version
-        uses: paulhatch/semantic-version@v6.0.4
+        uses: paulhatch/semantic-version@v6.0.5
         with:
           tag_prefix: "v"
           major_pattern: '/!:|BREAKING CHANGE:/'
