@@ -8,7 +8,7 @@ import { installTrafficLightLayers } from './trafficLights';
 import { installHeadwayLayers } from './headways';
 
 export type { LayerSeed } from './seed';
-export { STOP_MODE, ARRIVAL_LABEL_SOURCE, ARRIVAL_LABEL_LAYER } from './stops';
+export { STOP_MODE, ARRIVAL_LABEL_SOURCE } from './stops';
 export { update3DMode, updateVehicle3DMode, updateMetroSignVisibility, applyRainRadar } from './basemap';
 
 /**

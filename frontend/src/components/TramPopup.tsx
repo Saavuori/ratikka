@@ -864,5 +864,3 @@ export const TramPopup: React.FC<TramPopupProps> = ({
     </div>
   );
 };
-
-export default TramPopup;

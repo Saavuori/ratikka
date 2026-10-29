@@ -110,23 +110,3 @@ export interface MapCallbacks {
    */
   onVisibleStopsChange?: (stopIds: string[]) => void;
 }
-
-export const NO_SELECTION: MapSelection = {
-  vehicleId: null,
-  line: null,
-  tripDetails: null,
-  stop: null,
-  junctionId: null,
-};
-
-export const NO_JOURNEY: JourneyOverlay = {
-  legs: null,
-  endpoints: null,
-  vehicleIds: [],
-};
-
-export const NO_ARRIVALS: ArrivalOverlay = {
-  focus: null,
-  tripDetails: null,
-  labels: {},
-};
