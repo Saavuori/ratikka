@@ -4,6 +4,7 @@ import { useWebSocket } from './hooks/useWebSocket';
 import { useReplay } from './hooks/useReplay';
 import { parseReplayLink, REPLAY_LINK_LEAD_SECONDS, withoutReplayLink } from './lib/replayLink';
 import { useIsMobile } from './hooks/useIsMobile';
+import { publishMapBearing } from './hooks/useMapBearing';
 import { useEdgeSwipe } from './hooks/useEdgeSwipe';
 import { useTripDetails } from './hooks/useTripDetails';
 import { useRouteGeometries } from './hooks/useRouteGeometries';
@@ -414,8 +415,6 @@ function App() {
   // reader's own filter, which is left untouched underneath.
   const lineFilters = journeyFocused ? journeyLines : selectedLines;
 
-  const [mapBearing, setMapBearing] = useState<number>(0);
-
   // Every rail line currently running — trams plus, when their toggle is on,
   // the metro and commuter-train lines. Sorted so the list reads the same from
   // one position update to the next while the same lines are in service.
@@ -670,7 +669,7 @@ function App() {
     onSelectStop: handleSelectStop,
     onSelectJunction: handleSelectJunction,
     onDisableFollowing: () => setIsFollowing(false),
-    onMapBearingChange: setMapBearing,
+    onMapBearingChange: publishMapBearing,
     onLocatingChange: setLocating,
     onVisibleStopsChange: setLabelStopIds,
   };
@@ -713,7 +712,6 @@ function App() {
       {trackedVehicle && (
         <TramCard
           tram={trackedVehicle}
-          mapBearing={mapBearing}
           onClose={clearSelection}
           isFollowing={isFollowing}
           onToggleFollow={() => setIsFollowing(!isFollowing)}
