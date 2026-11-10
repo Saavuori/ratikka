@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.2.5] - 2026-11-10
+
+### Fixed
+- **The vehicle animation does half the work.** Each frame of the animation was being run twice: the loop that moves the vehicles was started twice over, so every position, the 3D bodies and the follow camera were all worked out and pushed to the map two times in each frame. One of the two also kept running after the map was torn down. It now runs once per frame. That halves the animation's share of the CPU, which phones notice most.
+- **Following a vehicle no longer redraws the whole app every frame.** The map's bearing was held at the top of the app just to turn the small heading arrow on the vehicle card. While the camera followed a vehicle round a bend, or the map was twisted with two fingers, it changed every frame and every panel was rebuilt every frame with it. Now only the vehicle card redraws, and only when the bearing changes by a whole degree.
+
+### Changed
+- **The live feed is about a quarter of the size.** The once-a-second vehicle stream is now compressed, which cuts it from about 46 KB to 10 KB a second with trams alone, and from about 320 KB to 70 KB with every mode on. That adds up to roughly 130 MB less mobile data for every hour the map is open with everything shown. Browsers that cannot decompress it get it uncompressed, as before.
+- **You only receive the vehicles you asked for.** The server used to send every reader every vehicle it was tracking. So while anyone had buses switched on, someone watching trams alone still downloaded several hundred buses every second and threw them away. Each reader now gets trams plus the modes they have switched on.
+- **The app loads from the browser cache on return visits.** The app's files had no caching headers, so the browser downloaded the whole app (about 570 KB) again on every visit. Files whose names carry a content hash are now cached for a year. The page that points at them is checked on each load, and when it has not changed the answer is an empty "not modified". MapLibre and React are also split out of the app's own code, so a release only makes the browser fetch the part that changed, about 70 KB instead of 450 KB.
+
+---
+
 ## [v1.2.0] - 2026-10-07
 
 ### Added
