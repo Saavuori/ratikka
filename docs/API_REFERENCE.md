@@ -334,6 +334,7 @@ All endpoints are served by the Go backend at `http://localhost:8080` and proxie
 | **Protocol** | WebSocket (`ws://` / `wss://`) |
 | **Direction** | Server → Client broadcast, plus a small client → server control message |
 | **Frequency** | 1 snapshot per second |
+| **Compression** | `permessage-deflate` (no context takeover) when the client offers it — every current browser does; about 4.5:1 on this stream |
 
 #### Control Message (Client → Server)
 
@@ -349,6 +350,12 @@ toggles a mode or selects a journey using that mode:
 Only `bus`, `metro`, `train` and `ferry` are accepted; any other key is ignored.
 Omitted modes keep their current value for that client. The older single-mode
 form `{ "buses": true }` is still accepted and means `{"modes": {"bus": true}}`.
+
+Each snapshot carries only what that client asked for: every vehicle whose
+`mode` is not one of the four optional modes (trams, in practice), plus the
+optional modes it has switched on. Ingestion is shared, so the cache can hold
+buses another client wanted; those are left out of this client's snapshot
+rather than sent and discarded.
 
 #### Message Format (Server → Client)
 

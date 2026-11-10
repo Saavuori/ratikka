@@ -153,3 +153,112 @@ func TestHub_IgnoresUnknownModes(t *testing.T) {
 		t.Errorf("expected no ingestion toggled for unknown modes, got %v", ctl.enabled)
 	}
 }
+
+// receive reads one broadcast off a client's channel.
+func receive(t *testing.T, client *Client) PositionsMessage {
+	t.Helper()
+	select {
+	case data := <-client.send:
+		var msg PositionsMessage
+		if err := json.Unmarshal(data, &msg); err != nil {
+			t.Fatalf("broadcast is not valid JSON: %v\n%s", err, data)
+		}
+		return msg
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for broadcast")
+	}
+	return PositionsMessage{}
+}
+
+func TestHub_BroadcastsOnlyWantedModes(t *testing.T) {
+	ctx := context.Background()
+	memCache := cache.NewMemoryCache()
+	memCache.SetPosition(ctx, "tram1", []byte(`{"veh":"tram1","mode":"tram"}`))
+	memCache.SetPosition(ctx, "bus1", []byte(`{"veh":"bus1","mode":"bus"}`))
+	memCache.SetPosition(ctx, "bus2", []byte(`{"veh":"bus2","mode":"bus"}`))
+	memCache.SetPosition(ctx, "metro1", []byte(`{"veh":"metro1","mode":"metro"}`))
+	// No mode at all, or one that is not optional: never filtered out.
+	memCache.SetPosition(ctx, "legacy", []byte(`{"veh":"legacy"}`))
+
+	hub := NewHub(memCache)
+	tramsOnly := &Client{send: make(chan []byte, 1), wantsModes: map[string]bool{}}
+	buses := &Client{send: make(chan []byte, 1), wantsModes: map[string]bool{}}
+	hub.addClient(tramsOnly)
+	hub.addClient(buses)
+	hub.setClientModePref(buses, "bus", true)
+
+	hub.broadcastSnapshot(ctx)
+
+	got := receive(t, tramsOnly)
+	if got.Count != 2 || len(got.Vehicles) != 2 {
+		t.Errorf("trams-only client got %d vehicles (count %d), want tram1 and legacy", len(got.Vehicles), got.Count)
+	}
+	for _, id := range []string{"tram1", "legacy"} {
+		if _, ok := got.Vehicles[id]; !ok {
+			t.Errorf("trams-only client is missing %s", id)
+		}
+	}
+
+	got = receive(t, buses)
+	if got.Count != 4 {
+		t.Errorf("bus client got count %d, want 4 (tram1, bus1, bus2, legacy)", got.Count)
+	}
+	if _, ok := got.Vehicles["metro1"]; ok {
+		t.Error("bus client was sent a metro it did not ask for")
+	}
+	if _, ok := got.Vehicles["bus2"]; !ok {
+		t.Error("bus client is missing bus2")
+	}
+}
+
+func TestHub_SkipsUnreadableCachedPositions(t *testing.T) {
+	ctx := context.Background()
+	memCache := cache.NewMemoryCache()
+	memCache.SetPosition(ctx, "good", []byte(`{"veh":"good","mode":"tram"}`))
+	memCache.SetPosition(ctx, "bad", []byte(`{"veh":`))
+
+	hub := NewHub(memCache)
+	client := &Client{send: make(chan []byte, 1), wantsModes: map[string]bool{}}
+	hub.addClient(client)
+	hub.broadcastSnapshot(ctx)
+
+	got := receive(t, client)
+	if got.Count != 1 {
+		t.Errorf("count = %d, want 1", got.Count)
+	}
+	if _, ok := got.Vehicles["good"]; !ok {
+		t.Error("a corrupt neighbour cost the good vehicle its place in the message")
+	}
+}
+
+func TestHub_ClientsWantingTheSameModesShareOnePayload(t *testing.T) {
+	ctx := context.Background()
+	memCache := cache.NewMemoryCache()
+	memCache.SetPosition(ctx, "tram1", []byte(`{"veh":"tram1","mode":"tram"}`))
+
+	hub := NewHub(memCache)
+	a := &Client{send: make(chan []byte, 1), wantsModes: map[string]bool{}}
+	b := &Client{send: make(chan []byte, 1), wantsModes: map[string]bool{}}
+	hub.addClient(a)
+	hub.addClient(b)
+	hub.broadcastSnapshot(ctx)
+
+	pa, pb := <-a.send, <-b.send
+	if &pa[0] != &pb[0] {
+		t.Error("two trams-only clients were each given their own copy of the same payload")
+	}
+}
+
+func TestRecordMode(t *testing.T) {
+	for _, tc := range []struct{ raw, want string }{
+		{`{"veh":"1","mode":"bus","tlp":{"x":1}}`, "bus"},
+		{`{"veh":"1"}`, ""},
+		// The sequence inside a string value is always escaped, so it is not
+		// mistaken for the field.
+		{`{"desi":"\"mode\":\"bus","mode":"tram"}`, "tram"},
+	} {
+		if got := recordMode([]byte(tc.raw)); got != tc.want {
+			t.Errorf("recordMode(%s) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
