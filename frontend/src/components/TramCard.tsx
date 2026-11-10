@@ -5,17 +5,18 @@ import { getRouteColor, getModeAccent } from '../lib/routeColors';
 import { tripProgress } from '../lib/nextStop';
 import { delayColor } from '../lib/trip';
 import { useLastSeenStop } from '../hooks/useLastSeenStop';
+import { useMapBearing } from '../hooks/useMapBearing';
 
 interface TramCardProps {
   tram: VehiclePosition;
-  mapBearing: number;
   onClose: () => void;
   isFollowing: boolean;
   onToggleFollow: () => void;
   tripDetails: TripDetailsResponse | null;
 }
 
-export const TramCard: React.FC<TramCardProps> = ({ tram, mapBearing, onClose, isFollowing, onToggleFollow, tripDetails }) => {
+export const TramCard: React.FC<TramCardProps> = ({ tram, onClose, isFollowing, onToggleFollow, tripDetails }) => {
+  const mapBearing = useMapBearing();
   const speedKmh = Math.round(tram.spd * 3.6);
   const lastStopId = useLastSeenStop(tram);
 
