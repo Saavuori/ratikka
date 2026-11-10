@@ -32,7 +32,9 @@ export function startAnimationLoop(
   read: () => FrameInputs,
   effects: FrameEffects,
 ): () => void {
+  let stopped = false;
   const tick = () => {
+    if (stopped) return;
     // This loop is the sole driver of vehicle movement: an uncaught throw
     // (e.g. malformed trip data) must not stop the next frame from being
     // scheduled, or every vehicle would freeze for the rest of the session.
@@ -430,11 +432,14 @@ export function startAnimationLoop(
     }
   };
 
-  state.frame = requestAnimationFrame(tick);
-
+  // Exactly one chain: `tick` reschedules itself, so a second call here would
+  // start a second, independent chain — every frame's work done twice, and
+  // only the most recent frame id held in `state.frame`, so the teardown
+  // could cancel one chain while the other ran on forever.
   state.frame = requestAnimationFrame(tick);
 
   return () => {
+    stopped = true;
     if (state.frame !== null) cancelAnimationFrame(state.frame);
     state.frame = null;
   };
