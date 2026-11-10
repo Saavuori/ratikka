@@ -60,6 +60,11 @@ push to `main`. A merge to `main` builds an image that the host pulls into
 production within five minutes, so this is the **only** thing standing between a
 PR and the live site. Keep it green.
 
+**The four jobs are required status checks** in the `main` ruleset, so a PR
+cannot be merged until all of them pass. Before they were, PR #173 was merged 43
+seconds after it opened — before its CI run had even been queued — and so went to
+production unchecked.
+
 Four jobs, all on `ubuntu-latest`, all in parallel:
 
 | Job | Steps |
@@ -82,7 +87,10 @@ Notes on why each is shaped the way it is:
   `[Unreleased]`, or a file the generator chokes on, would go live on Pages.
 - **The Docker job does not push.** It builds amd64 only, purely to catch a
   broken `Dockerfile` before it reaches `main`; the real multi-arch build lives
-  in the release workflow. Both use `type=gha` buildx cache.
+  in the release workflow. Both use `type=gha` buildx cache with
+  `ignore-error=true` on the export: the cache is an optimisation, and a refused
+  write (a PR run that starts after its PR closed gets a token with no writable
+  cache scope) must not fail an otherwise green build.
 - Go version comes from `backend/go.mod` (`go-version-file`), so bumping the
   language version is a one-line change in one place.
 
